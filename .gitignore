@@ -1,0 +1,6 @@
+threads-dashboard.exe
+*.exe
+*.exe~
+*~
+.env
+.data/

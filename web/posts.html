@@ -1,0 +1,40 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Post Saya — Threads Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=saas2">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main>
+  <header class="th-page-head">
+    <div class="min-w-0">
+      <p class="th-eyebrow">Konten</p>
+      <h1 class="th-title">Post Saya</h1>
+      <p id="posts-meta" class="th-lead">Daftar post dari akun yang terhubung.</p>
+    </div>
+    <div class="th-toolbar w-full lg:w-auto">
+      <div class="th-filter-bar min-w-0 flex-1 lg:flex-none">
+        <i class="bi bi-calendar3 text-muted text-sm shrink-0"></i>
+        <input type="date" id="posts-since">
+        <span class="text-muted text-xs shrink-0">s/d</span>
+        <input type="date" id="posts-until">
+        <button id="btn-posts-filter" class="th-btn th-btn-soft !py-1.5 !px-3">Filter</button>
+        <button id="btn-posts-refresh" class="th-btn th-btn-ghost !py-1.5 !px-2" title="Muat ulang"><i class="bi bi-arrow-clockwise"></i></button>
+      </div>
+      <a href="/buat.html" class="th-btn th-btn-primary"><i class="bi bi-plus-lg"></i> Buat post</a>
+    </div>
+  </header>
+
+  <div id="posts-list" class="posts-grid"></div>
+</main>
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script src="/js/pages/posts.js"></script>
+</body>
+</html>

@@ -1,0 +1,65 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>IG Profil — Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=saas2">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main>
+  <header class="th-page-head">
+    <div>
+      <p class="th-eyebrow">Instagram</p>
+      <h1 class="th-title">IG Profil</h1>
+      <p class="th-lead">Akun Instagram yang terhubung lewat token sendiri.</p>
+    </div>
+  </header>
+
+  <div id="ig-empty" class="th-panel hidden">
+    <div class="th-empty">
+      <div class="th-empty-icon"><i class="bi bi-instagram"></i></div>
+      <p class="font-semibold text-ink mb-1">Belum ada token Instagram</p>
+      <p class="text-sm text-muted mb-5">Hubungkan token IG di halaman IG Token (terpisah dari Threads).</p>
+      <a href="/ig-token.html" class="th-btn th-btn-primary">Buka IG Token</a>
+    </div>
+  </div>
+
+  <div id="ig-profile-panel" class="th-panel hidden">
+    <div class="th-profile">
+      <div id="profile-avatar" class="th-avatar">@</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="profile-name" class="font-display text-xl font-bold tracking-tight m-0">—</h2>
+        <div id="profile-username" class="text-accent font-semibold mt-1">@—</div>
+        <div id="profile-meta" class="text-sm text-muted mt-2"></div>
+      </div>
+      <div class="text-left sm:text-right">
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">User ID</div>
+        <code id="profile-id" class="th-code text-xs break-all">—</code>
+      </div>
+    </div>
+    <div class="grid grid-cols-3 gap-4 border-t border-line mt-5 pt-5 px-5 pb-5 sm:px-6">
+      <div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Followers</div>
+        <div id="stat-followers" class="text-lg font-bold mt-1">—</div>
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Following</div>
+        <div id="stat-follows" class="text-lg font-bold mt-1">—</div>
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Media</div>
+        <div id="stat-media" class="text-lg font-bold mt-1">—</div>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script src="/js/pages/ig-profil.js"></script>
+</body>
+</html>

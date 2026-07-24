@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Generate Konten — Threads Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=saas17">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main>
+  <header class="th-page-head">
+    <div>
+      <p class="th-eyebrow">Konten</p>
+      <h1 class="th-title">Generate Konten</h1>
+      <p class="th-lead">AI menulis draf yang berpotensi viral dari niche + instruksi kamu — bukan filler asal jadi.</p>
+    </div>
+    <div class="th-toolbar">
+      <button id="btn-generate" class="th-btn th-btn-primary" type="button">
+        <i class="bi bi-magic"></i> Generate
+      </button>
+    </div>
+  </header>
+
+  <div id="gen-alert" class="th-alert hidden"></div>
+
+  <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] gap-4 mb-5">
+    <div class="th-panel">
+      <div class="th-panel-head">Instruksi AI</div>
+      <div class="th-panel-body">
+        <label class="th-label">Instruksi tetap (style & larangan)</label>
+        <textarea id="instructions" class="th-textarea" rows="12" placeholder="Isi aturan tetap kamu di sini…"></textarea>
+        <div class="flex flex-wrap gap-2 mt-3">
+          <button id="btn-save-instructions" class="th-btn th-btn-soft" type="button">Simpan instruksi</button>
+          <button id="btn-fill-template" class="th-btn th-btn-ghost" type="button">Isi template edukasi</button>
+          <span id="instructions-status" class="text-xs text-muted self-center"></span>
+        </div>
+        <div class="mt-4">
+          <label class="th-label">Topik hari ini (opsional)</label>
+          <input id="topic" class="th-input" placeholder="Mis. WA blast / face recognition SIM / infrastruktur internet">
+        </div>
+      </div>
+    </div>
+
+    <div class="th-panel">
+      <div class="th-panel-head">Niche</div>
+      <div class="th-panel-body space-y-3 text-sm">
+        <div>
+          <label class="th-label">Niche akun (boleh lebih dari satu)</label>
+          <textarea id="niche" class="th-textarea text-sm" rows="4" placeholder="Satu niche per baris"></textarea>
+          <button id="btn-save-niche" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan niche</button>
+          <div class="mt-4">
+            <label class="th-label">Nama brand</label>
+            <input id="brand" class="th-input text-sm" placeholder="Muncul di carousel IG">
+            <button id="btn-save-brand" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan brand</button>
+          </div>
+          <p class="text-[11px] text-muted mt-1.5 m-0">Utas → Threads. Utas yang sama → carousel IG dengan brand.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div id="consideration-box" class="th-panel mb-5 hidden">
+    <div class="th-panel-head">Pertimbangan generate</div>
+    <div class="th-panel-body">
+      <p id="consideration" class="m-0 text-sm leading-relaxed"></p>
+    </div>
+  </div>
+
+  <div id="drafts" class="ai-draft-grid"></div>
+</main>
+<script src="/js/api.js?v=saas22"></script>
+<script src="/js/layout.js?v=saas22"></script>
+<script src="/js/pages/generate.js?v=saas22"></script>
+</body>
+</html>

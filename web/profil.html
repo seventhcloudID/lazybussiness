@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Profil — Threads Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=saas2">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main>
+  <header class="th-page-head">
+    <div>
+      <p class="th-eyebrow">Umum</p>
+      <h1 class="th-title">Profil</h1>
+      <p class="th-lead">Identitas akun Threads yang terhubung lewat <code class="th-code">GET /me</code>.</p>
+    </div>
+  </header>
+
+  <div class="th-panel">
+    <div class="th-profile">
+      <div id="profile-avatar" class="th-avatar">@</div>
+      <div class="min-w-0 flex-1">
+        <h2 id="profile-name" class="font-display text-xl font-bold tracking-tight m-0">Belum terhubung</h2>
+        <div id="profile-username" class="text-accent font-semibold mt-1">@—</div>
+        <div id="profile-bio" class="text-sm text-muted mt-2 max-w-xl leading-relaxed">Hubungkan token di halaman Token &amp; Izin.</div>
+      </div>
+      <div class="text-left sm:text-right">
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">User ID</div>
+        <code id="profile-id" class="th-code text-xs break-all">—</code>
+      </div>
+    </div>
+  </div>
+</main>
+<script src="/js/api.js"></script>
+<script src="/js/layout.js"></script>
+<script src="/js/pages/profil.js"></script>
+</body>
+</html>

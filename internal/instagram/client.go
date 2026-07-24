@@ -1,0 +1,431 @@
+package instagram
+
+import (
+	"encoding/json"
+	"fmt"
+	"io"
+	"net/http"
+	"net/url"
+	"os"
+	"path/filepath"
+	"strings"
+	"sync"
+	"time"
+)
+
+const BaseURL = "https://graph.instagram.com"
+
+type Client struct {
+	mu        sync.RWMutex
+	token     string
+	http      *http.Client
+	userID    string
+	tokenPath string
+}
+
+func New() *Client {
+	c := &Client{
+		http:      &http.Client{Timeout: 120 * time.Second},
+		tokenPath: filepath.Join(".data", "ig_access_token"),
+	}
+	c.loadTokenFile()
+	return c
+}
+
+func (c *Client) SetToken(token string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.token = strings.TrimSpace(token)
+	c.userID = ""
+	c.persistTokenLocked()
+}
+
+func (c *Client) ClearToken() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.token = ""
+	c.userID = ""
+	if c.tokenPath != "" {
+		_ = os.Remove(c.tokenPath)
+	}
+}
+
+func (c *Client) persistTokenLocked() {
+	if c.tokenPath == "" {
+		return
+	}
+	if c.token == "" {
+		_ = os.Remove(c.tokenPath)
+		return
+	}
+	if err := os.MkdirAll(filepath.Dir(c.tokenPath), 0o700); err != nil {
+		return
+	}
+	_ = os.WriteFile(c.tokenPath, []byte(c.token), 0o600)
+}
+
+func (c *Client) loadTokenFile() {
+	if c.tokenPath == "" {
+		return
+	}
+	b, err := os.ReadFile(c.tokenPath)
+	if err != nil {
+		return
+	}
+	tok := strings.TrimSpace(string(b))
+	if tok == "" {
+		return
+	}
+	c.token = tok
+}
+
+func (c *Client) Token() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.token
+}
+
+func (c *Client) Connected() bool {
+	return c.Token() != ""
+}
+
+func (c *Client) UserID() string {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+	return c.userID
+}
+
+func (c *Client) setUserID(id string) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.userID = id
+}
+
+type APIError struct {
+	Status int
+	Body   json.RawMessage
+}
+
+func (e *APIError) Error() string {
+	return fmt.Sprintf("instagram api: status %d: %s", e.Status, string(e.Body))
+}
+
+func (c *Client) Do(method, path string, query url.Values, form url.Values) (json.RawMessage, error) {
+	token := c.Token()
+	if token == "" {
+		return nil, fmt.Errorf("token Instagram belum di-set")
+	}
+
+	u, err := url.Parse(BaseURL + path)
+	if err != nil {
+		return nil, err
+	}
+	q := u.Query()
+	for k, vs := range query {
+		for _, v := range vs {
+			q.Add(k, v)
+		}
+	}
+	q.Set("access_token", token)
+	u.RawQuery = q.Encode()
+
+	var body io.Reader
+	contentType := ""
+	if form != nil {
+		body = strings.NewReader(form.Encode())
+		contentType = "application/x-www-form-urlencoded"
+	}
+
+	req, err := http.NewRequest(method, u.String(), body)
+	if err != nil {
+		return nil, err
+	}
+	if contentType != "" {
+		req.Header.Set("Content-Type", contentType)
+	}
+
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 400 {
+		return nil, &APIError{Status: res.StatusCode, Body: raw}
+	}
+	return raw, nil
+}
+
+func (c *Client) GetMe() (json.RawMessage, error) {
+	raw, err := c.Do(http.MethodGet, "/me", url.Values{
+		"fields": {"id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count"},
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	var me struct {
+		ID string `json:"id"`
+	}
+	if json.Unmarshal(raw, &me) == nil && me.ID != "" {
+		c.setUserID(me.ID)
+	}
+	return raw, nil
+}
+
+func (c *Client) GetMedia(limit string) (json.RawMessage, error) {
+	if limit == "" {
+		limit = "25"
+	}
+	return c.Do(http.MethodGet, "/me/media", url.Values{
+		"fields": {"id,caption,media_type,media_url,permalink,thumbnail_url,timestamp,like_count,comments_count,username"},
+		"limit":  {limit},
+	}, nil)
+}
+
+// RefreshToken memperpanjang long-lived Instagram user token (~60 hari).
+func (c *Client) RefreshToken() (json.RawMessage, error) {
+	token := c.Token()
+	if token == "" {
+		return nil, fmt.Errorf("token Instagram belum di-set")
+	}
+	u := BaseURL + "/refresh_access_token?" + url.Values{
+		"grant_type":   {"ig_refresh_token"},
+		"access_token": {token},
+	}.Encode()
+
+	res, err := c.http.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 400 {
+		return nil, &APIError{Status: res.StatusCode, Body: raw}
+	}
+
+	var out struct {
+		AccessToken string `json:"access_token"`
+	}
+	if json.Unmarshal(raw, &out) == nil && out.AccessToken != "" {
+		c.SetToken(out.AccessToken)
+	}
+	return raw, nil
+}
+
+// ExchangeLongLived menukar short-lived token jadi long-lived (butuh INSTAGRAM_APP_SECRET).
+func (c *Client) ExchangeLongLived(shortToken, appSecret string) (json.RawMessage, error) {
+	shortToken = strings.TrimSpace(shortToken)
+	appSecret = strings.TrimSpace(appSecret)
+	if shortToken == "" || appSecret == "" {
+		return nil, fmt.Errorf("short token dan app secret wajib")
+	}
+	u := BaseURL + "/access_token?" + url.Values{
+		"grant_type":    {"ig_exchange_token"},
+		"client_secret": {appSecret},
+		"access_token":  {shortToken},
+	}.Encode()
+
+	res, err := c.http.Get(u)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 400 {
+		return nil, &APIError{Status: res.StatusCode, Body: raw}
+	}
+
+	var out struct {
+		AccessToken string `json:"access_token"`
+	}
+	if json.Unmarshal(raw, &out) == nil && out.AccessToken != "" {
+		c.SetToken(out.AccessToken)
+	}
+	return raw, nil
+}
+
+func (c *Client) EnsureUserID() (string, error) {
+	if id := c.UserID(); id != "" {
+		return id, nil
+	}
+	if _, err := c.GetMe(); err != nil {
+		return "", err
+	}
+	id := c.UserID()
+	if id == "" {
+		return "", fmt.Errorf("tidak bisa baca Instagram user id")
+	}
+	return id, nil
+}
+
+type containerID struct {
+	ID string `json:"id"`
+}
+
+// CreateCarouselItem membuat child image container (is_carousel_item=true).
+func (c *Client) CreateCarouselItem(imageURL string) (string, error) {
+	userID, err := c.EnsureUserID()
+	if err != nil {
+		return "", err
+	}
+	imageURL = strings.TrimSpace(imageURL)
+	if imageURL == "" {
+		return "", fmt.Errorf("image_url wajib")
+	}
+	raw, err := c.Do(http.MethodPost, "/"+userID+"/media", nil, url.Values{
+		"image_url":        {imageURL},
+		"is_carousel_item": {"true"},
+	})
+	if err != nil {
+		return "", err
+	}
+	var out containerID
+	if err := json.Unmarshal(raw, &out); err != nil || out.ID == "" {
+		return "", fmt.Errorf("gagal buat carousel item: %s", string(raw))
+	}
+	return out.ID, nil
+}
+
+// CreateCarouselContainer membuat parent CAROUSEL dari child container IDs.
+func (c *Client) CreateCarouselContainer(childIDs []string, caption string) (string, error) {
+	userID, err := c.EnsureUserID()
+	if err != nil {
+		return "", err
+	}
+	if len(childIDs) < 2 {
+		return "", fmt.Errorf("carousel minimal 2 gambar")
+	}
+	if len(childIDs) > 10 {
+		return "", fmt.Errorf("carousel maksimal 10 gambar")
+	}
+	form := url.Values{
+		"media_type": {"CAROUSEL"},
+		"children":   {strings.Join(childIDs, ",")},
+	}
+	if strings.TrimSpace(caption) != "" {
+		form.Set("caption", caption)
+	}
+	raw, err := c.Do(http.MethodPost, "/"+userID+"/media", nil, form)
+	if err != nil {
+		return "", err
+	}
+	var out containerID
+	if err := json.Unmarshal(raw, &out); err != nil || out.ID == "" {
+		return "", fmt.Errorf("gagal buat carousel container: %s", string(raw))
+	}
+	return out.ID, nil
+}
+
+// GetContainerStatus status container IG (EXPIRED / ERROR / FINISHED / IN_PROGRESS / PUBLISHED).
+func (c *Client) GetContainerStatus(creationID string) (string, json.RawMessage, error) {
+	creationID = strings.TrimSpace(creationID)
+	if creationID == "" {
+		return "", nil, fmt.Errorf("creation_id wajib")
+	}
+	raw, err := c.Do(http.MethodGet, "/"+creationID, url.Values{
+		"fields": {"status_code,status"},
+	}, nil)
+	if err != nil {
+		return "", nil, err
+	}
+	var out struct {
+		StatusCode string `json:"status_code"`
+	}
+	_ = json.Unmarshal(raw, &out)
+	return out.StatusCode, raw, nil
+}
+
+// WaitContainer menunggu container siap publish.
+func (c *Client) WaitContainer(creationID string, maxWait time.Duration) error {
+	if maxWait <= 0 {
+		maxWait = 90 * time.Second
+	}
+	deadline := time.Now().Add(maxWait)
+	for {
+		code, raw, err := c.GetContainerStatus(creationID)
+		if err != nil {
+			return err
+		}
+		switch strings.ToUpper(code) {
+		case "FINISHED", "PUBLISHED":
+			return nil
+		case "ERROR", "EXPIRED":
+			return fmt.Errorf("container gagal (%s): %s", code, string(raw))
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout menunggu container (status=%s)", code)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// PublishMedia publish creation_id ke feed.
+func (c *Client) PublishMedia(creationID string) (json.RawMessage, error) {
+	userID, err := c.EnsureUserID()
+	if err != nil {
+		return nil, err
+	}
+	creationID = strings.TrimSpace(creationID)
+	if creationID == "" {
+		return nil, fmt.Errorf("creation_id wajib")
+	}
+	if err := c.WaitContainer(creationID, 90*time.Second); err != nil {
+		return nil, err
+	}
+	return c.Do(http.MethodPost, "/"+userID+"/media_publish", nil, url.Values{
+		"creation_id": {creationID},
+	})
+}
+
+// PublishCarousel membuat carousel dari daftar image URL publik + caption.
+func (c *Client) PublishCarousel(imageURLs []string, caption string) (map[string]any, error) {
+	var cleaned []string
+	for _, u := range imageURLs {
+		u = strings.TrimSpace(u)
+		if u != "" {
+			cleaned = append(cleaned, u)
+		}
+	}
+	if len(cleaned) < 2 {
+		return nil, fmt.Errorf("minimal 2 image_url untuk carousel")
+	}
+	if len(cleaned) > 10 {
+		return nil, fmt.Errorf("maksimal 10 slide")
+	}
+
+	childIDs := make([]string, 0, len(cleaned))
+	for i, img := range cleaned {
+		id, err := c.CreateCarouselItem(img)
+		if err != nil {
+			return nil, fmt.Errorf("slide %d: %w", i+1, err)
+		}
+		childIDs = append(childIDs, id)
+		if err := c.WaitContainer(id, 60*time.Second); err != nil {
+			return nil, fmt.Errorf("slide %d belum siap: %w", i+1, err)
+		}
+	}
+
+	parentID, err := c.CreateCarouselContainer(childIDs, caption)
+	if err != nil {
+		return nil, err
+	}
+	pub, err := c.PublishMedia(parentID)
+	if err != nil {
+		return nil, err
+	}
+	return map[string]any{
+		"children":  childIDs,
+		"container": parentID,
+		"published": json.RawMessage(pub),
+	}, nil
+}
