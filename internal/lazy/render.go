@@ -154,25 +154,25 @@ func RenderSlidePNG(path, brand, text string) error {
 	}
 
 	padX := 100
-	padTop := 88
-	padBottom := 110
+	padTop := 100
+	padBottom := 100
 	maxW := slideW - 2*padX
 
 	// Header fixed di atas
 	y := padTop
 	handle := brandHandle(brand)
 	if handle != "" {
-		fh := makeFace(26)
+		fh := makeFace(28)
 		if fh != nil {
 			drawString(img, fh, handle, padX, y+fh.Metrics().Ascent.Ceil(), rgb(150, 158, 170))
-			y += fh.Metrics().Height.Ceil() + 22
+			y += fh.Metrics().Height.Ceil() + 26
 			closeFace(fh)
 		}
 		divY := y
 		for x := padX; x < slideW-padX; x++ {
 			img.SetRGBA(x, divY, rgb(58, 66, 80))
 		}
-		y += 36
+		y += 56 // turunkan body lebih jauh dari brand/garis
 	}
 
 	bodyTop := y
@@ -186,7 +186,7 @@ func RenderSlidePNG(path, brand, text string) error {
 	var faceBody font.Face
 	var lines []drawLine
 	var lineGap, paraGap int
-	for size := 46.0; size >= 32.0; size -= 1 {
+	for size := 52.0; size >= 34.0; size -= 1 {
 		if faceBody != nil {
 			closeFace(faceBody)
 		}
@@ -194,11 +194,11 @@ func RenderSlidePNG(path, brand, text string) error {
 		if faceBody == nil {
 			continue
 		}
-		lineGap = 14
-		paraGap = int(size*0.9) + 12
-		if size <= 36 {
-			lineGap = 11
-			paraGap = int(size*0.75) + 10
+		lineGap = 16
+		paraGap = int(size*0.95) + 14
+		if size <= 40 {
+			lineGap = 13
+			paraGap = int(size*0.8) + 12
 		}
 		lines = layoutLines(faceBody, body, maxW)
 		if blockHeight(faceBody, lines, lineGap, paraGap) <= bodyAvail {
