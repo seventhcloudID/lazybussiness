@@ -253,22 +253,44 @@ func isMediaNotFound(err error) bool {
 }
 
 func (d *Deps) renderAndURLs(job Job, brand string, parts []string) ([]string, error) {
-	dir := filepath.Join(d.Store.MediaDir(), job.Date, job.ID)
+	return RenderPartsPublic(d.Store.MediaDir(), d.Public, brand, job.Date+"/"+job.ID, parts)
+}
+
+// RenderPartsPublic menulis PNG per slide dan mengembalikan URL publik.
+func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []string) ([]string, error) {
+	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
+	if base == "" || !(strings.HasPrefix(base, "https://") || strings.HasPrefix(base, "http://")) {
+		return nil, fmt.Errorf("PUBLIC_BASE_URL belum di-set (butuh URL publik HTTPS)")
+	}
+	cleaned := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			cleaned = append(cleaned, p)
+		}
+	}
+	if len(cleaned) < 2 {
+		return nil, fmt.Errorf("butuh minimal 2 slide teks")
+	}
+	if len(cleaned) > 10 {
+		cleaned = cleaned[:10]
+	}
+	subdir = strings.Trim(strings.ReplaceAll(subdir, "..", ""), "/\\")
+	if subdir == "" {
+		subdir = time.Now().UTC().Format("20060102-150405")
+	}
+	dir := filepath.Join(mediaDir, filepath.FromSlash(subdir))
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return nil, err
 	}
-	base := strings.TrimRight(strings.TrimSpace(d.Public), "/")
 	var urls []string
-	for i, p := range parts {
+	for i, p := range cleaned {
 		name := fmt.Sprintf("%02d.png", i+1)
 		path := filepath.Join(dir, name)
 		if err := RenderSlidePNG(path, brand, p); err != nil {
 			return nil, err
 		}
-		urls = append(urls, fmt.Sprintf("%s/media/lazy/%s/%s/%s", base, job.Date, job.ID, name))
-	}
-	if len(urls) < 2 {
-		return nil, fmt.Errorf("butuh minimal 2 slide")
+		urls = append(urls, fmt.Sprintf("%s/media/lazy/%s/%s", base, strings.ReplaceAll(subdir, "\\", "/"), name))
 	}
 	return urls, nil
 }

@@ -331,26 +331,26 @@ document.getElementById('btn-publish').onclick = async () => {
     return Threads.toast('Server belum jalan', false);
   }
 
-  const urls = slides.map(s => (s.image_url || '').trim()).filter(Boolean);
-  if (urls.length < 2) return Threads.toast('Isi minimal 2 URL gambar publik', false);
-  if (urls.length !== slides.length) {
-    if (!confirm(`Hanya ${urls.length}/${slides.length} slide punya URL. Publish ${urls.length}?`)) return;
-  }
+  const parts = partsFromSlides();
+  if (parts.length < 2) return Threads.toast('Minimal 2 slide teks', false);
 
   const btn = document.getElementById('btn-publish');
   const status = document.getElementById('publish-status');
   btn.disabled = true;
-  status.textContent = 'Upload ke Instagram…';
+  status.textContent = 'Render slide → gambar & upload ke Instagram…';
   try {
     const data = await Threads.api('/api/ig/carousel/publish', {
       method: 'POST',
       body: JSON.stringify({
-        image_urls: urls,
+        parts,
+        brand: document.getElementById('brand')?.value.trim() || '',
         caption: document.getElementById('caption').value.trim(),
+        // optional override kalau user isi URL manual
+        image_urls: slides.map(s => (s.image_url || '').trim()).filter(Boolean),
       }),
     });
-    status.textContent = `Published · ${data.container || 'ok'}`;
-    Threads.toast('Carousel terpublish', true);
+    status.textContent = `Published · ${(data.result && data.result.container) || data.container || 'ok'}`;
+    Threads.toast('Carousel terpublish (auto-gambar dari teks)', true);
   } catch (e) {
     status.textContent = 'Error: ' + e.message;
     showAlert(e.message);

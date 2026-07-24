@@ -4,6 +4,7 @@ import (
 	"bufio"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"net/url"
@@ -693,18 +694,53 @@ func main() {
 		}
 		var body struct {
 			ImageURLs []string `json:"image_urls"`
+			Parts     []string `json:"parts"`
+			Brand     string   `json:"brand"`
 			Caption   string   `json:"caption"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
 			return
 		}
-		out, err := ig.PublishCarousel(body.ImageURLs, body.Caption)
+
+		urls := make([]string, 0, len(body.ImageURLs))
+		for _, u := range body.ImageURLs {
+			u = strings.TrimSpace(u)
+			if u != "" {
+				urls = append(urls, u)
+			}
+		}
+
+		// Auto-render teks → PNG publik kalau parts dikirim / URL kurang
+		if len(body.Parts) >= 2 && (len(urls) < 2 || len(urls) < len(body.Parts)) {
+			brand := strings.TrimSpace(body.Brand)
+			if brand == "" {
+				brand = aiMemory.Get().Brand
+			}
+			key := time.Now().Format("2006-01-02") + "/manual-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
+			rendered, err := lazy.RenderPartsPublic(lazyStore.MediaDir(), publicBase, brand, key, body.Parts)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			urls = rendered
+		}
+
+		if len(urls) < 2 {
+			writeErr(w, http.StatusBadRequest, "butuh minimal 2 slide (teks akan di-render jadi gambar, atau isi image_urls)")
+			return
+		}
+
+		out, err := ig.PublishCarousel(urls, body.Caption)
 		if err != nil {
 			writeAPIErr(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, out)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":        true,
+			"image_urls": urls,
+			"result":    out,
+		})
 	})
 
 	mux.HandleFunc("GET /api/lazy/config", func(w http.ResponseWriter, r *http.Request) {
