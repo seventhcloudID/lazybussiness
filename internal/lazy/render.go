@@ -186,7 +186,7 @@ func RenderSlidePNG(path, brand, text string) error {
 	var faceBody font.Face
 	var lines []drawLine
 	var lineGap, paraGap int
-	for size := 40.0; size >= 28.0; size -= 1 {
+	for size := 46.0; size >= 32.0; size -= 1 {
 		if faceBody != nil {
 			closeFace(faceBody)
 		}
@@ -194,11 +194,11 @@ func RenderSlidePNG(path, brand, text string) error {
 		if faceBody == nil {
 			continue
 		}
-		lineGap = 12
-		paraGap = int(size*0.85) + 10
-		if size <= 32 {
-			lineGap = 9
-			paraGap = int(size*0.7) + 8
+		lineGap = 14
+		paraGap = int(size*0.9) + 12
+		if size <= 36 {
+			lineGap = 11
+			paraGap = int(size*0.75) + 10
 		}
 		lines = layoutLines(faceBody, body, maxW)
 		if blockHeight(faceBody, lines, lineGap, paraGap) <= bodyAvail {
