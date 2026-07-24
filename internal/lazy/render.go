@@ -136,7 +136,7 @@ func blockHeight(face font.Face, lines []drawLine, lineGap, paraGap int) int {
 	return h
 }
 
-// RenderSlidePNG — konten sebagai satu blok, digeser vertikal biar proporsional (tidak mepet atas).
+// RenderSlidePNG — @brand + garis fixed di atas; body di bawahnya (tidak ikut naik/turun).
 func RenderSlidePNG(path, brand, text string) error {
 	if parsedFont == nil {
 		return fmt.Errorf("font slide belum siap")
@@ -154,27 +154,38 @@ func RenderSlidePNG(path, brand, text string) error {
 	}
 
 	padX := 100
-	padTop := 120
-	padBottom := 120
+	padTop := 88
+	padBottom := 110
 	maxW := slideW - 2*padX
-	contentArea := slideH - padTop - padBottom
 
+	// Header fixed di atas
+	y := padTop
 	handle := brandHandle(brand)
-	headerH := 0
 	if handle != "" {
-		headerH = 28 + 24 + 2 + 36 // handle + gap + line + gap
+		fh := makeFace(26)
+		if fh != nil {
+			drawString(img, fh, handle, padX, y+fh.Metrics().Ascent.Ceil(), rgb(150, 158, 170))
+			y += fh.Metrics().Height.Ceil() + 22
+			closeFace(fh)
+		}
+		divY := y
+		for x := padX; x < slideW-padX; x++ {
+			img.SetRGBA(x, divY, rgb(58, 66, 80))
+		}
+		y += 36
 	}
 
+	bodyTop := y
 	body := normalizeBody(text)
 	if utf8.RuneCountInString(body) > 500 {
 		runes := []rune(body)
 		body = string(runes[:500])
 	}
 
+	bodyAvail := slideH - padBottom - bodyTop
 	var faceBody font.Face
 	var lines []drawLine
 	var lineGap, paraGap int
-	bodyAvail := contentArea - headerH
 	for size := 40.0; size >= 28.0; size -= 1 {
 		if faceBody != nil {
 			closeFace(faceBody)
@@ -199,36 +210,11 @@ func RenderSlidePNG(path, brand, text string) error {
 	}
 	defer closeFace(faceBody)
 
-	bodyH := blockHeight(faceBody, lines, lineGap, paraGap)
-	totalH := headerH + bodyH
-
-	// Pusat vertikal (sedikit ke atas optik: 45% dari sisa ruang di atas)
-	startY := padTop
-	if totalH < contentArea {
-		extra := contentArea - totalH
-		startY = padTop + (extra * 45 / 100)
-	}
-
-	y := startY
-	if handle != "" {
-		fh := makeFace(26)
-		if fh != nil {
-			drawString(img, fh, handle, padX, y+fh.Metrics().Ascent.Ceil(), rgb(150, 158, 170))
-			y += fh.Metrics().Height.Ceil() + 24
-			closeFace(fh)
-		}
-		// Garis tipis penuh — tanpa aksen putih (biar tidak keliatan seperti indikator slide)
-		divY := y
-		for x := padX; x < slideW-padX; x++ {
-			img.SetRGBA(x, divY, rgb(58, 66, 80))
-		}
-		y += 36
-	}
-
 	col := rgb(242, 244, 248)
 	lineH := faceBody.Metrics().Height.Ceil() + lineGap
 	ascent := faceBody.Metrics().Ascent.Ceil()
 	maxY := slideH - padBottom
+	y = bodyTop
 	for _, ln := range lines {
 		if ln.spacer {
 			y += paraGap
