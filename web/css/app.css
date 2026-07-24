@@ -2181,7 +2181,21 @@ main.app-main {
   font-weight: 600;
   letter-spacing: -0.01em;
   text-align: left;
-  overflow: auto;
+  overflow: hidden;
+  flex: 1;
+  min-height: 0;
+}
+
+.igc-slide-text.is-tight {
+  line-height: 1.4;
+  letter-spacing: -0.015em;
+}
+
+.igc-fit-warn {
+  margin: 0.5rem 0 0;
+  font-size: 0.72rem;
+  line-height: 1.4;
+  color: #b45309;
 }
 
 .lazy-steps {

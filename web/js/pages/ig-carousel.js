@@ -106,6 +106,44 @@ function renderPreview() {
   document.getElementById('preview-dots').innerHTML = slides.map((_, i) =>
     `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}"></button>`
   ).join('');
+
+  // Auto-fit: perkecil font sampai teks muat di kartu (kasus kebanyakan char tapi overflow visual).
+  requestAnimationFrame(() => fitPreviewText());
+}
+
+function fitPreviewText() {
+  const el = document.getElementById('preview-text');
+  const warn = document.getElementById('fit-warn');
+  if (!el) return;
+  const parent = el.parentElement;
+  if (!parent) return;
+
+  let size = 0.95; // rem
+  const min = 0.62;
+  el.style.fontSize = size + 'rem';
+  el.classList.remove('is-tight');
+
+  // Measure against card-inner available height
+  let guard = 40;
+  while (guard-- > 0 && size > min && el.scrollHeight > parent.clientHeight + 1) {
+    size -= 0.03;
+    el.style.fontSize = size + 'rem';
+  }
+  if (size <= 0.75) el.classList.add('is-tight');
+
+  const overflow = el.scrollHeight > parent.clientHeight + 2;
+  if (warn) {
+    if (overflow) {
+      warn.hidden = false;
+      warn.textContent = 'Teks masih panjang di ukuran minimum — pecah jadi slide/bagian utas berikutnya biar rapi.';
+    } else if (size < 0.85) {
+      warn.hidden = false;
+      warn.textContent = 'Font diperkecil otomatis supaya muat di kartu.';
+    } else {
+      warn.hidden = true;
+      warn.textContent = '';
+    }
+  }
 }
 
 function selectSlide(i) {

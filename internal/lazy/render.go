@@ -21,22 +21,14 @@ const (
 	slideH = 1350
 )
 
-var (
-	faceHandle font.Face
-	faceBody   font.Face
-)
+var parsedFont *opentype.Font
 
 func init() {
 	ft, err := opentype.Parse(goregular.TTF)
 	if err != nil {
 		return
 	}
-	faceHandle, _ = opentype.NewFace(ft, &opentype.FaceOptions{
-		Size: 36, DPI: 72, Hinting: font.HintingFull,
-	})
-	faceBody, _ = opentype.NewFace(ft, &opentype.FaceOptions{
-		Size: 48, DPI: 72, Hinting: font.HintingFull,
-	})
+	parsedFont = ft
 }
 
 func brandHandle(brand string) string {
@@ -62,10 +54,35 @@ func lerpByte(a, b uint8, t float64) uint8 {
 	return uint8(float64(a) + (float64(b)-float64(a))*t + 0.5)
 }
 
+func makeFace(size float64) font.Face {
+	if parsedFont == nil {
+		return nil
+	}
+	f, err := opentype.NewFace(parsedFont, &opentype.FaceOptions{
+		Size: size, DPI: 72, Hinting: font.HintingFull,
+	})
+	if err != nil {
+		return nil
+	}
+	return f
+}
+
+func textBlockHeight(face font.Face, lines []string, gap int) int {
+	if face == nil {
+		return 0
+	}
+	lineH := face.Metrics().Height.Ceil() + gap
+	n := len(lines)
+	if n == 0 {
+		return 0
+	}
+	return n * lineH
+}
+
 // RenderSlidePNG writes a 4:5 dark slide PNG with @brand, divider, top-aligned text.
-// Uses only opaque pixels — semi-transparent draw.Over on image.RGBA breaks colors (pink/green).
+// Font size auto-shrinks so the full body fits (no silent crop).
 func RenderSlidePNG(path, brand, text string) error {
-	if faceHandle == nil || faceBody == nil {
+	if parsedFont == nil {
 		return fmt.Errorf("font slide belum siap")
 	}
 	if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
@@ -74,12 +91,11 @@ func RenderSlidePNG(path, brand, text string) error {
 
 	img := image.NewRGBA(image.Rect(0, 0, slideW, slideH))
 	base := rgb(11, 16, 24)
-	top := rgb(28, 48, 86) // soft blue wash, opaque blend
+	top := rgb(28, 48, 86)
 	for y := 0; y < slideH; y++ {
 		t := 0.0
 		if y < 480 {
-			t = 1 - float64(y)/480
-			t *= 0.55
+			t = (1 - float64(y)/480) * 0.55
 		}
 		row := rgb(
 			lerpByte(base.R, top.R, t),
@@ -92,12 +108,19 @@ func RenderSlidePNG(path, brand, text string) error {
 	}
 
 	padX := 72
-	y := 80
-
+	contentTop := 80
 	handle := brandHandle(brand)
-	if handle != "" {
-		drawString(img, faceHandle, handle, padX, y+36, rgb(160, 170, 185))
-		y += 70
+	faceHandle := makeFace(34)
+	defer func() {
+		if faceHandle != nil {
+			_ = faceHandle.Close()
+		}
+	}()
+
+	y := contentTop
+	if handle != "" && faceHandle != nil {
+		drawString(img, faceHandle, handle, padX, y+32, rgb(160, 170, 185))
+		y += 64
 		divY := y
 		for x := padX; x < slideW-padX; x++ {
 			fade := float64(x-padX) / float64(slideW-2*padX)
@@ -112,7 +135,7 @@ func RenderSlidePNG(path, brand, text string) error {
 				}
 			}
 		}
-		y += 48
+		y += 44
 	}
 
 	body := strings.TrimSpace(text)
@@ -120,19 +143,48 @@ func RenderSlidePNG(path, brand, text string) error {
 		runes := []rune(body)
 		body = string(runes[:500])
 	}
-	lines := wrapText(faceBody, body, slideW-2*padX)
-	lineH := faceBody.Metrics().Height.Ceil() + 12
-	maxY := slideH - 100
-	col := rgb(245, 247, 250)
-	for _, line := range lines {
-		if y+lineH > maxY {
+
+	maxY := slideH - 80
+	avail := maxY - y
+	maxW := slideW - 2*padX
+
+	var faceBody font.Face
+	var lines []string
+	var lineGap int
+	for size := 46.0; size >= 26.0; size -= 2 {
+		if faceBody != nil {
+			_ = faceBody.Close()
+		}
+		faceBody = makeFace(size)
+		if faceBody == nil {
+			continue
+		}
+		lineGap = 8
+		if size <= 32 {
+			lineGap = 6
+		}
+		lines = wrapText(faceBody, body, maxW)
+		if textBlockHeight(faceBody, lines, lineGap) <= avail {
 			break
 		}
-		drawString(img, faceBody, line, padX, y+faceBody.Metrics().Ascent.Ceil(), col)
+	}
+	if faceBody == nil {
+		return fmt.Errorf("gagal siapkan font body")
+	}
+	defer faceBody.Close()
+
+	col := rgb(245, 247, 250)
+	lineH := faceBody.Metrics().Height.Ceil() + lineGap
+	ascent := faceBody.Metrics().Ascent.Ceil()
+	for _, line := range lines {
+		if y+lineH > maxY {
+			// Still overflow at min size — stop cleanly (shouldn't happen often).
+			break
+		}
+		drawString(img, faceBody, line, padX, y+ascent, col)
 		y += lineH
 	}
 
-	// Flatten: ensure every pixel is opaque before encode (IG-safe).
 	for i := 0; i < len(img.Pix); i += 4 {
 		img.Pix[i+3] = 255
 	}
@@ -142,8 +194,7 @@ func RenderSlidePNG(path, brand, text string) error {
 		return err
 	}
 	defer f.Close()
-	enc := png.Encoder{CompressionLevel: png.DefaultCompression}
-	return enc.Encode(f, img)
+	return png.Encode(f, img)
 }
 
 func drawString(img *image.RGBA, face font.Face, s string, x, y int, col color.RGBA) {
