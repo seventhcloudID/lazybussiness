@@ -44,16 +44,6 @@ func rgb(r, g, b uint8) color.RGBA {
 	return color.RGBA{R: r, G: g, B: b, A: 255}
 }
 
-func lerpByte(a, b uint8, t float64) uint8 {
-	if t < 0 {
-		t = 0
-	}
-	if t > 1 {
-		t = 1
-	}
-	return uint8(float64(a) + (float64(b)-float64(a))*t + 0.5)
-}
-
 func makeFace(size float64) font.Face {
 	if parsedFont == nil {
 		return nil
@@ -67,20 +57,87 @@ func makeFace(size float64) font.Face {
 	return f
 }
 
-func textBlockHeight(face font.Face, lines []string, gap int) int {
-	if face == nil {
-		return 0
+func closeFace(f font.Face) {
+	if c, ok := f.(interface{ Close() error }); ok {
+		_ = c.Close()
 	}
-	lineH := face.Metrics().Height.Ceil() + gap
-	n := len(lines)
-	if n == 0 {
-		return 0
-	}
-	return n * lineH
 }
 
-// RenderSlidePNG writes a 4:5 dark slide PNG with @brand, divider, top-aligned text.
-// Font size auto-shrinks so the full body fits (no silent crop).
+// normalizeBody rapikan enters berlebih biar slide tidak berantakan.
+func normalizeBody(text string) string {
+	text = strings.ReplaceAll(text, "\r\n", "\n")
+	text = strings.TrimSpace(text)
+	lines := strings.Split(text, "\n")
+	var paras []string
+	var buf []string
+	flush := func() {
+		if len(buf) == 0 {
+			return
+		}
+		paras = append(paras, strings.Join(buf, " "))
+		buf = nil
+	}
+	for _, ln := range lines {
+		ln = strings.TrimSpace(ln)
+		if ln == "" {
+			flush()
+			continue
+		}
+		buf = append(buf, ln)
+	}
+	flush()
+	return strings.Join(paras, "\n\n")
+}
+
+type drawLine struct {
+	text   string
+	spacer bool // paragraph gap
+}
+
+func layoutLines(face font.Face, text string, maxWidth int) []drawLine {
+	var out []drawLine
+	paras := strings.Split(text, "\n\n")
+	for pi, para := range paras {
+		para = strings.TrimSpace(para)
+		if para == "" {
+			continue
+		}
+		words := strings.Fields(para)
+		if len(words) == 0 {
+			continue
+		}
+		cur := words[0]
+		for _, w := range words[1:] {
+			trial := cur + " " + w
+			if font.MeasureString(face, trial).Ceil() <= maxWidth {
+				cur = trial
+			} else {
+				out = append(out, drawLine{text: cur})
+				cur = w
+			}
+		}
+		out = append(out, drawLine{text: cur})
+		if pi < len(paras)-1 {
+			out = append(out, drawLine{spacer: true})
+		}
+	}
+	return out
+}
+
+func blockHeight(face font.Face, lines []drawLine, lineGap, paraGap int) int {
+	h := 0
+	lineH := face.Metrics().Height.Ceil() + lineGap
+	for _, ln := range lines {
+		if ln.spacer {
+			h += paraGap
+			continue
+		}
+		h += lineH
+	}
+	return h
+}
+
+// RenderSlidePNG — slide 4:5 bersih: margin longgar, @brand, garis tipis, body rapi.
 func RenderSlidePNG(path, brand, text string) error {
 	if parsedFont == nil {
 		return fmt.Errorf("font slide belum siap")
@@ -90,98 +147,97 @@ func RenderSlidePNG(path, brand, text string) error {
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, slideW, slideH))
-	base := rgb(11, 16, 24)
-	top := rgb(28, 48, 86)
+	// Solid dark — lebih rapi daripada gradient berat
+	bg := rgb(14, 18, 26)
 	for y := 0; y < slideH; y++ {
-		t := 0.0
-		if y < 480 {
-			t = (1 - float64(y)/480) * 0.55
-		}
-		row := rgb(
-			lerpByte(base.R, top.R, t),
-			lerpByte(base.G, top.G, t),
-			lerpByte(base.B, top.B, t),
-		)
 		for x := 0; x < slideW; x++ {
-			img.SetRGBA(x, y, row)
+			img.SetRGBA(x, y, bg)
+		}
+	}
+	// Soft top accent strip (opaque blend)
+	for y := 0; y < 8; y++ {
+		c := rgb(56, 98, 180)
+		for x := 0; x < slideW; x++ {
+			img.SetRGBA(x, y, c)
 		}
 	}
 
-	padX := 72
-	contentTop := 80
-	handle := brandHandle(brand)
-	faceHandle := makeFace(34)
-	defer func() {
-		if faceHandle != nil {
-			_ = faceHandle.Close()
-		}
-	}()
+	padX := 96
+	padTop := 96
+	padBottom := 110
+	maxW := slideW - 2*padX
+	y := padTop
 
-	y := contentTop
-	if handle != "" && faceHandle != nil {
-		drawString(img, faceHandle, handle, padX, y+32, rgb(160, 170, 185))
-		y += 64
+	handle := brandHandle(brand)
+	if handle != "" {
+		fh := makeFace(28)
+		if fh != nil {
+			drawString(img, fh, handle, padX, y+fh.Metrics().Ascent.Ceil(), rgb(140, 150, 165))
+			y += fh.Metrics().Height.Ceil() + 28
+			closeFace(fh)
+		}
+		// thin divider
 		divY := y
 		for x := padX; x < slideW-padX; x++ {
-			fade := float64(x-padX) / float64(slideW-2*padX)
-			v := lerpByte(200, 40, fade)
-			img.SetRGBA(x, divY, rgb(v, v, v))
+			img.SetRGBA(x, divY, rgb(55, 62, 75))
 		}
-		for x := padX; x < padX+56; x++ {
-			for dy := -1; dy <= 1; dy++ {
-				yy := divY + dy
-				if yy >= 0 && yy < slideH {
-					img.SetRGBA(x, yy, rgb(230, 232, 236))
-				}
+		for x := padX; x < padX+48; x++ {
+			img.SetRGBA(x, divY, rgb(210, 214, 220))
+			if divY+1 < slideH {
+				img.SetRGBA(x, divY+1, rgb(210, 214, 220))
 			}
 		}
-		y += 44
+		y += 40
 	}
 
-	body := strings.TrimSpace(text)
+	body := normalizeBody(text)
 	if utf8.RuneCountInString(body) > 500 {
 		runes := []rune(body)
 		body = string(runes[:500])
 	}
 
-	maxY := slideH - 80
-	avail := maxY - y
-	maxW := slideW - 2*padX
-
+	avail := slideH - padBottom - y
 	var faceBody font.Face
-	var lines []string
-	var lineGap int
-	for size := 46.0; size >= 26.0; size -= 2 {
+	var lines []drawLine
+	var lineGap, paraGap int
+	// Prefer readable sizes; shrink until everything fits.
+	for size := 42.0; size >= 28.0; size -= 1 {
 		if faceBody != nil {
-			_ = faceBody.Close()
+			closeFace(faceBody)
 		}
 		faceBody = makeFace(size)
 		if faceBody == nil {
 			continue
 		}
-		lineGap = 8
+		lineGap = 10
+		paraGap = int(size*0.75) + 8
 		if size <= 32 {
-			lineGap = 6
+			lineGap = 8
+			paraGap = int(size*0.65) + 6
 		}
-		lines = wrapText(faceBody, body, maxW)
-		if textBlockHeight(faceBody, lines, lineGap) <= avail {
+		lines = layoutLines(faceBody, body, maxW)
+		if blockHeight(faceBody, lines, lineGap, paraGap) <= avail {
 			break
 		}
 	}
 	if faceBody == nil {
 		return fmt.Errorf("gagal siapkan font body")
 	}
-	defer faceBody.Close()
+	defer closeFace(faceBody)
 
-	col := rgb(245, 247, 250)
+	col := rgb(242, 244, 248)
 	lineH := faceBody.Metrics().Height.Ceil() + lineGap
 	ascent := faceBody.Metrics().Ascent.Ceil()
-	for _, line := range lines {
+	maxY := slideH - padBottom
+	for _, ln := range lines {
+		if ln.spacer {
+			y += paraGap
+			continue
+		}
 		if y+lineH > maxY {
-			// Still overflow at min size — stop cleanly (shouldn't happen often).
 			break
 		}
-		drawString(img, faceBody, line, padX, y+ascent, col)
+		drawString(img, faceBody, ln.text, padX, y+ascent, col)
 		y += lineH
 	}
 
@@ -205,33 +261,4 @@ func drawString(img *image.RGBA, face font.Face, s string, x, y int, col color.R
 		Dot:  fixed.P(x, y),
 	}
 	d.DrawString(s)
-}
-
-func wrapText(face font.Face, text string, maxWidth int) []string {
-	text = strings.ReplaceAll(text, "\r\n", "\n")
-	var lines []string
-	for _, para := range strings.Split(text, "\n") {
-		para = strings.TrimRight(para, " ")
-		if para == "" {
-			lines = append(lines, "")
-			continue
-		}
-		words := strings.Fields(para)
-		if len(words) == 0 {
-			lines = append(lines, "")
-			continue
-		}
-		cur := words[0]
-		for _, w := range words[1:] {
-			trial := cur + " " + w
-			if font.MeasureString(face, trial).Ceil() <= maxWidth {
-				cur = trial
-			} else {
-				lines = append(lines, cur)
-				cur = w
-			}
-		}
-		lines = append(lines, cur)
-	}
-	return lines
 }
