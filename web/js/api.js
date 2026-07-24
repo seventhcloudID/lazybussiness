@@ -2,12 +2,19 @@ window.Threads = window.Threads || {};
 
 Threads.api = async function (path, opts = {}) {
   const res = await fetch(path, {
+    credentials: 'same-origin',
     headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
     ...opts,
   });
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+  if (res.status === 401 && data?.code === 'unauthorized') {
+    if (!location.pathname.endsWith('/login.html')) {
+      location.replace('/login.html?next=' + encodeURIComponent(location.pathname + location.search));
+    }
+    throw new Error('login required');
+  }
   if (!res.ok) {
     const msg =
       data?.error?.error_user_msg ||

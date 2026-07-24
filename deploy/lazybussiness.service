@@ -1,0 +1,14 @@
+[Unit]
+Description=Lazy Business (Threads/IG dashboard)
+After=network.target
+
+[Service]
+Type=simple
+WorkingDirectory=/www/wwwroot/flowa.tigaawan.com
+ExecStart=/www/wwwroot/flowa.tigaawan.com/lazybussiness
+Restart=always
+RestartSec=3
+EnvironmentFile=/www/wwwroot/flowa.tigaawan.com/.env
+
+[Install]
+WantedBy=multi-user.target

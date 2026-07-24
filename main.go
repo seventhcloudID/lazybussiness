@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"threads-dashboard/internal/ai"
+	"threads-dashboard/internal/auth"
 	"threads-dashboard/internal/instagram"
 	"threads-dashboard/internal/lazy"
 	"threads-dashboard/internal/threads"
@@ -66,6 +67,13 @@ func main() {
 	lazySched := lazy.NewScheduler(lazyDeps)
 	lazySched.Start()
 
+	gate := auth.NewFromEnv()
+	if gate.Enabled() {
+		log.Println("login aktif (AUTH_USER/AUTH_PASSWORD)")
+	} else {
+		log.Println("login NONAKTIF — set AUTH_USER + AUTH_PASSWORD di .env (wajib di VPS)")
+	}
+
 	mux := http.NewServeMux()
 	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/ringkasan.html", http.StatusFound)
@@ -77,7 +85,39 @@ func main() {
 			"connected":    client.Connected(),
 			"ig_connected": ig.Connected(),
 			"ai":           aiClient.Enabled(),
+			"auth":         gate.Enabled(),
 		})
+	})
+
+	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"enabled":       gate.Enabled(),
+			"authenticated": !gate.Enabled() || gate.Valid(r),
+		})
+	})
+	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
+		if !gate.Enabled() {
+			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "auth": false})
+			return
+		}
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		if !gate.Check(body.Username, body.Password) {
+			writeErr(w, http.StatusUnauthorized, "username/password salah")
+			return
+		}
+		gate.IssueCookie(w, body.Username)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	})
+	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
+		gate.ClearCookie(w)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
@@ -711,7 +751,7 @@ func main() {
 	} else {
 		log.Println("PUBLIC_BASE_URL kosong — auto IG carousel akan di-skip")
 	}
-	if err := http.ListenAndServe(addr, withCORS(mux)); err != nil {
+	if err := http.ListenAndServe(addr, withCORS(gate.Middleware(mux))); err != nil {
 		log.Fatal(err)
 	}
 }

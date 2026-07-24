@@ -22,7 +22,7 @@ Threads.ensureAssets = function () {
   const css = document.createElement('link');
   css.id = 'app-css';
   css.rel = 'stylesheet';
-  css.href = '/css/app.css?v=saas29';
+  css.href = '/css/app.css?v=saas30';
   document.head.appendChild(css);
 };
 
@@ -64,7 +64,15 @@ Threads.mountSidebar = function (active) {
   ${link('ig-token', '/ig-token.html', 'bi-key-fill', 'IG Token')}
   <div class="th-nav-label">Settings</div>
   ${link('token', '/token.html', 'bi-key', 'Threads Token')}
+  <button type="button" id="btn-logout" class="th-nav-link th-nav-logout">
+    <i class="bi bi-box-arrow-right"></i><span>Logout</span>
+  </button>
   `;
+
+  el.querySelector('#btn-logout')?.addEventListener('click', async () => {
+    try { await Threads.api('/api/auth/logout', { method: 'POST', body: '{}' }); } catch {}
+    location.href = '/login.html';
+  });
 };
 
 Threads.pageShell = function (active) {
