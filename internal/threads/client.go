@@ -996,6 +996,76 @@ func (c *Client) Publish(creationID string) (json.RawMessage, error) {
 	})
 }
 
+// WaitContainer menunggu status FINISHED/PUBLISHED sebelum threads_publish (hindari 4279009).
+func (c *Client) WaitContainer(creationID string, maxWait time.Duration) error {
+	creationID = strings.TrimSpace(creationID)
+	if creationID == "" {
+		return fmt.Errorf("creation_id wajib")
+	}
+	if maxWait <= 0 {
+		maxWait = 90 * time.Second
+	}
+	deadline := time.Now().Add(maxWait)
+	var last string
+	for {
+		raw, err := c.GetContainerStatus(creationID)
+		if err != nil {
+			// Resource belum terlihat — tunggu, jangan gagal langsung
+			if time.Now().After(deadline) {
+				return err
+			}
+			time.Sleep(2 * time.Second)
+			continue
+		}
+		var out struct {
+			Status string `json:"status"`
+		}
+		_ = json.Unmarshal(raw, &out)
+		last = strings.ToUpper(strings.TrimSpace(out.Status))
+		switch last {
+		case "FINISHED", "PUBLISHED":
+			return nil
+		case "ERROR", "EXPIRED":
+			return fmt.Errorf("container gagal (%s): %s", last, string(raw))
+		}
+		if time.Now().After(deadline) {
+			return fmt.Errorf("timeout menunggu container (status=%s)", last)
+		}
+		time.Sleep(2 * time.Second)
+	}
+}
+
+// PublishContainer waits then publishes; retries on media-not-found (4279009).
+func (c *Client) PublishContainer(creationID string) (json.RawMessage, error) {
+	if err := c.WaitContainer(creationID, 60*time.Second); err != nil {
+		return nil, err
+	}
+	var lastErr error
+	for attempt := 1; attempt <= 4; attempt++ {
+		raw, err := c.Publish(creationID)
+		if err == nil {
+			return raw, nil
+		}
+		lastErr = err
+		if !isThreadsMediaNotFound(err) {
+			return nil, err
+		}
+		time.Sleep(time.Duration(attempt*2) * time.Second)
+	}
+	return nil, lastErr
+}
+
+func isThreadsMediaNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "4279009") ||
+		strings.Contains(s, "Media Tidak Ditemukan") ||
+		strings.Contains(s, "Media Not Found") ||
+		strings.Contains(s, "does not exist")
+}
+
 func (c *Client) GetContainerStatus(id string) (json.RawMessage, error) {
 	return c.Do(http.MethodGet, "/"+id, url.Values{
 		"fields": {"id,status,error_message"},

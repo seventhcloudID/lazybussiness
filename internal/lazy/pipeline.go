@@ -184,21 +184,42 @@ func (d *Deps) publishThreads(parts []string) ([]string, error) {
 		if prevID != "" {
 			form.Set("reply_to_id", prevID)
 		}
-		container, err := d.Threads.CreateContainer(form)
-		if err != nil {
-			return ids, fmt.Errorf("bagian %d container: %w", i+1, err)
-		}
+
 		var created struct {
 			ID string `json:"id"`
 		}
-		_ = json.Unmarshal(container, &created)
-		if created.ID == "" {
-			return ids, fmt.Errorf("bagian %d: container id kosong", i+1)
+		var pub json.RawMessage
+		var lastErr error
+		for attempt := 1; attempt <= 3; attempt++ {
+			container, err := d.Threads.CreateContainer(form)
+			if err != nil {
+				lastErr = fmt.Errorf("bagian %d container: %w", i+1, err)
+				if isMediaNotFound(err) && prevID != "" && attempt < 3 {
+					time.Sleep(time.Duration(attempt*3) * time.Second)
+					continue
+				}
+				return ids, lastErr
+			}
+			_ = json.Unmarshal(container, &created)
+			if created.ID == "" {
+				return ids, fmt.Errorf("bagian %d: container id kosong", i+1)
+			}
+			pub, err = d.Threads.PublishContainer(created.ID)
+			if err != nil {
+				lastErr = fmt.Errorf("bagian %d publish: %w", i+1, err)
+				if isMediaNotFound(err) && attempt < 3 {
+					time.Sleep(time.Duration(attempt*3) * time.Second)
+					continue
+				}
+				return ids, lastErr
+			}
+			lastErr = nil
+			break
 		}
-		pub, err := d.Threads.Publish(created.ID)
-		if err != nil {
-			return ids, fmt.Errorf("bagian %d publish: %w", i+1, err)
+		if lastErr != nil {
+			return ids, lastErr
 		}
+
 		var published struct {
 			ID string `json:"id"`
 		}
@@ -209,14 +230,26 @@ func (d *Deps) publishThreads(parts []string) ([]string, error) {
 		}
 		ids = append(ids, id)
 		prevID = id
+		// Parent harus sempat propagate sebelum reply berikutnya (hindari 4279009 di bagian lanjut).
 		if i < len(parts)-1 {
-			time.Sleep(600 * time.Millisecond)
+			time.Sleep(2500 * time.Millisecond)
 		}
 	}
 	if len(ids) == 0 {
 		return nil, fmt.Errorf("tidak ada bagian yang terpublish")
 	}
 	return ids, nil
+}
+
+func isMediaNotFound(err error) bool {
+	if err == nil {
+		return false
+	}
+	s := err.Error()
+	return strings.Contains(s, "4279009") ||
+		strings.Contains(s, "Media Tidak Ditemukan") ||
+		strings.Contains(s, "Media Not Found") ||
+		strings.Contains(s, "does not exist")
 }
 
 func (d *Deps) renderAndURLs(job Job, brand string, parts []string) ([]string, error) {
