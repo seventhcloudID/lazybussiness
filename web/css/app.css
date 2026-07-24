@@ -2309,11 +2309,26 @@ main.app-main {
 }
 
 .lazy-job {
+  display: block;
+  width: 100%;
+  text-align: left;
   padding: 0.85rem 1rem;
+  border: 0;
   border-bottom: 1px solid var(--line);
+  background: #fff;
+  cursor: pointer;
 }
 
+.lazy-job:hover { background: var(--canvas); }
+
 .lazy-job:last-child { border-bottom: 0; }
+
+.lazy-job-snip {
+  margin-top: 0.35rem;
+  font-size: 0.78rem;
+  color: var(--muted);
+  line-height: 1.4;
+}
 
 .lazy-job-main {
   display: flex;

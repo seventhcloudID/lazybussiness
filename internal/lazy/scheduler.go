@@ -141,20 +141,15 @@ func adjustPastSlots(slots []time.Time, now time.Time, gap time.Duration) []time
 	return ensureMinGap(out, gap)
 }
 
-// RunNow enqueues and immediately runs one extra job (manual test).
+// RunNow enqueues one job and runs it in the background (avoids nginx 504).
 func (s *Scheduler) RunNow() (Job, error) {
 	s.mu.Lock()
 	if s.busy {
 		s.mu.Unlock()
-		return Job{}, fmt.Errorf("scheduler sedang menjalankan job lain")
+		return Job{}, fmt.Errorf("scheduler sedang menjalankan job lain — tunggu selesai")
 	}
 	s.busy = true
 	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		s.busy = false
-		s.mu.Unlock()
-	}()
 
 	loc := s.deps.Store.Location()
 	now := time.Now().In(loc)
@@ -167,16 +162,32 @@ func (s *Scheduler) RunNow() (Job, error) {
 		Status:      StatusPending,
 	}
 	if err := s.deps.Store.AddJobs([]Job{job}); err != nil {
+		s.mu.Lock()
+		s.busy = false
+		s.mu.Unlock()
 		return Job{}, err
 	}
-	s.deps.RunJob(job)
-	// reload
-	for _, j := range s.deps.Store.JobsForDate(date) {
+
+	go func(j Job) {
+		defer func() {
+			s.mu.Lock()
+			s.busy = false
+			s.mu.Unlock()
+		}()
+		log.Printf("lazy run-now mulai %s", j.ID)
+		s.deps.RunJob(j)
+	}(job)
+
+	return job, nil
+}
+
+func (s *Scheduler) GetJob(id string) (Job, bool) {
+	for _, j := range s.deps.Store.ListJobs() {
 		if j.ID == id {
-			return j, nil
+			return j, true
 		}
 	}
-	return job, nil
+	return Job{}, false
 }
 
 type Status struct {

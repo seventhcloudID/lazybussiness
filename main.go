@@ -734,13 +734,27 @@ func main() {
 	mux.HandleFunc("GET /api/lazy/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, lazySched.Status())
 	})
+	mux.HandleFunc("GET /api/lazy/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
+		id := r.PathValue("id")
+		job, ok := lazySched.GetJob(id)
+		if !ok {
+			writeErr(w, http.StatusNotFound, "job tidak ditemukan")
+			return
+		}
+		writeJSON(w, http.StatusOK, job)
+	})
 	mux.HandleFunc("POST /api/lazy/run-now", func(w http.ResponseWriter, r *http.Request) {
 		job, err := lazySched.RunNow()
 		if err != nil {
 			writeErr(w, http.StatusConflict, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, job)
+		writeJSON(w, http.StatusAccepted, map[string]any{
+			"ok":      true,
+			"started": true,
+			"job":     job,
+			"message": "Job jalan di background — pantau antrian (hindari 504)",
+		})
 	})
 
 	mux.Handle("GET /media/lazy/", http.StripPrefix("/media/lazy/", http.FileServer(http.Dir(lazyStore.MediaDir()))))
