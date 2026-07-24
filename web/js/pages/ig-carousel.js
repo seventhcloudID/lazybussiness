@@ -5,6 +5,9 @@ const MAX_CHARS = 500;
 let slides = [];
 let previewIdx = 0;
 let syncing = false;
+let previewBlobUrl = '';
+let renderTimer = null;
+let renderSeq = 0;
 
 function showAlert(msg) {
   const el = document.getElementById('ig-alert');
@@ -83,65 +86,61 @@ function renderPreview() {
   if (previewIdx >= slides.length) previewIdx = slides.length - 1;
   if (previewIdx < 0) previewIdx = 0;
   const s = slides[previewIdx] || {};
-  const card = document.getElementById('preview-card');
-  card.classList.remove('igc-flip');
-  void card.offsetWidth;
-  card.classList.add('igc-flip');
 
-  const handle = brandHandle();
-  const handleEl = document.getElementById('preview-handle');
-  const dividerEl = document.getElementById('preview-divider');
-  if (handle) {
-    handleEl.hidden = false;
-    handleEl.textContent = handle;
-    dividerEl.hidden = false;
-  } else {
-    handleEl.hidden = true;
-    handleEl.textContent = '';
-    dividerEl.hidden = true;
-  }
-
-  document.getElementById('preview-text').textContent = s.text || 'Isi slide (= bagian utas) muncul di sini.';
   document.getElementById('preview-meta').textContent = `${previewIdx + 1} / ${slides.length}`;
   document.getElementById('preview-dots').innerHTML = slides.map((_, i) =>
     `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}"></button>`
   ).join('');
 
-  // Auto-fit: perkecil font sampai teks muat di kartu (kasus kebanyakan char tapi overflow visual).
-  requestAnimationFrame(() => fitPreviewText());
+  schedulePngPreview(s.text || '', document.getElementById('brand')?.value.trim() || '');
 }
 
-function fitPreviewText() {
-  const el = document.getElementById('preview-text');
+function schedulePngPreview(text, brand) {
+  clearTimeout(renderTimer);
+  const loading = document.getElementById('preview-png-loading');
+  if (loading) loading.classList.add('show');
+  renderTimer = setTimeout(() => renderPngPreview(text, brand), 280);
+}
+
+async function renderPngPreview(text, brand) {
+  const seq = ++renderSeq;
+  const img = document.getElementById('preview-png');
+  const loading = document.getElementById('preview-png-loading');
   const warn = document.getElementById('fit-warn');
-  if (!el) return;
-  const parent = el.parentElement;
-  if (!parent) return;
-
-  let size = 0.95; // rem
-  const min = 0.62;
-  el.style.fontSize = size + 'rem';
-  el.classList.remove('is-tight');
-
-  // Measure against card-inner available height
-  let guard = 40;
-  while (guard-- > 0 && size > min && el.scrollHeight > parent.clientHeight + 1) {
-    size -= 0.03;
-    el.style.fontSize = size + 'rem';
-  }
-  if (size <= 0.75) el.classList.add('is-tight');
-
-  const overflow = el.scrollHeight > parent.clientHeight + 2;
-  if (warn) {
-    if (overflow) {
-      warn.hidden = false;
-      warn.textContent = 'Teks masih panjang di ukuran minimum — pecah jadi slide/bagian utas berikutnya biar rapi.';
-    } else if (size < 0.85) {
-      warn.hidden = false;
-      warn.textContent = 'Font diperkecil otomatis supaya muat di kartu.';
-    } else {
+  try {
+    const res = await fetch('/api/ig/carousel/render', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: text || 'Isi slide (= bagian utas) muncul di sini.', brand }),
+    });
+    if (seq !== renderSeq) return;
+    if (res.status === 401) {
+      location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+      return;
+    }
+    if (!res.ok) {
+      const t = await res.text();
+      throw new Error(t || res.statusText);
+    }
+    const blob = await res.blob();
+    if (seq !== renderSeq) return;
+    if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    previewBlobUrl = URL.createObjectURL(blob);
+    img.src = previewBlobUrl;
+    img.onload = () => {
+      if (loading) loading.classList.remove('show');
+    };
+    if (warn) {
       warn.hidden = true;
       warn.textContent = '';
+    }
+  } catch (e) {
+    if (seq !== renderSeq) return;
+    if (loading) loading.classList.remove('show');
+    if (warn) {
+      warn.hidden = false;
+      warn.textContent = 'Gagal render preview: ' + (e.message || e);
     }
   }
 }

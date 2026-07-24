@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IG Carousel — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=saas32">
+<link rel="stylesheet" href="/css/app.css?v=saas34">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -96,21 +96,16 @@
         </div>
         <div class="th-panel-body">
           <div class="igc-stage">
-            <div id="preview-card" class="igc-card">
-              <div class="igc-card-glow"></div>
-              <div class="igc-card-top">
-                <p id="preview-handle" class="igc-handle" hidden></p>
-                <hr id="preview-divider" class="igc-divider" hidden>
-              </div>
-              <div class="igc-card-inner">
-                <p id="preview-text" class="igc-slide-text">Isi slide muncul di sini.</p>
-              </div>
-              <div class="igc-card-foot">
-                <div class="igc-dots" id="preview-dots"></div>
-                <span id="preview-meta" class="igc-meta">1 / 6</span>
-              </div>
+            <div class="igc-png-wrap">
+              <img id="preview-png" class="igc-png" alt="Preview slide (hasil render publish)">
+              <div id="preview-png-loading" class="igc-png-loading">Merender gambar…</div>
+            </div>
+            <div class="igc-png-meta">
+              <div class="igc-dots" id="preview-dots"></div>
+              <span id="preview-meta" class="igc-meta text-ink">1 / 6</span>
             </div>
           </div>
+          <p class="text-[11px] text-muted mt-2 mb-0">Preview = PNG asli yang di-upload ke IG (bukan mock CSS).</p>
           <p id="consideration" class="igc-consideration"></p>
           <p id="fit-warn" class="igc-fit-warn" hidden></p>
           <div class="igc-actions">
@@ -144,8 +139,8 @@
     </div>
   </div>
 </main>
-<script src="/js/api.js?v=saas33"></script>
-<script src="/js/layout.js?v=saas33"></script>
-<script src="/js/pages/ig-carousel.js?v=saas33"></script>
+<script src="/js/api.js?v=saas34"></script>
+<script src="/js/layout.js?v=saas34"></script>
+<script src="/js/pages/ig-carousel.js?v=saas34"></script>
 </body>
 </html>

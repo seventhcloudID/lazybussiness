@@ -2172,23 +2172,54 @@ main.app-main {
   line-height: 1.2;
 }
 
-.igc-slide-text {
-  margin: 0;
-  font-size: 0.95rem;
-  line-height: 1.55;
-  white-space: pre-wrap;
-  color: rgba(248, 250, 252, 0.92);
-  font-weight: 600;
-  letter-spacing: -0.01em;
-  text-align: left;
+.igc-png-wrap {
+  position: relative;
+  width: min(100%, 300px);
+  margin: 0 auto;
+  aspect-ratio: 4 / 5;
+  border-radius: 18px;
   overflow: hidden;
-  flex: 1;
-  min-height: 0;
+  background: #0b1018;
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow-soft);
 }
 
-.igc-slide-text.is-tight {
-  line-height: 1.4;
-  letter-spacing: -0.015em;
+.igc-png {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.igc-png-loading {
+  position: absolute;
+  inset: 0;
+  display: none;
+  place-items: center;
+  background: rgba(11, 16, 24, 0.55);
+  color: #f8fafc;
+  font-size: 0.78rem;
+  font-weight: 600;
+}
+
+.igc-png-loading.show {
+  display: grid;
+}
+
+.igc-png-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  width: min(100%, 300px);
+  margin: 0.65rem auto 0;
+}
+
+.igc-png-meta .igc-dots button {
+  background: rgba(15, 23, 42, 0.25);
+}
+
+.igc-png-meta .igc-dots button.on {
+  background: var(--ink);
 }
 
 .igc-fit-warn {

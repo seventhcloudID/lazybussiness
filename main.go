@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
@@ -685,6 +686,45 @@ func main() {
 			"carousel":  carousel,
 			"pipeline":  []string{"generate_utas", "post_threads", "carousel_ig"},
 		})
+	})
+
+	mux.HandleFunc("POST /api/ig/carousel/render", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Text  string `json:"text"`
+			Brand string `json:"brand"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		text := strings.TrimSpace(body.Text)
+		if text == "" {
+			text = "Isi slide muncul di sini."
+		}
+		brand := strings.TrimSpace(body.Brand)
+		if brand == "" {
+			brand = aiMemory.Get().Brand
+		}
+		dir := filepath.Join(lazyStore.MediaDir(), "_preview")
+		if err := os.MkdirAll(dir, 0o755); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		path := filepath.Join(dir, fmt.Sprintf("%d.png", time.Now().UnixNano()))
+		if err := lazy.RenderSlidePNG(path, brand, text); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		defer os.Remove(path)
+		b, err := os.ReadFile(path)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		w.Header().Set("Content-Type", "image/png")
+		w.Header().Set("Cache-Control", "no-store")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(b)
 	})
 
 	mux.HandleFunc("POST /api/ig/carousel/publish", func(w http.ResponseWriter, r *http.Request) {
