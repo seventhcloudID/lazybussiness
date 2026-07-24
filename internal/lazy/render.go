@@ -63,7 +63,6 @@ func closeFace(f font.Face) {
 	}
 }
 
-// normalizeBody rapikan enters berlebih biar slide tidak berantakan.
 func normalizeBody(text string) string {
 	text = strings.ReplaceAll(text, "\r\n", "\n")
 	text = strings.TrimSpace(text)
@@ -91,7 +90,7 @@ func normalizeBody(text string) string {
 
 type drawLine struct {
 	text   string
-	spacer bool // paragraph gap
+	spacer bool
 }
 
 func layoutLines(face font.Face, text string, maxWidth int) []drawLine {
@@ -137,7 +136,7 @@ func blockHeight(face font.Face, lines []drawLine, lineGap, paraGap int) int {
 	return h
 }
 
-// RenderSlidePNG — slide 4:5 bersih: margin longgar, @brand, garis tipis, body rapi.
+// RenderSlidePNG — konten sebagai satu blok, digeser vertikal biar proporsional (tidak mepet atas).
 func RenderSlidePNG(path, brand, text string) error {
 	if parsedFont == nil {
 		return fmt.Errorf("font slide belum siap")
@@ -147,47 +146,23 @@ func RenderSlidePNG(path, brand, text string) error {
 	}
 
 	img := image.NewRGBA(image.Rect(0, 0, slideW, slideH))
-	// Solid dark — lebih rapi daripada gradient berat
 	bg := rgb(14, 18, 26)
 	for y := 0; y < slideH; y++ {
 		for x := 0; x < slideW; x++ {
 			img.SetRGBA(x, y, bg)
 		}
 	}
-	// Soft top accent strip (opaque blend)
-	for y := 0; y < 8; y++ {
-		c := rgb(56, 98, 180)
-		for x := 0; x < slideW; x++ {
-			img.SetRGBA(x, y, c)
-		}
-	}
 
-	padX := 96
-	padTop := 96
-	padBottom := 110
+	padX := 100
+	padTop := 120
+	padBottom := 120
 	maxW := slideW - 2*padX
-	y := padTop
+	contentArea := slideH - padTop - padBottom
 
 	handle := brandHandle(brand)
+	headerH := 0
 	if handle != "" {
-		fh := makeFace(28)
-		if fh != nil {
-			drawString(img, fh, handle, padX, y+fh.Metrics().Ascent.Ceil(), rgb(140, 150, 165))
-			y += fh.Metrics().Height.Ceil() + 28
-			closeFace(fh)
-		}
-		// thin divider
-		divY := y
-		for x := padX; x < slideW-padX; x++ {
-			img.SetRGBA(x, divY, rgb(55, 62, 75))
-		}
-		for x := padX; x < padX+48; x++ {
-			img.SetRGBA(x, divY, rgb(210, 214, 220))
-			if divY+1 < slideH {
-				img.SetRGBA(x, divY+1, rgb(210, 214, 220))
-			}
-		}
-		y += 40
+		headerH = 28 + 24 + 2 + 36 // handle + gap + line + gap
 	}
 
 	body := normalizeBody(text)
@@ -196,12 +171,11 @@ func RenderSlidePNG(path, brand, text string) error {
 		body = string(runes[:500])
 	}
 
-	avail := slideH - padBottom - y
 	var faceBody font.Face
 	var lines []drawLine
 	var lineGap, paraGap int
-	// Prefer readable sizes; shrink until everything fits.
-	for size := 42.0; size >= 28.0; size -= 1 {
+	bodyAvail := contentArea - headerH
+	for size := 40.0; size >= 28.0; size -= 1 {
 		if faceBody != nil {
 			closeFace(faceBody)
 		}
@@ -209,14 +183,14 @@ func RenderSlidePNG(path, brand, text string) error {
 		if faceBody == nil {
 			continue
 		}
-		lineGap = 10
-		paraGap = int(size*0.75) + 8
+		lineGap = 12
+		paraGap = int(size*0.85) + 10
 		if size <= 32 {
-			lineGap = 8
-			paraGap = int(size*0.65) + 6
+			lineGap = 9
+			paraGap = int(size*0.7) + 8
 		}
 		lines = layoutLines(faceBody, body, maxW)
-		if blockHeight(faceBody, lines, lineGap, paraGap) <= avail {
+		if blockHeight(faceBody, lines, lineGap, paraGap) <= bodyAvail {
 			break
 		}
 	}
@@ -224,6 +198,32 @@ func RenderSlidePNG(path, brand, text string) error {
 		return fmt.Errorf("gagal siapkan font body")
 	}
 	defer closeFace(faceBody)
+
+	bodyH := blockHeight(faceBody, lines, lineGap, paraGap)
+	totalH := headerH + bodyH
+
+	// Pusat vertikal (sedikit ke atas optik: 45% dari sisa ruang di atas)
+	startY := padTop
+	if totalH < contentArea {
+		extra := contentArea - totalH
+		startY = padTop + (extra * 45 / 100)
+	}
+
+	y := startY
+	if handle != "" {
+		fh := makeFace(26)
+		if fh != nil {
+			drawString(img, fh, handle, padX, y+fh.Metrics().Ascent.Ceil(), rgb(150, 158, 170))
+			y += fh.Metrics().Height.Ceil() + 24
+			closeFace(fh)
+		}
+		// Garis tipis penuh — tanpa aksen putih (biar tidak keliatan seperti indikator slide)
+		divY := y
+		for x := padX; x < slideW-padX; x++ {
+			img.SetRGBA(x, divY, rgb(58, 66, 80))
+		}
+		y += 36
+	}
 
 	col := rgb(242, 244, 248)
 	lineH := faceBody.Metrics().Height.Ceil() + lineGap
