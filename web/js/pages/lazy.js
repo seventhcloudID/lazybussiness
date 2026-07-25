@@ -3,6 +3,10 @@ Threads.pageShell('lazy');
 let pollTimer = null;
 let watchJobId = null;
 let fastPoll = false;
+let detailJob = null;
+let previewIdx = 0;
+let previewBlobUrl = '';
+let renderSeq = 0;
 
 function showAlert(msg) {
   const el = document.getElementById('lazy-alert');
@@ -39,29 +43,115 @@ function statusBadge(st) {
 
 function showJobDetail(job) {
   if (!job) return;
+  detailJob = job;
   const box = document.getElementById('lazy-last');
   box.classList.remove('hidden');
   const st = job.status || '';
   document.getElementById('lazy-title').textContent =
-    `${job.title || job.id} · ${st} · jadwal ${fmtTime(job.scheduled_at)}`;
+    `${job.title || job.id} · ${st} · ${fmtTime(job.scheduled_at)}`;
   const parts = job.parts || [];
   document.getElementById('lazy-parts').innerHTML = parts.length
     ? parts.map((p, i) => `
-      <div class="gen-thread-part">
+      <button type="button" class="gen-thread-part lazy-part-btn${i === previewIdx ? ' on' : ''}" data-part="${i}">
         <div class="gen-thread-n">${i + 1}</div>
         <div class="gen-thread-text"><p>${Threads.escapeHtml(p)}</p></div>
-      </div>`).join('')
+      </button>`).join('')
     : `<p class="text-muted text-sm m-0">${
         st === 'running' || st === 'pending'
-          ? 'Masih generate/publish… konten muncul setelah selesai.'
+          ? 'Masih generate/publish… preview muncul setelah ada teks.'
           : 'Belum ada teks (gagal sebelum generate?).'
       }</p>`;
   const bits = [];
   if (job.caption) bits.push('Caption IG:\n' + job.caption);
   if (job.threads_ids?.length) bits.push('Threads IDs: ' + job.threads_ids.join(', '));
   if (job.ig_container) bits.push('IG container: ' + job.ig_container);
+  if (job.image_urls?.length) bits.push('Slide images: ' + job.image_urls.length);
   if (job.error) bits.push('⚠️ ' + job.error);
   document.getElementById('lazy-caption').textContent = bits.join('\n\n');
+
+  if (parts.length) {
+    if (previewIdx >= parts.length) previewIdx = 0;
+    renderCarouselPreview();
+  } else {
+    clearCarouselPreview();
+  }
+}
+
+function clearCarouselPreview() {
+  const img = document.getElementById('lazy-preview-png');
+  const loading = document.getElementById('lazy-preview-loading');
+  const dots = document.getElementById('lazy-preview-dots');
+  const meta = document.getElementById('lazy-preview-meta');
+  if (previewBlobUrl) {
+    URL.revokeObjectURL(previewBlobUrl);
+    previewBlobUrl = '';
+  }
+  if (img) img.removeAttribute('src');
+  if (loading) loading.classList.remove('show');
+  if (dots) dots.innerHTML = '';
+  if (meta) meta.textContent = '0 / 0';
+}
+
+function renderCarouselPreview() {
+  const parts = detailJob?.parts || [];
+  if (!parts.length) {
+    clearCarouselPreview();
+    return;
+  }
+  if (previewIdx < 0) previewIdx = parts.length - 1;
+  if (previewIdx >= parts.length) previewIdx = 0;
+
+  document.getElementById('lazy-preview-meta').textContent = `${previewIdx + 1} / ${parts.length}`;
+  document.getElementById('lazy-preview-dots').innerHTML = parts.map((_, i) =>
+    `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}"></button>`
+  ).join('');
+
+  document.querySelectorAll('.lazy-part-btn').forEach((el, i) => {
+    el.classList.toggle('on', i === previewIdx);
+  });
+
+  schedulePng(parts[previewIdx], document.getElementById('brand')?.value.trim() || '');
+}
+
+let renderTimer = null;
+function schedulePng(text, brand) {
+  clearTimeout(renderTimer);
+  const loading = document.getElementById('lazy-preview-loading');
+  if (loading) loading.classList.add('show');
+  renderTimer = setTimeout(() => renderPng(text, brand), 200);
+}
+
+async function renderPng(text, brand) {
+  const seq = ++renderSeq;
+  const img = document.getElementById('lazy-preview-png');
+  const loading = document.getElementById('lazy-preview-loading');
+  try {
+    const res = await fetch('/api/ig/carousel/render', {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        text: text || '…',
+        brand,
+      }),
+    });
+    if (seq !== renderSeq) return;
+    if (res.status === 401) {
+      location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+      return;
+    }
+    if (!res.ok) throw new Error(await res.text());
+    const blob = await res.blob();
+    if (seq !== renderSeq) return;
+    if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
+    previewBlobUrl = URL.createObjectURL(blob);
+    img.src = previewBlobUrl;
+    img.onload = () => loading?.classList.remove('show');
+  } catch (e) {
+    if (seq !== renderSeq) return;
+    loading?.classList.remove('show');
+    Threads.toast('Preview gagal: ' + (e.message || e), false);
+  }
 }
 
 function renderStatus(st) {
@@ -113,25 +203,26 @@ function renderStatus(st) {
 
   if (!jobs.length) {
     list.innerHTML = '<p class="text-sm text-muted p-4 m-0">Belum ada rencana — nyalakan otomasi lalu simpan (baru muncul jam post).</p>';
-    return;
+  } else {
+    list.innerHTML = jobs.map(j => {
+      const snip = (j.parts?.[0] || '').replace(/\s+/g, ' ').slice(0, 80);
+      return `
+      <button type="button" class="lazy-job" data-job="${Threads.escapeHtml(j.id)}">
+        <div class="lazy-job-main">
+          <strong>${fmtTime(j.scheduled_at)}</strong>
+          ${statusBadge(j.status)}
+          <span class="lazy-job-title">${Threads.escapeHtml(j.title || j.id)}</span>
+        </div>
+        ${snip ? `<div class="lazy-job-snip">${Threads.escapeHtml(snip)}${(j.parts?.[0] || '').length > 80 ? '…' : ''}</div>` : ''}
+        ${j.error ? `<div class="lazy-job-err">${Threads.escapeHtml(j.error)}</div>` : ''}
+      </button>`;
+    }).join('');
   }
-  list.innerHTML = jobs.map(j => {
-    const snip = (j.parts?.[0] || '').replace(/\s+/g, ' ').slice(0, 80);
-    return `
-    <button type="button" class="lazy-job" data-job="${Threads.escapeHtml(j.id)}">
-      <div class="lazy-job-main">
-        <strong>${fmtTime(j.scheduled_at)}</strong>
-        ${statusBadge(j.status)}
-        <span class="lazy-job-title">${Threads.escapeHtml(j.title || j.id)}</span>
-      </div>
-      ${snip ? `<div class="lazy-job-snip">${Threads.escapeHtml(snip)}${(j.parts?.[0] || '').length > 80 ? '…' : ''}</div>` : ''}
-      ${j.error ? `<div class="lazy-job-err">${Threads.escapeHtml(j.error)}</div>` : ''}
-    </button>`;
-  }).join('');
 
   if (watchJobId) {
     const w = jobs.find(j => j.id === watchJobId);
     if (w) {
+      const hadParts = !!(detailJob?.parts?.length);
       showJobDetail(w);
       if (w.status !== 'pending' && w.status !== 'running') {
         watchJobId = null;
@@ -142,6 +233,7 @@ function renderStatus(st) {
           w.status === 'failed' ? 'Gagal — buka detail di antrian' : `Selesai: ${w.status}`,
           w.status !== 'failed'
         );
+        if (!hadParts && w.parts?.length) previewIdx = 0;
       }
     }
   }
@@ -173,16 +265,49 @@ document.getElementById('topic').addEventListener('input', () => {
   document.getElementById('topic').dataset.dirty = '1';
 });
 
+document.getElementById('brand').addEventListener('input', () => {
+  if (detailJob?.parts?.length) renderCarouselPreview();
+});
+
 document.getElementById('job-list').addEventListener('click', async e => {
   const btn = e.target.closest('[data-job]');
   if (!btn) return;
   try {
     const job = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(btn.dataset.job));
+    previewIdx = 0;
     showJobDetail(job);
   } catch (err) {
     Threads.toast(err.message, false);
   }
 });
+
+document.getElementById('lazy-parts').addEventListener('click', e => {
+  const btn = e.target.closest('[data-part]');
+  if (!btn) return;
+  previewIdx = Number(btn.dataset.part) || 0;
+  renderCarouselPreview();
+});
+
+document.getElementById('lazy-preview-dots').addEventListener('click', e => {
+  const btn = e.target.closest('[data-dot]');
+  if (!btn) return;
+  previewIdx = Number(btn.dataset.dot) || 0;
+  renderCarouselPreview();
+});
+
+document.getElementById('lazy-prev').onclick = () => {
+  const n = detailJob?.parts?.length || 0;
+  if (!n) return;
+  previewIdx = (previewIdx - 1 + n) % n;
+  renderCarouselPreview();
+};
+
+document.getElementById('lazy-next').onclick = () => {
+  const n = detailJob?.parts?.length || 0;
+  if (!n) return;
+  previewIdx = (previewIdx + 1) % n;
+  renderCarouselPreview();
+};
 
 document.getElementById('btn-save').onclick = async () => {
   showAlert('');
@@ -223,8 +348,9 @@ document.getElementById('btn-run-now').onclick = async () => {
     const data = await Threads.api('/api/lazy/run-now', { method: 'POST', body: '{}' });
     const job = data.job || data;
     watchJobId = job.id;
+    previewIdx = 0;
     showJobDetail(job);
-    Threads.toast('Job mulai di background — jangan refresh paksa, pantau antrian', true);
+    Threads.toast('Job mulai di background — pantau antrian + preview', true);
     setFastPoll(true);
     await refresh();
   } catch (e) {

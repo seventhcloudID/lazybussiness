@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lazy Business — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=saas36">
+<link rel="stylesheet" href="/css/app.css?v=saas37">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -96,16 +96,39 @@
   </div>
 
   <div id="lazy-last" class="th-panel mb-6 hidden">
-    <div class="th-panel-head">Hasil terakhir (run sekarang)</div>
+    <div class="th-panel-head flex items-center justify-between gap-2">
+      <span>Detail + preview carousel</span>
+      <span id="lazy-title" class="text-xs text-muted font-medium truncate"></span>
+    </div>
     <div class="th-panel-body">
-      <h3 id="lazy-title" class="text-base font-bold m-0 mb-2"></h3>
-      <div id="lazy-parts" class="gen-thread"></div>
-      <p id="lazy-caption" class="text-sm whitespace-pre-wrap mt-3 mb-0 text-muted"></p>
+      <div class="lazy-detail-grid">
+        <div class="lazy-preview-col">
+          <div class="igc-stage">
+            <div class="igc-png-wrap">
+              <img id="lazy-preview-png" class="igc-png" alt="Preview slide carousel">
+              <div id="lazy-preview-loading" class="igc-png-loading">Merender…</div>
+            </div>
+            <div class="igc-png-meta">
+              <div class="flex items-center gap-2">
+                <button type="button" id="lazy-prev" class="th-btn th-btn-ghost !py-1 !px-2"><i class="bi bi-chevron-left"></i></button>
+                <div class="igc-dots" id="lazy-preview-dots"></div>
+                <button type="button" id="lazy-next" class="th-btn th-btn-ghost !py-1 !px-2"><i class="bi bi-chevron-right"></i></button>
+              </div>
+              <span id="lazy-preview-meta" class="igc-meta text-ink">0 / 0</span>
+            </div>
+          </div>
+          <p class="text-[11px] text-muted mt-2 mb-0 text-center">PNG sama seperti yang di-publish ke IG</p>
+        </div>
+        <div class="lazy-parts-col min-w-0">
+          <div id="lazy-parts" class="gen-thread"></div>
+          <p id="lazy-caption" class="text-sm whitespace-pre-wrap mt-3 mb-0 text-muted"></p>
+        </div>
+      </div>
     </div>
   </div>
 </main>
-<script src="/js/api.js?v=saas36"></script>
-<script src="/js/layout.js?v=saas36"></script>
-<script src="/js/pages/lazy.js?v=saas36"></script>
+<script src="/js/api.js?v=saas37"></script>
+<script src="/js/layout.js?v=saas37"></script>
+<script src="/js/pages/lazy.js?v=saas37"></script>
 </body>
 </html>
