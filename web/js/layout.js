@@ -22,7 +22,7 @@ Threads.ensureAssets = function () {
   const css = document.createElement('link');
   css.id = 'app-css';
   css.rel = 'stylesheet';
-  css.href = '/css/app.css?v=strand6';
+  css.href = '/css/app.css?v=strand10';
   document.head.appendChild(css);
 };
 
@@ -74,6 +74,7 @@ Threads.mountSidebar = function (active) {
     ${group('Content', `
       ${link('buat', '/buat.html', 'bi-pencil-square', 'Buat Post')}
       ${link('generate', '/generate.html', 'bi-magic', 'Generate AI')}
+      ${link('thumbnail', '/thumbnail.html', 'bi-image', 'Lab Thumbnail')}
       ${link('lazy', '/lazy.html', 'bi-lightning-charge', 'Lazy Business')}
       ${link('posts', '/posts.html', 'bi-collection', 'Post Saya')}
       ${link('balasan', '/balasan.html', 'bi-chat-dots', 'Balasan')}

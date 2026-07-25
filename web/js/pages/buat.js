@@ -192,6 +192,61 @@ document.getElementById('btn-repost').onclick = async () => {
   }
 };
 
+function setComposeImageURL(url) {
+  const input = document.getElementById('compose-media-url');
+  const box = document.getElementById('compose-thumb-box');
+  const img = document.getElementById('compose-thumb-img');
+  if (!url) {
+    if (box) box.hidden = true;
+    return;
+  }
+  if (input) input.value = url;
+  document.getElementById('mt-img')?.click();
+  if (box && img) {
+    // Prefer relative path for preview if absolute same-origin
+    try {
+      const u = new URL(url, location.origin);
+      img.src = u.origin === location.origin ? u.pathname : url;
+    } catch {
+      img.src = url;
+    }
+    box.hidden = false;
+  }
+}
+
+document.getElementById('btn-gen-thumb').onclick = async () => {
+  readPartsFromDOM();
+  const hook = (parts[0] || '').trim();
+  if (!hook) return Threads.toast('Isi bagian 1 (hook) dulu', false);
+  const btn = document.getElementById('btn-gen-thumb');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Generating…';
+  try {
+    const data = await Threads.api('/api/ai/thumbnail', {
+      method: 'POST',
+      body: JSON.stringify({ hook }),
+    });
+    const url = data.image_url || data.path;
+    if (!url) throw new Error('URL thumbnail kosong');
+    setComposeImageURL(url);
+    Threads.toast('Thumbnail 4:3 siap — mode Gambar aktif', true);
+  } catch (e) {
+    Threads.toast(e.message || e, false);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-image"></i> Thumbnail dari hook';
+  }
+};
+
+document.getElementById('compose-media-url').addEventListener('input', () => {
+  const url = document.getElementById('compose-media-url').value.trim();
+  if (url) setComposeImageURL(url);
+  else {
+    const box = document.getElementById('compose-thumb-box');
+    if (box) box.hidden = true;
+  }
+});
+
 (function loadAIDraft() {
   try {
     let loaded = null;
@@ -207,11 +262,19 @@ document.getElementById('btn-repost').onclick = async () => {
         if (!loaded.length) loaded = [draft.slice(0, MAX_CHARS)];
       }
     }
+    const imageURL = localStorage.getItem('threads_compose_image_url') || '';
     localStorage.removeItem('threads_compose_parts');
     localStorage.removeItem('threads_compose_draft');
+    localStorage.removeItem('threads_compose_image_url');
     if (loaded?.length) {
       setParts(loaded);
-      Threads.toast(`Draf AI dimuat — ${parts.length} bagian utas`, true);
+      if (imageURL) setComposeImageURL(imageURL);
+      Threads.toast(
+        imageURL
+          ? `Draf AI + thumbnail dimuat — ${parts.length} bagian`
+          : `Draf AI dimuat — ${parts.length} bagian utas`,
+        true,
+      );
       return;
     }
   } catch {}

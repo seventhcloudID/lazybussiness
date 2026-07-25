@@ -31,6 +31,7 @@ func main() {
 	client := threads.New()
 	ig := instagram.New()
 	aiClient := ai.NewFromEnv()
+	thumbClient := ai.NewThumbnailFromEnv()
 	aiMemory := ai.NewMemoryStore()
 	if t := os.Getenv("THREADS_ACCESS_TOKEN"); t != "" {
 		client.SetToken(t)
@@ -49,6 +50,11 @@ func main() {
 	} else {
 		log.Println("AI insight nonaktif — set AI_API_KEY di .env")
 	}
+	if thumbClient.Enabled() {
+		log.Printf("Thumbnail ChatGPT siap (%s)", thumbClient.Model())
+	} else {
+		log.Println("Thumbnail ChatGPT nonaktif — set OPENAI_API_KEY di .env")
+	}
 
 	lazyStore := lazy.NewStore()
 	publicBase := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/")
@@ -64,6 +70,7 @@ func main() {
 		Threads: client,
 		IG:      ig,
 		AI:      aiClient,
+		Thumb:   thumbClient,
 		Memory:  aiMemory,
 		Public:  publicBase,
 	}
@@ -217,6 +224,11 @@ func main() {
 			"enabled":  aiClient.Enabled(),
 			"provider": aiClient.Provider(),
 			"model":    aiClient.Model(),
+			"thumbnail": map[string]any{
+				"enabled":  thumbClient.Enabled(),
+				"provider": "openai",
+				"model":    thumbClient.Model(),
+			},
 		}
 		if aiClient.Enabled() {
 			out["quota"] = aiClient.Quota()
@@ -331,6 +343,53 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "memory": aiMemory.Get()})
+	})
+
+	// Thumbnail ChatGPT (OpenAI Images) untuk utas Threads saja — bukan IG carousel.
+	mux.HandleFunc("GET /api/ai/thumbnail/defaults", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, thumbClient.Defaults())
+	})
+
+	mux.HandleFunc("POST /api/ai/thumbnail", func(w http.ResponseWriter, r *http.Request) {
+		if !client.Connected() {
+			writeErr(w, http.StatusUnauthorized, "hubungkan token dulu")
+			return
+		}
+		if !thumbClient.Enabled() {
+			writeErr(w, http.StatusServiceUnavailable, "Thumbnail ChatGPT belum dikonfigurasi — set OPENAI_API_KEY di .env")
+			return
+		}
+		var req ai.ThumbnailRequest
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		result, err := thumbClient.GenerateRequest(req)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		name, err := ai.SaveThumbnailPNG(ai.DefaultThumbMediaDir(), result.PNG)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		rel := "/media/thumbs/" + name
+		imageURL := rel
+		if publicBase != "" {
+			imageURL = publicBase + rel
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":        true,
+			"image_url": imageURL,
+			"path":      rel,
+			"width":     result.Width,
+			"height":    result.Height,
+			"model":     result.Model,
+			"size":      result.Size,
+			"prompt":    result.Prompt,
+			"note":      "Untuk utas Threads (bagian 1 IMAGE). Bukan untuk carousel IG.",
+		})
 	})
 
 	mux.HandleFunc("POST /api/ai/generate", func(w http.ResponseWriter, r *http.Request) {
@@ -988,6 +1047,8 @@ func main() {
 	})
 
 	mux.Handle("GET /media/lazy/", http.StripPrefix("/media/lazy/", http.FileServer(http.Dir(lazyStore.MediaDir()))))
+	_ = os.MkdirAll(ai.DefaultThumbMediaDir(), 0o755)
+	mux.Handle("GET /media/thumbs/", http.StripPrefix("/media/thumbs/", http.FileServer(http.Dir(ai.DefaultThumbMediaDir()))))
 
 	log.Printf("Threads dashboard di http://localhost%s", addr)
 	if publicBase != "" {

@@ -65,7 +65,24 @@ function showJobDetail(job) {
   if (job.caption) bits.push('Caption IG:\n' + job.caption);
   if (job.threads_ids?.length) bits.push('Threads IDs: ' + job.threads_ids.join(', '));
   if (job.ig_container) bits.push('IG container: ' + job.ig_container);
+  if (job.thumb_url) bits.push('Thumbnail Threads: ' + job.thumb_url);
   if (job.image_urls?.length) bits.push('Slide images: ' + job.image_urls.length);
+  const thumbBox = document.getElementById('lazy-thumb-box');
+  const thumbImg = document.getElementById('lazy-thumb-img');
+  if (thumbBox && thumbImg) {
+    if (job.thumb_url) {
+      try {
+        const u = new URL(job.thumb_url, location.origin);
+        thumbImg.src = u.origin === location.origin ? u.pathname : job.thumb_url;
+      } catch {
+        thumbImg.src = job.thumb_url;
+      }
+      thumbBox.hidden = false;
+    } else {
+      thumbBox.hidden = true;
+      thumbImg.removeAttribute('src');
+    }
+  }
   if (job.error) bits.push('⚠️ ' + job.error);
   document.getElementById('lazy-caption').textContent = bits.join('\n\n');
 

@@ -159,6 +159,8 @@ func isPublic(r *http.Request) bool {
 		return true
 	case strings.HasPrefix(p, "/media/lazy/"):
 		return true // Meta must fetch carousel images without cookie
+	case strings.HasPrefix(p, "/media/thumbs/"):
+		return true // Meta must fetch Threads thumbnail images without cookie
 	case strings.HasPrefix(p, "/css/") || strings.HasPrefix(p, "/js/"):
 		return true
 	default:

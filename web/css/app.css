@@ -815,6 +815,170 @@ main.main {
   margin-top: auto;
 }
 
+.gen-thumb-box {
+  margin: 0.85rem 0 0.35rem;
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  overflow: hidden;
+  max-width: 360px;
+}
+
+.gen-thumb-img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #0b1018;
+}
+
+.gen-thumb-cap {
+  margin: 0;
+  padding: 0.45rem 0.65rem 0.55rem;
+  font-size: 0.68rem;
+  color: var(--muted);
+  line-height: 1.35;
+}
+
+.gen-draft-split {
+  display: grid;
+  gap: 0.85rem;
+  margin-top: 0.75rem;
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 720px) {
+  .gen-draft-split {
+    grid-template-columns: minmax(0, 1fr) minmax(180px, 220px);
+  }
+}
+
+.gen-thumb-box-side {
+  margin: 0;
+  max-width: none;
+}
+
+.gen-thumb-placeholder {
+  aspect-ratio: 4 / 3;
+  display: grid;
+  place-items: center;
+  padding: 0.75rem;
+  text-align: center;
+  font-size: 0.72rem;
+  color: var(--muted);
+  background:
+    linear-gradient(165deg, #1a2030 0%, #0b1018 55%, #151c28 100%);
+}
+
+.gen-thumb-placeholder.busy {
+  color: #fde68a;
+}
+
+.gen-thumb-box-side .gen-thumb-img[hidden] {
+  display: none;
+}
+
+.thumb-lab-grid {
+  display: grid;
+  gap: 1rem;
+  grid-template-columns: 1fr;
+  align-items: start;
+}
+
+@media (min-width: 1024px) {
+  .thumb-lab-grid {
+    grid-template-columns: minmax(0, 1.05fr) minmax(300px, 0.95fr);
+  }
+}
+
+.thumb-lab-preview {
+  border-radius: 12px;
+  border: 1px solid var(--line);
+  overflow: hidden;
+  background: #0b1018;
+}
+
+.thumb-lab-preview img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+  background: #0b1018;
+}
+
+.thumb-lab-prompt {
+  margin: 0;
+  padding: 0.65rem 0.75rem;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--canvas);
+  font-size: 0.68rem;
+  line-height: 1.45;
+  white-space: pre-wrap;
+  max-height: 220px;
+  overflow: auto;
+  font-family: var(--mono);
+}
+
+.thumb-lab-hist {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 0.75rem;
+}
+
+.thumb-lab-card {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  background: #fff;
+  padding: 0;
+  overflow: hidden;
+  text-align: left;
+  cursor: pointer;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.thumb-lab-card:hover {
+  border-color: var(--ink);
+  box-shadow: var(--shadow);
+}
+
+.thumb-lab-card img {
+  display: block;
+  width: 100%;
+  aspect-ratio: 4 / 3;
+  object-fit: cover;
+  background: #0b1018;
+}
+
+.thumb-lab-card-meta {
+  padding: 0.45rem 0.55rem 0.55rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.1rem;
+  font-size: 0.65rem;
+  color: var(--muted);
+  line-height: 1.3;
+}
+
+.thumb-lab-card-meta strong {
+  font-size: 0.72rem;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.th-chip.ok {
+  background: #ecfdf5;
+  color: #047857;
+  border-color: #a7f3d0;
+}
+
+.th-chip.bad {
+  background: #fef2f2;
+  color: #b91c1c;
+  border-color: #fecaca;
+}
+
 
 /* ——— Reply inbox (Balasan) — Meta-style split ——— */
 .reply-inbox {

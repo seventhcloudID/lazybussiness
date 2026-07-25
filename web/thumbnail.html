@@ -1,0 +1,122 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Lab Thumbnail — Threads Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=strand8">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main>
+  <header class="th-page-head">
+    <div>
+      <p class="th-eyebrow">Konten · Threads</p>
+      <h1 class="th-title">Lab Thumbnail</h1>
+      <p class="th-lead">Uji model / size / quality ChatGPT Image untuk thumbnail utas 4:3. Bukan untuk IG carousel.</p>
+    </div>
+    <div class="th-toolbar">
+      <span id="thumb-status" class="th-chip">…</span>
+      <a href="/buat.html" class="th-btn th-btn-ghost"><i class="bi bi-pencil-square"></i> Buat Post</a>
+    </div>
+  </header>
+
+  <div id="thumb-alert" class="th-alert hidden"></div>
+
+  <div class="thumb-lab-grid mb-5">
+    <section class="th-panel">
+      <div class="th-panel-head">Parameter</div>
+      <div class="th-panel-body space-y-3">
+        <div>
+          <label class="th-label" for="hook">Hook utas (bagian 1)</label>
+          <textarea id="hook" class="th-textarea" rows="5" placeholder="Tempel hook bagian pertama di sini…"></textarea>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 gap-3">
+          <div>
+            <label class="th-label" for="model">Model</label>
+            <select id="model" class="th-select"></select>
+          </div>
+          <div>
+            <label class="th-label" for="quality">Quality</label>
+            <select id="quality" class="th-select"></select>
+          </div>
+          <div>
+            <label class="th-label" for="size">Size request ke API</label>
+            <select id="size" class="th-select"></select>
+          </div>
+          <div>
+            <label class="th-label" for="size-custom">Size custom (opsional)</label>
+            <input id="size-custom" class="th-input" placeholder="mis. 1024x768">
+          </div>
+        </div>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="crop43" checked>
+          <span>Crop + scale ke 1024×768 (4:3) — rekomendasi</span>
+        </label>
+        <p class="text-[11px] text-muted m-0">Default request <code class="th-code">1024x1024</code> + quality low. Hasil akhir thumbnail = <strong>1024×768</strong>.</p>
+        <div>
+          <label class="th-label" for="extra">Extra direction (opsional)</label>
+          <textarea id="extra" class="th-textarea" rows="3" placeholder="Mis. flat illustration, navy + amber, no text…"></textarea>
+        </div>
+        <label class="flex items-center gap-2 text-sm cursor-pointer">
+          <input type="checkbox" id="custom-only">
+          <span>Pakai extra sebagai prompt penuh (abaikan template)</span>
+        </label>
+        <div class="flex flex-wrap gap-2 pt-1">
+          <button type="button" id="btn-gen" class="th-btn th-btn-primary">
+            <i class="bi bi-image"></i> Generate
+          </button>
+          <button type="button" id="btn-save-prefs" class="th-btn th-btn-soft">
+            <i class="bi bi-bookmark"></i> Simpan preferensi
+          </button>
+          <button type="button" id="btn-clear-hist" class="th-btn th-btn-ghost text-xs">
+            Bersihkan riwayat
+          </button>
+        </div>
+        <p class="text-[11px] text-muted m-0">Preferensi tersimpan di browser (localStorage). Default server dari <code class="th-code">.env</code>.</p>
+      </div>
+    </section>
+
+    <section class="th-panel">
+      <div class="th-panel-head flex items-center justify-between gap-2">
+        <span>Hasil terakhir</span>
+        <span id="last-meta" class="text-xs text-muted font-medium">—</span>
+      </div>
+      <div class="th-panel-body">
+        <div id="preview-empty" class="th-empty py-12">
+          <p class="text-sm text-muted m-0">Belum ada generate. Isi hook + pilih model, lalu Generate.</p>
+        </div>
+        <div id="preview-box" class="thumb-lab-preview" hidden>
+          <img id="preview-img" alt="Thumbnail hasil">
+        </div>
+        <div id="preview-actions" class="flex flex-wrap gap-2 mt-3" hidden>
+          <a id="btn-open" class="th-btn th-btn-ghost text-xs" href="#" target="_blank" rel="noopener">Buka PNG</a>
+          <button type="button" id="btn-copy-url" class="th-btn th-btn-ghost text-xs">Salin URL</button>
+          <button type="button" id="btn-to-buat" class="th-btn th-btn-soft text-xs">Pakai di Buat Post</button>
+        </div>
+        <details class="mt-3">
+          <summary class="text-xs text-muted cursor-pointer">Prompt yang dikirim</summary>
+          <pre id="prompt-out" class="thumb-lab-prompt mt-2"></pre>
+        </details>
+      </div>
+    </section>
+  </div>
+
+  <section class="th-panel mb-6">
+    <div class="th-panel-head flex items-center justify-between">
+      <span>Riwayat uji (A/B)</span>
+      <span id="hist-count" class="text-xs text-muted">0</span>
+    </div>
+    <div class="th-panel-body">
+      <div id="history" class="thumb-lab-hist"></div>
+    </div>
+  </section>
+</main>
+<script src="/js/api.js?v=strand1"></script>
+<script src="/js/layout.js?v=strand8"></script>
+<script src="/js/pages/thumbnail.js?v=strand8"></script>
+</body>
+</html>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generate Konten — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand1">
+<link rel="stylesheet" href="/css/app.css?v=strand10">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -16,9 +16,14 @@
     <div>
       <p class="th-eyebrow">Konten</p>
       <h1 class="th-title">Generate Konten</h1>
-      <p class="th-lead">AI menulis draf yang berpotensi viral dari niche + instruksi kamu — bukan filler asal jadi.</p>
+      <p class="th-lead">Draf utas + thumbnail Threads 4:3 (preview dulu, publish belakangan lewat Buat Post).</p>
     </div>
-    <div class="th-toolbar">
+    <div class="th-toolbar flex-wrap items-center gap-2">
+      <label class="flex items-center gap-2 text-xs text-ink cursor-pointer select-none">
+        <input type="checkbox" id="auto-thumb" checked>
+        <span>Auto thumbnail</span>
+      </label>
+      <span id="thumb-preset" class="th-chip">gpt-image-2 · 1024×768</span>
       <button id="btn-generate" class="th-btn th-btn-primary" type="button">
         <i class="bi bi-magic"></i> Generate
       </button>
@@ -73,7 +78,7 @@
   <div id="drafts" class="ai-draft-grid"></div>
 </main>
 <script src="/js/api.js?v=strand1"></script>
-<script src="/js/layout.js?v=strand1"></script>
-<script src="/js/pages/generate.js?v=saas22"></script>
+<script src="/js/layout.js?v=strand10"></script>
+<script src="/js/pages/generate.js?v=strand10"></script>
 </body>
 </html>

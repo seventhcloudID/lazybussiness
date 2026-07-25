@@ -1,6 +1,16 @@
 Threads.pageShell('generate');
 
 let lastDrafts = [];
+/** @type {Record<number, string>} */
+let draftThumbs = {};
+/** Preset sama Lazy Business — diisi dari /api/ai/thumbnail/defaults */
+let thumbPreset = {
+  model: 'gpt-image-2',
+  size: '1024x768',
+  quality: 'high',
+  crop_4_3: true,
+};
+let thumbEnabled = false;
 
 function showAlert(msg) {
   const el = document.getElementById('gen-alert');
@@ -133,6 +143,7 @@ function renderDrafts(result) {
   }
 
   lastDrafts = result.drafts || [];
+  draftThumbs = {};
   const root = document.getElementById('drafts');
   if (!lastDrafts.length) {
     root.innerHTML = '<div class="th-panel"><div class="th-empty py-10"><p class="text-sm text-muted">Belum ada draf.</p></div></div>';
@@ -154,15 +165,124 @@ function renderDrafts(result) {
         ${renderParts(n.parts) || `<p class="draft">${Threads.escapeHtml(n.draft || '')}</p>`}
         <p class="why">${Threads.escapeHtml(n.why || '')}</p>
         ${n.risk ? `<p class="why"><strong>Risiko:</strong> ${Threads.escapeHtml(n.risk)}</p>` : ''}
-        <div class="ai-draft-actions">
-          <button type="button" class="th-btn th-btn-soft text-xs" data-copy="${i}"><i class="bi bi-clipboard"></i> Salin utas</button>
-          <button type="button" class="th-btn th-btn-primary text-xs" data-use="${i}"><i class="bi bi-pencil-square"></i> Ke Buat Post</button>
-          <button type="button" class="th-btn th-btn-soft text-xs" data-carousel="${i}"><i class="bi bi-images"></i> Ke Carousel IG</button>
-          <button type="button" class="th-btn th-btn-ghost text-xs" data-fb="good" data-i="${i}" title="Bagus"><i class="bi bi-hand-thumbs-up"></i></button>
-          <button type="button" class="th-btn th-btn-ghost text-xs" data-fb="bad" data-i="${i}" title="Jelek"><i class="bi bi-hand-thumbs-down"></i></button>
+        <div class="gen-draft-split">
+          <div class="gen-draft-main min-w-0">
+            <div class="ai-draft-actions">
+              <button type="button" class="th-btn th-btn-soft text-xs" data-copy="${i}"><i class="bi bi-clipboard"></i> Salin utas</button>
+              <button type="button" class="th-btn th-btn-ghost text-xs" data-thumb="${i}" ${thumbEnabled ? '' : 'disabled title="Set OPENAI_API_KEY"'}><i class="bi bi-image"></i> Thumbnail</button>
+              <button type="button" class="th-btn th-btn-primary text-xs" data-use="${i}"><i class="bi bi-pencil-square"></i> Ke Buat Post</button>
+              <button type="button" class="th-btn th-btn-soft text-xs" data-carousel="${i}"><i class="bi bi-images"></i> Ke Carousel IG</button>
+              <button type="button" class="th-btn th-btn-ghost text-xs" data-fb="good" data-i="${i}" title="Bagus"><i class="bi bi-hand-thumbs-up"></i></button>
+              <button type="button" class="th-btn th-btn-ghost text-xs" data-fb="bad" data-i="${i}" title="Jelek"><i class="bi bi-hand-thumbs-down"></i></button>
+            </div>
+          </div>
+          <aside class="gen-thumb-aside">
+            <div class="gen-thumb-box gen-thumb-box-side" data-thumb-box="${i}">
+              <div class="gen-thumb-placeholder" data-thumb-ph="${i}">Belum ada thumbnail</div>
+              <img class="gen-thumb-img" alt="Thumbnail utas 4:3" hidden />
+              <p class="gen-thumb-cap">Threads 4:3 · preview saja, belum di-post</p>
+            </div>
+          </aside>
         </div>
       </div>
     </article>`).join('');
+}
+
+function draftHook(d) {
+  if (Array.isArray(d?.parts) && d.parts.length) {
+    return String(d.parts[0] || '').replace(/\\n/g, '\n').trim();
+  }
+  if (d?.hook) return String(d.hook).replace(/\\n/g, '\n').trim();
+  const full = draftFullText(d);
+  return full.split(/\n\s*\n/).map(s => s.trim()).filter(Boolean)[0] || full;
+}
+
+function showThumbOnDraft(i, pathOrUrl) {
+  const box = document.querySelector(`[data-thumb-box="${i}"]`);
+  if (!box) return;
+  const img = box.querySelector('.gen-thumb-img');
+  const ph = box.querySelector(`[data-thumb-ph="${i}"]`);
+  if (img) {
+    img.src = pathOrUrl;
+    img.hidden = false;
+  }
+  if (ph) ph.hidden = true;
+}
+
+function setThumbLoading(i, loading, errMsg) {
+  const ph = document.querySelector(`[data-thumb-ph="${i}"]`);
+  if (!ph) return;
+  if (loading) {
+    ph.hidden = false;
+    ph.textContent = 'Merender thumbnail…';
+    ph.classList.add('busy');
+  } else {
+    ph.classList.remove('busy');
+    if (errMsg) {
+      ph.hidden = false;
+      ph.textContent = errMsg;
+    }
+  }
+}
+
+async function generateThumbnailForDraft(i, { quiet = false } = {}) {
+  const d = lastDrafts[i];
+  if (!d) return null;
+  if (!thumbEnabled) {
+    if (!quiet) Threads.toast('OPENAI_API_KEY belum aktif', false);
+    return null;
+  }
+  const hook = draftHook(d);
+  if (!hook) {
+    if (!quiet) Threads.toast('Hook bagian 1 kosong', false);
+    return null;
+  }
+  const btn = document.querySelector(`[data-thumb="${i}"]`);
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Thumbnail…';
+  }
+  setThumbLoading(i, true);
+  try {
+    const data = await Threads.api('/api/ai/thumbnail', {
+      method: 'POST',
+      body: JSON.stringify({
+        hook,
+        model: thumbPreset.model,
+        size: thumbPreset.size,
+        quality: thumbPreset.quality,
+        crop_4_3: thumbPreset.crop_4_3 !== false,
+      }),
+    });
+    const url = data.image_url || data.path;
+    if (!url) throw new Error('URL thumbnail kosong');
+    draftThumbs[i] = url;
+    showThumbOnDraft(i, data.path || url);
+    if (!quiet) Threads.toast('Thumbnail 4:3 siap', true);
+    return url;
+  } catch (e) {
+    const msg = e.message || String(e);
+    setThumbLoading(i, false, 'Gagal: ' + msg.slice(0, 80));
+    if (!quiet) Threads.toast(msg, false);
+    return null;
+  } finally {
+    if (btn) {
+      btn.disabled = !thumbEnabled;
+      btn.innerHTML = '<i class="bi bi-image"></i> Thumbnail';
+    }
+  }
+}
+
+async function autoThumbAllDrafts() {
+  if (!thumbEnabled || !document.getElementById('auto-thumb')?.checked) return;
+  if (!lastDrafts.length) return;
+  showAlert(`Generate thumbnail (${thumbPreset.model} · ${thumbPreset.size})…`);
+  for (let i = 0; i < lastDrafts.length; i++) {
+    await generateThumbnailForDraft(i, { quiet: true });
+  }
+  showAlert('');
+  const ok = Object.keys(draftThumbs).length;
+  Threads.toast(ok ? `Thumbnail siap (${ok}/${lastDrafts.length})` : 'Thumbnail gagal — coba tombol Thumbnail', ok > 0);
 }
 
 async function loadMemory() {
@@ -286,6 +406,7 @@ document.getElementById('btn-generate').onclick = async () => {
     showAlert('');
     renderDrafts(result);
     Threads.toast('Draf siap', true);
+    await autoThumbAllDrafts();
   } catch (e) {
     showAlert(e.message);
     Threads.toast(e.message, false);
@@ -298,6 +419,7 @@ document.getElementById('btn-generate').onclick = async () => {
 document.getElementById('drafts').addEventListener('click', async e => {
   const copy = e.target.closest('[data-copy]');
   const use = e.target.closest('[data-use]');
+  const thumb = e.target.closest('[data-thumb]');
   const car = e.target.closest('[data-carousel]');
   const fb = e.target.closest('[data-fb]');
   if (copy) {
@@ -312,8 +434,13 @@ document.getElementById('drafts').addEventListener('click', async e => {
     }
     return;
   }
+  if (thumb) {
+    await generateThumbnailForDraft(Number(thumb.dataset.thumb));
+    return;
+  }
   if (use) {
-    const d = lastDrafts[Number(use.dataset.use)];
+    const idx = Number(use.dataset.use);
+    const d = lastDrafts[idx];
     const parts = Array.isArray(d?.parts) && d.parts.length
       ? d.parts.map(p => String(p || '').replace(/\\n/g, '\n').trim()).filter(Boolean)
       : draftFullText(d).split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
@@ -321,10 +448,15 @@ document.getElementById('drafts').addEventListener('click', async e => {
     try {
       localStorage.setItem('threads_compose_parts', JSON.stringify(parts));
       localStorage.setItem('threads_compose_draft', text);
+      if (draftThumbs[idx]) {
+        localStorage.setItem('threads_compose_image_url', draftThumbs[idx]);
+      } else {
+        localStorage.removeItem('threads_compose_image_url');
+      }
       await Threads.api('/api/ai/feedback', {
         method: 'POST',
         body: JSON.stringify({
-          draft_key: d.key || String(use.dataset.use),
+          draft_key: d.key || String(idx),
           verdict: 'used',
           text,
         }),
@@ -368,6 +500,33 @@ document.getElementById('drafts').addEventListener('click', async e => {
 (async () => {
   try {
     await loadMemory();
+  } catch {
+    /* ignore */
+  }
+  try {
+    const def = await Threads.api('/api/ai/thumbnail/defaults');
+    thumbEnabled = !!def.enabled;
+    if (def.preset) {
+      thumbPreset = {
+        model: def.preset.model || thumbPreset.model,
+        size: def.preset.size || thumbPreset.size,
+        quality: def.preset.quality || thumbPreset.quality,
+        crop_4_3: def.preset.crop_4_3 !== false,
+      };
+    }
+    const chip = document.getElementById('thumb-preset');
+    if (chip) {
+      chip.textContent = thumbEnabled
+        ? `${thumbPreset.model} · ${thumbPreset.size} · ${thumbPreset.quality}`
+        : 'Thumbnail off — set OPENAI_API_KEY';
+      chip.classList.toggle('ok', thumbEnabled);
+      chip.classList.toggle('bad', !thumbEnabled);
+    }
+    const auto = document.getElementById('auto-thumb');
+    if (auto && !thumbEnabled) {
+      auto.checked = false;
+      auto.disabled = true;
+    }
   } catch {
     /* ignore */
   }

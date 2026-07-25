@@ -20,6 +20,7 @@ type Deps struct {
 	Threads *threads.Client
 	IG      *instagram.Client
 	AI      *ai.Client
+	Thumb   *ai.ThumbnailClient
 	Memory  *ai.MemoryStore
 	Public  string // PUBLIC_BASE_URL, no trailing slash
 }
@@ -63,6 +64,7 @@ func (d *Deps) runOnce(job Job) error {
 	var parts []string
 	var caption, title string
 	var threadIDs []string
+	var thumbURL string
 	var imageURLs []string
 	var igContainer string
 	igSkipped := false
@@ -70,6 +72,7 @@ func (d *Deps) runOnce(job Job) error {
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		lastErr = nil
+		thumbURL = ""
 		gen, err := d.AI.GenerateContent(nil, mem, ai.GenerateRequest{
 			Topic: cfg.TopicHint,
 			Count: 1,
@@ -108,7 +111,14 @@ func (d *Deps) runOnce(job Job) error {
 			}
 		}
 
-		threadIDs, err = d.publishThreads(parts)
+		// Thumbnail ChatGPT dari hook (bagian 1) — khusus utas Threads, bukan slide IG.
+		thumbURL, err = d.generateThreadsThumb(job, parts[0])
+		if err != nil {
+			log.Printf("lazy job %s thumb: %v (lanjut publish TEXT)", job.ID, err)
+			thumbURL = ""
+		}
+
+		threadIDs, err = d.publishThreads(parts, thumbURL)
 		if err != nil {
 			lastErr = fmt.Errorf("threads: %w", err)
 			time.Sleep(time.Duration(attempt) * 2 * time.Second)
@@ -120,6 +130,7 @@ func (d *Deps) runOnce(job Job) error {
 			j.Title = title
 			j.Caption = caption
 			j.ThreadsIDs = threadIDs
+			j.ThumbURL = thumbURL
 		})
 
 		// IG path
@@ -152,6 +163,7 @@ func (d *Deps) runOnce(job Job) error {
 			j.Title = title
 			j.Caption = caption
 			j.ThreadsIDs = threadIDs
+			j.ThumbURL = thumbURL
 			j.ImageURLs = imageURLs
 			j.IGContainer = igContainer
 			j.FinishedAt = time.Now().UTC()
@@ -163,13 +175,64 @@ func (d *Deps) runOnce(job Job) error {
 				j.Error = ""
 			}
 		})
-		log.Printf("lazy job %s done threads=%d ig_skip=%v", job.ID, len(threadIDs), igSkipped)
+		log.Printf("lazy job %s done threads=%d thumb=%v ig_skip=%v", job.ID, len(threadIDs), thumbURL != "", igSkipped)
 		return nil
 	}
 	return lastErr
 }
 
-func (d *Deps) publishThreads(parts []string) ([]string, error) {
+func lazyThumbModel() string {
+	return envOr("LAZY_THUMB_MODEL", "gpt-image-2")
+}
+func lazyThumbSize() string {
+	return envOr("LAZY_THUMB_SIZE", "1024x768")
+}
+func lazyThumbQuality() string {
+	// user: auto/high — default high; boleh override ke auto
+	return envOr("LAZY_THUMB_QUALITY", "high")
+}
+
+func envOr(k, def string) string {
+	if v := strings.TrimSpace(os.Getenv(k)); v != "" {
+		return v
+	}
+	return def
+}
+
+// generateThreadsThumb membuat thumbnail 4:3 dari hook utas via ChatGPT Image.
+func (d *Deps) generateThreadsThumb(job Job, hook string) (string, error) {
+	if d.Thumb == nil || !d.Thumb.Enabled() {
+		return "", fmt.Errorf("OPENAI_API_KEY belum di-set")
+	}
+	hook = strings.TrimSpace(hook)
+	if hook == "" {
+		return "", fmt.Errorf("hook kosong")
+	}
+	crop := true
+	result, err := d.Thumb.GenerateRequest(ai.ThumbnailRequest{
+		Hook:    hook,
+		Model:   lazyThumbModel(),
+		Size:    lazyThumbSize(),
+		Quality: lazyThumbQuality(),
+		Crop43:  &crop,
+	})
+	if err != nil {
+		return "", err
+	}
+	// Simpan di folder job biar rapi; tetap di-serve via /media/thumbs atau copy path.
+	dir := filepath.Join(ai.DefaultThumbMediaDir(), job.Date)
+	name, err := ai.SaveThumbnailPNG(dir, result.PNG)
+	if err != nil {
+		return "", err
+	}
+	rel := "/media/thumbs/" + job.Date + "/" + name
+	if !d.publicOK() {
+		return "", fmt.Errorf("PUBLIC_BASE_URL belum di-set — thumb tersimpan di %s tapi tidak bisa di-attach ke Threads", rel)
+	}
+	return strings.TrimRight(d.Public, "/") + rel, nil
+}
+
+func (d *Deps) publishThreads(parts []string, thumbURL string) ([]string, error) {
 	var ids []string
 	var prevID string
 	for i, text := range parts {
@@ -180,6 +243,10 @@ func (d *Deps) publishThreads(parts []string) ([]string, error) {
 		form := url.Values{
 			"media_type": {"TEXT"},
 			"text":       {text},
+		}
+		if i == 0 && strings.TrimSpace(thumbURL) != "" {
+			form.Set("media_type", "IMAGE")
+			form.Set("image_url", strings.TrimSpace(thumbURL))
 		}
 		if prevID != "" {
 			form.Set("reply_to_id", prevID)

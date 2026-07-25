@@ -32,6 +32,7 @@ type Job struct {
 	Parts       []string  `json:"parts,omitempty"`
 	Caption     string    `json:"caption,omitempty"`
 	ThreadsIDs  []string  `json:"threads_ids,omitempty"`
+	ThumbURL    string    `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
 	ImageURLs   []string  `json:"image_urls,omitempty"`
 	IGContainer string    `json:"ig_container,omitempty"`
 	Error       string    `json:"error,omitempty"`
