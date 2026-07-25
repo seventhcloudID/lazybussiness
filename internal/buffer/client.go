@@ -308,8 +308,8 @@ func (c *Client) QueueTikTokPhotos(caption, title string, imageURLs []string) (*
 	return c.createPost(input, "tiktok", chID)
 }
 
-// QueueTwitterThread queues an X/Twitter thread (same parts as Threads utas) with Notify Me.
-// X Premium long-form: parts dikirim utuh (tanpa potong).
+// QueueTwitterThread publishes an X/Twitter thread immediately (shareNow).
+// Same parts shape as Threads utas. X Premium long-form: parts dikirim utuh.
 func (c *Client) QueueTwitterThread(parts []string) (*CreateResult, error) {
 	cleaned := make([]string, 0, len(parts))
 	for _, p := range parts {
@@ -333,8 +333,8 @@ func (c *Client) QueueTwitterThread(parts []string) (*CreateResult, error) {
 	input := map[string]any{
 		"text":           cleaned[0],
 		"channelId":      chID,
-		"schedulingType": "notification",
-		"mode":           "addToQueue",
+		"schedulingType": "automatic",
+		"mode":           "shareNow", // publish sekarang — tidak masuk antrian jadwal
 		"metadata": map[string]any{
 			"twitter": map[string]any{
 				"thread": thread,

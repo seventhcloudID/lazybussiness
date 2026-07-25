@@ -176,7 +176,7 @@ func (d *Deps) runOnce(job Job) error {
 			}
 		}
 
-		// Buffer X/Twitter — Notify Me (utas teks, sama parts seperti Threads)
+		// Buffer X/Twitter — publish sekarang (bukan antrian jadwal)
 		if d.Buffer != nil && d.Buffer.Enabled() && len(parts) > 0 {
 			res, err := d.Buffer.QueueTwitterThread(parts)
 			if err != nil {
@@ -184,7 +184,7 @@ func (d *Deps) runOnce(job Job) error {
 				log.Printf("lazy job %s buffer x: %v", job.ID, err)
 			} else if res != nil {
 				bufferXPostID = res.PostID
-				log.Printf("lazy job %s buffer x notify-me id=%s parts=%d", job.ID, bufferXPostID, len(parts))
+				log.Printf("lazy job %s buffer x shareNow id=%s parts=%d", job.ID, bufferXPostID, len(parts))
 			}
 		}
 

@@ -68,7 +68,7 @@ func main() {
 	}
 	buffClient := buffer.NewFromEnv()
 	if buffClient != nil && buffClient.Enabled() {
-		log.Println("Buffer aktif (TikTok carousel + X thread, Notify Me)")
+		log.Println("Buffer aktif (TikTok Notify Me + X shareNow)")
 	} else {
 		log.Println("Buffer nonaktif — set BUFFER_API_KEY di .env")
 	}
@@ -1166,7 +1166,7 @@ func main() {
 			"ok":     true,
 			"parts":  len(parts),
 			"buffer": res,
-			"note":   "X Notify Me — selesai post dari notifikasi Buffer di HP",
+			"note":   "X shareNow — dipublish langsung via Buffer",
 		})
 	})
 

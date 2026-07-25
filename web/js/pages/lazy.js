@@ -83,7 +83,7 @@ function showJobDetail(job) {
       thumbImg.removeAttribute('src');
     }
   }
-  if (job.buffer_x_post_id) bits.push('Buffer X (Notify Me): ' + job.buffer_x_post_id);
+  if (job.buffer_x_post_id) bits.push('Buffer X (shareNow): ' + job.buffer_x_post_id);
   if (job.buffer_x_error) bits.push('Buffer X: ' + job.buffer_x_error);
   if (job.buffer_post_id) bits.push('Buffer TikTok (Notify Me): ' + job.buffer_post_id);
   if (job.buffer_error) bits.push('Buffer TikTok: ' + job.buffer_error);
@@ -250,7 +250,7 @@ function renderStatus(st) {
           <span class="lazy-job-title">${Threads.escapeHtml(j.title || j.id)}</span>
         </div>
         ${snip ? `<div class="lazy-job-snip">${Threads.escapeHtml(snip)}${(j.parts?.[0] || '').length > 80 ? '…' : ''}</div>` : ''}
-        ${j.buffer_x_post_id ? `<div class="lazy-job-snip">Buffer X · Notify Me</div>` : ''}
+        ${j.buffer_x_post_id ? `<div class="lazy-job-snip">Buffer X · shareNow</div>` : ''}
         ${j.buffer_post_id ? `<div class="lazy-job-snip">Buffer TikTok · Notify Me</div>` : ''}
         ${j.buffer_x_error ? `<div class="lazy-job-err">Buffer X: ${Threads.escapeHtml(j.buffer_x_error)}</div>` : ''}
         ${j.buffer_error ? `<div class="lazy-job-err">Buffer TikTok: ${Threads.escapeHtml(j.buffer_error)}</div>` : ''}
