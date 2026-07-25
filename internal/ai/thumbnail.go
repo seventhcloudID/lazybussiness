@@ -48,7 +48,7 @@ func NewThumbnailFromEnv() *ThumbnailClient {
 		// Request kecil (1024²), lalu crop+scale ke 1024×768 (4:3).
 		size:    env("OPENAI_IMAGE_SIZE", "1024x1024"),
 		quality: env("OPENAI_IMAGE_QUALITY", "low"),
-		http:    &http.Client{Timeout: 180 * time.Second},
+		http:    &http.Client{Timeout: 300 * time.Second},
 	}
 }
 

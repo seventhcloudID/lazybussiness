@@ -244,13 +244,16 @@ async function generateThumbnailForDraft(i, { quiet = false } = {}) {
   }
   setThumbLoading(i, true);
   try {
+    // Preview di Generate pakai quality medium biar lebih cepat / jarang 504.
+    // Lazy Business tetap high lewat preset server.
+    const quality = quiet ? 'medium' : (thumbPreset.quality || 'medium');
     const data = await Threads.api('/api/ai/thumbnail', {
       method: 'POST',
       body: JSON.stringify({
         hook,
         model: thumbPreset.model,
         size: thumbPreset.size,
-        quality: thumbPreset.quality,
+        quality,
         crop_4_3: thumbPreset.crop_4_3 !== false,
       }),
     });
@@ -262,7 +265,7 @@ async function generateThumbnailForDraft(i, { quiet = false } = {}) {
     return url;
   } catch (e) {
     const msg = e.message || String(e);
-    setThumbLoading(i, false, 'Gagal: ' + msg.slice(0, 80));
+    setThumbLoading(i, false, msg.slice(0, 120));
     if (!quiet) Threads.toast(msg, false);
     return null;
   } finally {
@@ -276,13 +279,23 @@ async function generateThumbnailForDraft(i, { quiet = false } = {}) {
 async function autoThumbAllDrafts() {
   if (!thumbEnabled || !document.getElementById('auto-thumb')?.checked) return;
   if (!lastDrafts.length) return;
-  showAlert(`Generate thumbnail (${thumbPreset.model} · ${thumbPreset.size})…`);
-  for (let i = 0; i < lastDrafts.length; i++) {
-    await generateThumbnailForDraft(i, { quiet: true });
+  const n = lastDrafts.length;
+  let ok = 0;
+  let lastErr = '';
+  for (let i = 0; i < n; i++) {
+    showAlert(`Thumbnail ${i + 1}/${n} (${thumbPreset.model} · ${thumbPreset.size} · medium) — bisa 30–90 dtk…`);
+    const url = await generateThumbnailForDraft(i, { quiet: true });
+    if (url) ok += 1;
+    else {
+      const ph = document.querySelector(`[data-thumb-ph="${i}"]`);
+      if (ph?.textContent) lastErr = ph.textContent;
+    }
   }
-  showAlert('');
-  const ok = Object.keys(draftThumbs).length;
-  Threads.toast(ok ? `Thumbnail siap (${ok}/${lastDrafts.length})` : 'Thumbnail gagal — coba tombol Thumbnail', ok > 0);
+  showAlert(ok === n ? '' : (lastErr || `Thumbnail sebagian gagal (${ok}/${n})`));
+  Threads.toast(
+    ok ? `Thumbnail siap (${ok}/${n})` : (lastErr || 'Thumbnail gagal — cek timeout Nginx / OPENAI key'),
+    ok > 0,
+  );
 }
 
 async function loadMemory() {

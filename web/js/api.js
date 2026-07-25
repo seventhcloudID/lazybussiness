@@ -16,17 +16,34 @@ Threads.api = async function (path, opts = {}) {
     throw new Error('login required');
   }
   if (!res.ok) {
-    const msg =
-      data?.error?.error_user_msg ||
-      data?.error?.error_user_title ||
-      data?.error?.message ||
-      data?.error ||
-      data?.message ||
-      text ||
-      res.statusText;
-    throw new Error(typeof msg === 'string' ? msg : JSON.stringify(msg));
+    throw new Error(Threads.apiErrorMessage(res, data, text));
   }
   return data;
+};
+
+/** Pesan error bersih — hindari dump HTML 502/504 dari Nginx. */
+Threads.apiErrorMessage = function (res, data, text) {
+  const status = res?.status || 0;
+  const raw = typeof text === 'string' ? text : '';
+  if (status === 504 || /504\s*Gateway|Gateway Time-out/i.test(raw)) {
+    return 'Timeout (504): generate terlalu lama untuk Nginx. Naikkan proxy_read_timeout ke 300s+ di site config, lalu reload Nginx.';
+  }
+  if (status === 502 || /502\s*Bad Gateway/i.test(raw)) {
+    return 'Bad Gateway (502): backend tidak merespons. Cek systemctl status lazybussiness.';
+  }
+  if (raw && /^\s*</.test(raw)) {
+    return `Server error HTTP ${status || '?'} (respons HTML). Cek Nginx/timeout atau log service.`;
+  }
+  const msg =
+    data?.error?.error_user_msg ||
+    data?.error?.error_user_title ||
+    data?.error?.message ||
+    data?.error ||
+    data?.message ||
+    (raw && raw.length < 280 ? raw : '') ||
+    res?.statusText ||
+    'request gagal';
+  return typeof msg === 'string' ? msg : JSON.stringify(msg);
 };
 
 Threads.fmtNum = function (n) {
