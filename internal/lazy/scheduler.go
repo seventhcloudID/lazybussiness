@@ -25,6 +25,11 @@ func NewScheduler(deps *Deps) *Scheduler {
 }
 
 func (s *Scheduler) Start() {
+	// Job yang putus tengah jalan (restart server) → kembalikan ke pending
+	n := s.deps.Store.RecoverStuckJobs()
+	if n > 0 {
+		log.Printf("lazy: recover %d job stuck running → pending", n)
+	}
 	go s.loop()
 	log.Println("lazy scheduler aktif (tick 1m)")
 }
@@ -55,16 +60,10 @@ func (s *Scheduler) tick() {
 	}
 	s.busy = true
 	s.mu.Unlock()
-	defer func() {
-		s.mu.Lock()
-		s.busy = false
-		s.mu.Unlock()
-	}()
 
 	cfg := s.deps.Store.GetConfig()
 	loc := s.deps.Store.Location()
 	now := time.Now().In(loc)
-	today := now.Format("2006-01-02")
 	keepFrom := now.AddDate(0, 0, -14).Format("2006-01-02")
 	_ = s.deps.Store.PruneOldJobs(keepFrom)
 
@@ -75,18 +74,41 @@ func (s *Scheduler) tick() {
 	}
 
 	if !cfg.Enabled {
+		s.mu.Lock()
+		s.busy = false
+		s.mu.Unlock()
 		return
 	}
 
 	due := s.deps.Store.DueJobs(now)
 	if len(due) == 0 {
+		s.mu.Lock()
+		s.busy = false
+		s.mu.Unlock()
 		return
 	}
-	// one job per tick to avoid rate limits
+
 	job := due[0]
 	log.Printf("lazy menjalankan job %s scheduled=%s", job.ID, job.ScheduledAt.In(loc).Format(time.RFC3339))
-	s.deps.RunJob(job)
-	_ = today
+
+	// Jalan di background supaya panic/recover tidak mengunci scheduler selamanya,
+	// dan tick berikutnya menunggu sampai selesai (busy flag).
+	go func(j Job) {
+		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("lazy panic job %s: %v", j.ID, rec)
+				_ = s.deps.Store.UpdateJob(j.ID, func(job *Job) {
+					job.Status = StatusFailed
+					job.Error = fmt.Sprintf("panic: %v", rec)
+					job.FinishedAt = time.Now().UTC()
+				})
+			}
+			s.mu.Lock()
+			s.busy = false
+			s.mu.Unlock()
+		}()
+		s.deps.RunJob(j)
+	}(job)
 }
 
 // EnsureDayPlan creates today's pending jobs if missing (idempotent).
@@ -170,6 +192,14 @@ func (s *Scheduler) RunNow() (Job, error) {
 
 	go func(j Job) {
 		defer func() {
+			if rec := recover(); rec != nil {
+				log.Printf("lazy panic run-now %s: %v", j.ID, rec)
+				_ = s.deps.Store.UpdateJob(j.ID, func(job *Job) {
+					job.Status = StatusFailed
+					job.Error = fmt.Sprintf("panic: %v", rec)
+					job.FinishedAt = time.Now().UTC()
+				})
+			}
 			s.mu.Lock()
 			s.busy = false
 			s.mu.Unlock()
@@ -179,6 +209,18 @@ func (s *Scheduler) RunNow() (Job, error) {
 	}(job)
 
 	return job, nil
+}
+
+// ReplanToday clears today's queue and builds a fresh schedule (pending slots from now).
+func (s *Scheduler) ReplanToday() error {
+	cfg := s.deps.Store.GetConfig()
+	loc := s.deps.Store.Location()
+	now := time.Now().In(loc)
+	date := now.Format("2006-01-02")
+	if err := s.deps.Store.ClearDatePlan(date); err != nil {
+		return err
+	}
+	return s.EnsureDayPlan(now, cfg.PostsPerDay, s.deps.Threads)
 }
 
 func (s *Scheduler) GetJob(id string) (Job, bool) {

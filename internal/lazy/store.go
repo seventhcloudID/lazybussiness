@@ -212,7 +212,47 @@ func (s *Store) DueJobs(now time.Time) []Job {
 			out = append(out, j)
 		}
 	}
+	// earliest first
+	for i := 0; i < len(out); i++ {
+		for k := i + 1; k < len(out); k++ {
+			if out[k].ScheduledAt.Before(out[i].ScheduledAt) {
+				out[i], out[k] = out[k], out[i]
+			}
+		}
+	}
 	return out
+}
+
+// RecoverStuckJobs turns abandoned "running" jobs back to pending after restart.
+func (s *Store) RecoverStuckJobs() int {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	n := 0
+	for i := range s.jobs {
+		if s.jobs[i].Status == StatusRunning {
+			s.jobs[i].Status = StatusPending
+			s.jobs[i].Error = "recovered after restart"
+			n++
+		}
+	}
+	if n > 0 {
+		_ = s.saveJobsLocked()
+	}
+	return n
+}
+
+// ClearDatePlan removes today's jobs so a fresh plan can be generated.
+func (s *Store) ClearDatePlan(date string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	var kept []Job
+	for _, j := range s.jobs {
+		if j.Date != date {
+			kept = append(kept, j)
+		}
+	}
+	s.jobs = kept
+	return s.saveJobsLocked()
 }
 
 func (s *Store) CountTodayByStatus(date string) map[string]int {

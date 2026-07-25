@@ -832,6 +832,13 @@ func main() {
 			"message": "Job jalan di background — pantau antrian (hindari 504)",
 		})
 	})
+	mux.HandleFunc("POST /api/lazy/replan", func(w http.ResponseWriter, r *http.Request) {
+		if err := lazySched.ReplanToday(); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, lazySched.Status())
+	})
 
 	mux.Handle("GET /media/lazy/", http.StripPrefix("/media/lazy/", http.FileServer(http.Dir(lazyStore.MediaDir()))))
 

@@ -237,6 +237,17 @@ document.getElementById('btn-run-now').onclick = async () => {
 
 document.getElementById('btn-refresh').onclick = () => refresh();
 
+document.getElementById('btn-replan').onclick = async () => {
+  if (!confirm('Hapus antrian hari ini dan buat jadwal baru dari sekarang?')) return;
+  try {
+    await Threads.api('/api/lazy/replan', { method: 'POST', body: '{}' });
+    Threads.toast('Jadwal hari ini di-reset', true);
+    await refresh();
+  } catch (e) {
+    Threads.toast(e.message, false);
+  }
+};
+
 (async () => {
   try {
     const mem = await Threads.api('/api/ai/memory');
