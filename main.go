@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"time"
 
@@ -423,6 +424,15 @@ func main() {
 		})
 	})
 
+	// Inbox: semua komentar masuk yang belum dibalas (dari post terbaru).
+	mux.HandleFunc("GET /api/replies/pending", func(w http.ResponseWriter, r *http.Request) {
+		maxPosts, _ := strconv.Atoi(r.URL.Query().Get("posts"))
+		maxItems, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+		proxy(w, func() (json.RawMessage, error) {
+			return client.ListPendingInbox(maxPosts, maxItems)
+		})
+	})
+
 	mux.HandleFunc("POST /api/replies/manage", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			ReplyID string `json:"reply_id"`
@@ -626,6 +636,128 @@ func main() {
 		writeJSON(w, http.StatusOK, result)
 	})
 
+	// Auto-reply: generate draf balasan sesuai intent (preview di UI, kirim via /api/publish).
+	mux.HandleFunc("POST /api/ai/replies", func(w http.ResponseWriter, r *http.Request) {
+		if !client.Connected() {
+			writeErr(w, http.StatusUnauthorized, "hubungkan token dulu")
+			return
+		}
+		if !aiClient.Enabled() {
+			writeErr(w, http.StatusServiceUnavailable, "AI belum dikonfigurasi — set AI_API_KEY di .env")
+			return
+		}
+		var body struct {
+			MediaID      string             `json:"media_id"`
+			PostText     string             `json:"post_text"`
+			Intent       string             `json:"intent"`
+			Instructions string             `json:"instructions"`
+			OnlyPending  *bool              `json:"only_pending"`
+			Limit        int                `json:"limit"`
+			Incoming     []ai.IncomingReply `json:"incoming"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		intent := strings.TrimSpace(body.Intent)
+		if intent == "" {
+			writeErr(w, http.StatusBadRequest, "intent (arah balasan) wajib")
+			return
+		}
+		mediaID := strings.TrimSpace(body.MediaID)
+		postText := strings.TrimSpace(body.PostText)
+		incoming := body.Incoming
+
+		if mediaID != "" {
+			if postText == "" {
+				if raw, err := client.GetThreads("", ""); err == nil {
+					var list struct {
+						Data []struct {
+							ID   string `json:"id"`
+							Text string `json:"text"`
+						} `json:"data"`
+					}
+					if json.Unmarshal(raw, &list) == nil {
+						for _, p := range list.Data {
+							if p.ID == mediaID {
+								postText = p.Text
+								break
+							}
+						}
+					}
+				}
+			}
+			if len(incoming) == 0 {
+				enriched, err := client.GetRepliesEnriched(mediaID, false, true)
+				if err != nil {
+					writeAPIErr(w, err)
+					return
+				}
+				var payload struct {
+					Data []struct {
+						ID       string `json:"id"`
+						Username string `json:"username"`
+						Text     string `json:"text"`
+						IsMine   bool   `json:"is_mine"`
+						Answered bool   `json:"answered"`
+					} `json:"data"`
+				}
+				if err := json.Unmarshal(enriched, &payload); err != nil {
+					writeErr(w, http.StatusBadGateway, "gagal baca balasan")
+					return
+				}
+				onlyPending := true
+				if body.OnlyPending != nil {
+					onlyPending = *body.OnlyPending
+				}
+				for _, n := range payload.Data {
+					if n.IsMine || strings.TrimSpace(n.ID) == "" {
+						continue
+					}
+					if onlyPending && n.Answered {
+						continue
+					}
+					incoming = append(incoming, ai.IncomingReply{
+						ID: n.ID, Username: n.Username, Text: n.Text,
+					})
+				}
+			}
+		}
+
+		if postText == "" {
+			writeErr(w, http.StatusBadRequest, "post_text atau media_id wajib")
+			return
+		}
+		if len(incoming) == 0 {
+			writeErr(w, http.StatusBadRequest, "tidak ada komentar pending untuk dibalas")
+			return
+		}
+
+		mem := aiMemory.Get()
+		result, err := aiClient.GenerateReplies(mem, ai.RepliesRequest{
+			PostID:       mediaID,
+			PostText:     postText,
+			Intent:       intent,
+			Instructions: body.Instructions,
+			Incoming:     incoming,
+			Limit:        body.Limit,
+		})
+		if err != nil {
+			var qe *ai.QuotaError
+			if errors.As(err, &qe) {
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{
+					"error": qe.Message,
+					"kind":  qe.Kind,
+					"quota": aiClient.Quota(),
+				})
+				return
+			}
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, result)
+	})
+
 	mux.HandleFunc("POST /api/ai/lazy/daily", func(w http.ResponseWriter, r *http.Request) {
 		if !aiClient.Enabled() {
 			writeErr(w, http.StatusServiceUnavailable, "AI belum dikonfigurasi — set AI_API_KEY di .env")
@@ -692,6 +824,8 @@ func main() {
 		var body struct {
 			Text  string `json:"text"`
 			Brand string `json:"brand"`
+			Index int    `json:"index"` // 0-based; opsional
+			Total int    `json:"total"` // opsional — tampilkan 01/06 + dots
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
@@ -705,13 +839,26 @@ func main() {
 		if brand == "" {
 			brand = aiMemory.Get().Brand
 		}
+		slideNum, slideTotal := body.Index+1, body.Total
+		if slideTotal < 0 {
+			slideTotal = 0
+		}
+		if slideTotal > 10 {
+			slideTotal = 10
+		}
+		if slideNum < 1 {
+			slideNum = 1
+		}
+		if slideTotal > 0 && slideNum > slideTotal {
+			slideNum = slideTotal
+		}
 		dir := filepath.Join(lazyStore.MediaDir(), "_preview")
 		if err := os.MkdirAll(dir, 0o755); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		path := filepath.Join(dir, fmt.Sprintf("%d.png", time.Now().UnixNano()))
-		if err := lazy.RenderSlidePNG(path, brand, text); err != nil {
+		if err := lazy.RenderSlidePNG(path, brand, text, slideNum, slideTotal); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}

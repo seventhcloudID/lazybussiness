@@ -101,27 +101,34 @@ function renderCarouselPreview() {
   if (previewIdx < 0) previewIdx = parts.length - 1;
   if (previewIdx >= parts.length) previewIdx = 0;
 
-  document.getElementById('lazy-preview-meta').textContent = `${previewIdx + 1} / ${parts.length}`;
+  const brand = (document.getElementById('brand')?.value || '').trim().replace(/^@+/, '');
+  const handle = document.getElementById('lazy-preview-handle');
+  const avatar = document.getElementById('lazy-preview-avatar');
+  if (handle) handle.textContent = brand || 'brand';
+  if (avatar) avatar.textContent = (brand || '?').charAt(0).toUpperCase();
+
+  document.getElementById('lazy-preview-meta').textContent =
+    `${String(previewIdx + 1).padStart(2, '0')} / ${String(parts.length).padStart(2, '0')}`;
   document.getElementById('lazy-preview-dots').innerHTML = parts.map((_, i) =>
-    `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}"></button>`
+    `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}" aria-label="Slide ${i + 1}"></button>`
   ).join('');
 
   document.querySelectorAll('.lazy-part-btn').forEach((el, i) => {
     el.classList.toggle('on', i === previewIdx);
   });
 
-  schedulePng(parts[previewIdx], document.getElementById('brand')?.value.trim() || '');
+  schedulePng(parts[previewIdx], brand, previewIdx, parts.length);
 }
 
 let renderTimer = null;
-function schedulePng(text, brand) {
+function schedulePng(text, brand, index, total) {
   clearTimeout(renderTimer);
   const loading = document.getElementById('lazy-preview-loading');
   if (loading) loading.classList.add('show');
-  renderTimer = setTimeout(() => renderPng(text, brand), 200);
+  renderTimer = setTimeout(() => renderPng(text, brand, index, total), 200);
 }
 
-async function renderPng(text, brand) {
+async function renderPng(text, brand, index, total) {
   const seq = ++renderSeq;
   const img = document.getElementById('lazy-preview-png');
   const loading = document.getElementById('lazy-preview-loading');
@@ -133,6 +140,8 @@ async function renderPng(text, brand) {
       body: JSON.stringify({
         text: text || '…',
         brand,
+        index: Number(index) || 0,
+        total: Number(total) || 0,
       }),
     });
     if (seq !== renderSeq) return;
@@ -145,8 +154,13 @@ async function renderPng(text, brand) {
     if (seq !== renderSeq) return;
     if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
     previewBlobUrl = URL.createObjectURL(blob);
+    img.classList.remove('igc-png-in');
     img.src = previewBlobUrl;
-    img.onload = () => loading?.classList.remove('show');
+    img.onload = () => {
+      loading?.classList.remove('show');
+      void img.offsetWidth;
+      img.classList.add('igc-png-in');
+    };
   } catch (e) {
     if (seq !== renderSeq) return;
     loading?.classList.remove('show');

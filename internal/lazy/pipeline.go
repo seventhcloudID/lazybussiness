@@ -284,10 +284,11 @@ func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []strin
 		return nil, err
 	}
 	var urls []string
+	total := len(cleaned)
 	for i, p := range cleaned {
 		name := fmt.Sprintf("%02d.png", i+1)
 		path := filepath.Join(dir, name)
-		if err := RenderSlidePNG(path, brand, p); err != nil {
+		if err := RenderSlidePNG(path, brand, p, i+1, total); err != nil {
 			return nil, err
 		}
 		urls = append(urls, fmt.Sprintf("%s/media/lazy/%s/%s", base, strings.ReplaceAll(subdir, "\\", "/"), name))

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Balasan — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=saas8">
+<link rel="stylesheet" href="/css/app.css?v=strand4">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -16,17 +16,15 @@
     <div>
       <p class="th-eyebrow">Konten</p>
       <h1 class="th-title">Balasan</h1>
-      <p class="th-lead">Hanya starter utas. Conversation ringkas — tanpa rantai nested penuh.</p>
+      <p class="th-lead">Pilih post → lihat reply yang belum dibalas → kasih instruksi → Jalankan.</p>
     </div>
     <div class="flex gap-2 flex-wrap items-center">
       <span id="inbox-summary" class="th-chip">Belum pilih post</span>
-      <div class="th-preset">
-        <button type="button" class="active">By post</button>
-        <button type="button" disabled title="Segera">List</button>
-      </div>
       <button id="btn-refresh-posts" class="th-btn th-btn-ghost" type="button" title="Muat ulang"><i class="bi bi-arrow-clockwise"></i></button>
     </div>
   </header>
+
+  <div id="balasan-alert" class="th-alert hidden"></div>
 
   <div class="reply-inbox">
     <aside class="reply-inbox-posts">
@@ -45,31 +43,48 @@
     <section class="reply-inbox-thread">
       <div class="th-panel-head">
         <div class="min-w-0">
-          <div id="thread-title" class="font-semibold truncate">Conversation</div>
+          <div id="thread-title" class="font-semibold truncate">Belum dibalas</div>
           <div id="thread-sub" class="text-xs text-muted font-medium mt-0.5">Pilih post di kiri</div>
-        </div>
-        <div class="th-preset" id="reply-filter">
-          <button type="button" data-filter="all" class="active">All</button>
-          <button type="button" data-filter="pending">Belum</button>
-          <button type="button" data-filter="answered">Sudah</button>
         </div>
       </div>
 
       <div id="thread-empty" class="th-empty py-16">
         <div class="th-empty-icon"><i class="bi bi-chat-dots"></i></div>
         <p class="font-semibold text-ink mb-1">Pilih post</p>
-        <p class="text-sm text-muted">Thread balasan akan muncul di sini, termasuk nested reply.</p>
+        <p class="text-sm text-muted">Reply yang belum dibalas akan muncul di sini.</p>
       </div>
 
       <div id="thread-body" class="hidden flex flex-col min-h-0 flex-1">
         <div id="selected-post"></div>
-        <div id="replies-list" class="ri-thread"></div>
+
+        <div class="ar-panel" id="auto-reply-panel">
+          <div class="ar-panel-head">
+            <div>
+              <div class="ar-kicker">Instruksi</div>
+              <div class="ar-title">Arahkan cara AI membalas</div>
+            </div>
+          </div>
+          <textarea id="ar-intent" class="th-textarea" rows="3" placeholder="Contoh: jawab singkat & ramah, akui poin mereka, ajak diskusi. Tone founder santai. Jangan jualan."></textarea>
+          <div class="ar-row">
+            <button type="button" id="btn-run" class="th-btn th-btn-primary" disabled>
+              <i class="bi bi-play-fill"></i> Jalankan balasan
+            </button>
+            <span id="ar-progress" class="ar-hint mono"></span>
+          </div>
+          <p id="ar-hint" class="ar-hint">Pilih post dulu.</p>
+        </div>
+
+        <div class="th-panel-head !border-t" style="border-radius:0;border-left:0;border-right:0">
+          <span>Reply belum dibalas</span>
+          <span id="pending-count" class="text-xs text-muted font-medium">—</span>
+        </div>
+        <div id="pending-list" class="ar-pending-list flex-1 overflow-y-auto"></div>
       </div>
     </section>
   </div>
 </main>
-<script src="/js/api.js?v=saas8"></script>
-<script src="/js/layout.js?v=saas8"></script>
-<script src="/js/pages/balasan.js?v=saas8"></script>
+<script src="/js/api.js?v=strand4"></script>
+<script src="/js/layout.js?v=strand4"></script>
+<script src="/js/pages/balasan.js?v=strand4"></script>
 </body>
 </html>

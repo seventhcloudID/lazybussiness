@@ -5,18 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Insight — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=saas3">
+<link rel="stylesheet" href="/css/app.css?v=strand1">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
 <body>
 <nav id="sidebar"></nav>
-<main>
+<main class="ins-page">
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Analitik</p>
       <h1 class="th-title">Insight Akun</h1>
-      <p class="th-lead">Performa akun dan ranking post berdasarkan metrik Threads.</p>
+      <p class="th-lead">Baca performa periode ini — mana yang jalan, mana yang perlu digeser.</p>
     </div>
     <div class="th-toolbar">
       <div class="th-preset" id="insights-presets">
@@ -31,121 +31,120 @@
 
   <div id="insights-alert" class="th-alert hidden"></div>
 
-  <div class="flex flex-wrap gap-2 items-center mb-5 text-sm text-muted">
-    <span id="insights-source">Sumber: —</span>
-    <span>·</span>
-    <span id="hero-eng-hint">Engagement rate: —</span>
-    <span>·</span>
-    <span id="hero-posts-hint">—</span>
-    <input type="date" id="insights-since" class="hidden">
-    <input type="date" id="insights-until" class="hidden">
-  </div>
-
   <div id="insights-body">
-    <div class="th-metrics" id="insights-stats">
-      <article class="th-metric" data-tone="views">
-        <div class="th-metric-top">
-          <span class="th-metric-icon"><i class="bi bi-eye-fill"></i></span>
-          <span class="th-metric-label">Views</span>
+    <section class="ins-hero" aria-label="Ringkasan engagement">
+      <div class="ins-hero-glow" aria-hidden="true"></div>
+      <div class="ins-hero-grid">
+        <div class="ins-hero-er">
+          <p class="ins-kicker">Engagement rate</p>
+          <p class="ins-er-value" id="hero-eng-rate">—</p>
+          <p class="ins-er-sub" id="hero-eng-hint">Dari views periode terpilih</p>
         </div>
-        <div class="th-metric-value" data-metric="views">—</div>
-        <div class="th-metric-hint">Tayangan periode</div>
-      </article>
-      <article class="th-metric" data-tone="likes">
-        <div class="th-metric-top">
-          <span class="th-metric-icon"><i class="bi bi-heart-fill"></i></span>
-          <span class="th-metric-label">Likes</span>
+        <div class="ins-hero-side">
+          <div class="ins-hero-stat">
+            <span class="ins-kicker">Total interaksi</span>
+            <strong id="hero-eng">—</strong>
+            <span class="ins-meta" id="hero-posts-hint">—</span>
+          </div>
+          <div class="ins-mix">
+            <div class="ins-mix-head">
+              <span class="ins-kicker">Komposisi</span>
+              <span class="ins-meta" id="mix-total-label">—</span>
+            </div>
+            <div class="ins-mix-bar" id="mix-bar" role="img" aria-label="Komposisi interaksi"></div>
+            <ul class="ins-mix-legend" id="mix-legend"></ul>
+          </div>
         </div>
-        <div class="th-metric-value" data-metric="likes">—</div>
-        <div class="th-metric-hint">Suka</div>
-      </article>
-      <article class="th-metric" data-tone="replies">
-        <div class="th-metric-top">
-          <span class="th-metric-icon"><i class="bi bi-chat-dots-fill"></i></span>
-          <span class="th-metric-label">Balasan</span>
-        </div>
-        <div class="th-metric-value" data-metric="replies">—</div>
-        <div class="th-metric-hint">Balasan masuk</div>
-      </article>
-      <article class="th-metric" data-tone="reposts">
-        <div class="th-metric-top">
-          <span class="th-metric-icon"><i class="bi bi-arrow-repeat"></i></span>
-          <span class="th-metric-label">Repost</span>
-        </div>
-        <div class="th-metric-value" data-metric="reposts">—</div>
-        <div class="th-metric-hint">Dibagikan ulang</div>
-      </article>
-      <article class="th-metric" data-tone="quotes">
-        <div class="th-metric-top">
-          <span class="th-metric-icon"><i class="bi bi-quote"></i></span>
-          <span class="th-metric-label">Kutipan</span>
-        </div>
-        <div class="th-metric-value" data-metric="quotes">—</div>
-        <div class="th-metric-hint">Quote post</div>
-      </article>
-      <article class="th-metric" data-tone="followers">
-        <div class="th-metric-top">
-          <span class="th-metric-icon"><i class="bi bi-people-fill"></i></span>
-          <span class="th-metric-label">Pengikut</span>
-        </div>
-        <div class="th-metric-value" data-metric="followers_count">—</div>
-        <div class="th-metric-hint">Total akun</div>
-      </article>
-    </div>
+      </div>
+      <div class="ins-meta-row">
+        <span id="insights-source">Sumber: —</span>
+        <span id="insights-range">Rentang: —</span>
+        <input type="date" id="insights-since" class="hidden">
+        <input type="date" id="insights-until" class="hidden">
+      </div>
+    </section>
 
-    <div class="th-panel mb-5">
-      <div class="th-panel-head">Ringkasan engagement</div>
-      <div class="th-panel-body">
-        <div class="grid grid-cols-1 sm:grid-cols-3 gap-4 text-sm">
-          <div>
-            <div class="text-muted text-xs uppercase tracking-wider mb-1">Engagement rate</div>
-            <div class="font-display text-2xl font-bold tracking-tight" id="hero-eng-rate">—</div>
-          </div>
-          <div>
-            <div class="text-muted text-xs uppercase tracking-wider mb-1">Total interaksi</div>
-            <div class="font-display text-2xl font-bold tracking-tight" id="hero-eng">—</div>
-          </div>
-          <div>
-            <div class="text-muted text-xs uppercase tracking-wider mb-1">Komposisi</div>
-            <div id="mix-legend" class="text-muted leading-relaxed">—</div>
-          </div>
-        </div>
+    <section class="ins-section" aria-label="Metrik akun">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Metrik periode</h2>
+        <p class="ins-section-lead">Angka agregat dari Threads untuk rentang yang dipilih.</p>
       </div>
-    </div>
+      <div class="th-metrics" id="insights-stats">
+        <article class="th-metric" data-tone="views">
+          <div class="th-metric-top">
+            <span class="th-metric-icon"><i class="bi bi-eye-fill"></i></span>
+            <span class="th-metric-label">Views</span>
+          </div>
+          <div class="th-metric-value" data-metric="views">—</div>
+          <div class="th-metric-hint">Tayangan</div>
+        </article>
+        <article class="th-metric" data-tone="likes">
+          <div class="th-metric-top">
+            <span class="th-metric-icon"><i class="bi bi-heart-fill"></i></span>
+            <span class="th-metric-label">Likes</span>
+          </div>
+          <div class="th-metric-value" data-metric="likes">—</div>
+          <div class="th-metric-hint">Suka</div>
+        </article>
+        <article class="th-metric" data-tone="replies">
+          <div class="th-metric-top">
+            <span class="th-metric-icon"><i class="bi bi-chat-dots-fill"></i></span>
+            <span class="th-metric-label">Balasan</span>
+          </div>
+          <div class="th-metric-value" data-metric="replies">—</div>
+          <div class="th-metric-hint">Balasan masuk</div>
+        </article>
+        <article class="th-metric" data-tone="reposts">
+          <div class="th-metric-top">
+            <span class="th-metric-icon"><i class="bi bi-arrow-repeat"></i></span>
+            <span class="th-metric-label">Repost</span>
+          </div>
+          <div class="th-metric-value" data-metric="reposts">—</div>
+          <div class="th-metric-hint">Dibagikan ulang</div>
+        </article>
+        <article class="th-metric" data-tone="quotes">
+          <div class="th-metric-top">
+            <span class="th-metric-icon"><i class="bi bi-quote"></i></span>
+            <span class="th-metric-label">Kutipan</span>
+          </div>
+          <div class="th-metric-value" data-metric="quotes">—</div>
+          <div class="th-metric-hint">Quote post</div>
+        </article>
+        <article class="th-metric" data-tone="followers">
+          <div class="th-metric-top">
+            <span class="th-metric-icon"><i class="bi bi-people-fill"></i></span>
+            <span class="th-metric-label">Pengikut</span>
+          </div>
+          <div class="th-metric-value" data-metric="followers_count">—</div>
+          <div class="th-metric-hint">Total akun</div>
+        </article>
+      </div>
+    </section>
 
-    <div class="th-panel">
-      <div class="th-panel-head">
-        <span>Post teratas</span>
-        <select id="sort-posts" class="th-select !w-auto !py-1 !text-xs">
-          <option value="score">Skor</option>
-          <option value="views">Views</option>
-          <option value="likes">Likes</option>
-          <option value="replies">Balasan</option>
-        </select>
+    <section class="ins-section" aria-label="Post teratas">
+      <div class="ins-section-head ins-section-head-row">
+        <div>
+          <h2 class="ins-section-title">Post teratas</h2>
+          <p class="ins-section-lead">Ranking berdasarkan metrik — bar relatif ke post #1.</p>
+        </div>
+        <label class="ins-sort">
+          <span>Urutkan</span>
+          <select id="sort-posts" class="th-select">
+            <option value="score">Skor</option>
+            <option value="views">Views</option>
+            <option value="likes">Likes</option>
+            <option value="replies">Balasan</option>
+          </select>
+        </label>
       </div>
-      <div class="overflow-x-auto">
-        <table class="th-table">
-          <thead>
-            <tr>
-              <th>#</th>
-              <th>Post</th>
-              <th>Views</th>
-              <th>Likes</th>
-              <th>Balasan</th>
-              <th>ER</th>
-              <th></th>
-            </tr>
-          </thead>
-          <tbody id="top-posts">
-            <tr><td colspan="7" class="text-center text-muted py-10">Memuat…</td></tr>
-          </tbody>
-        </table>
+      <div class="ins-posts" id="top-posts">
+        <div class="ins-posts-empty">Memuat…</div>
       </div>
-    </div>
+    </section>
   </div>
 </main>
-<script src="/js/api.js"></script>
-<script src="/js/layout.js"></script>
-<script src="/js/pages/insights.js"></script>
+<script src="/js/api.js?v=strand1"></script>
+<script src="/js/layout.js?v=strand1"></script>
+<script src="/js/pages/insights.js?v=strand1"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lazy Business — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=saas37">
+<link rel="stylesheet" href="/css/app.css?v=strand6">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -104,20 +104,45 @@
       <div class="lazy-detail-grid">
         <div class="lazy-preview-col">
           <div class="igc-stage">
-            <div class="igc-png-wrap">
-              <img id="lazy-preview-png" class="igc-png" alt="Preview slide carousel">
-              <div id="lazy-preview-loading" class="igc-png-loading">Merender…</div>
-            </div>
-            <div class="igc-png-meta">
-              <div class="flex items-center gap-2">
-                <button type="button" id="lazy-prev" class="th-btn th-btn-ghost !py-1 !px-2"><i class="bi bi-chevron-left"></i></button>
-                <div class="igc-dots" id="lazy-preview-dots"></div>
-                <button type="button" id="lazy-next" class="th-btn th-btn-ghost !py-1 !px-2"><i class="bi bi-chevron-right"></i></button>
+            <article class="igc-phone">
+              <header class="igc-ig-chrome">
+                <div class="igc-ig-user">
+                  <span class="igc-ig-avatar" id="lazy-preview-avatar">?</span>
+                  <div class="igc-ig-user-meta">
+                    <strong id="lazy-preview-handle">brand</strong>
+                    <span class="igc-ig-sub">Carousel · 4:5</span>
+                  </div>
+                </div>
+                <span class="igc-ig-more" aria-hidden="true"><i class="bi bi-three-dots"></i></span>
+              </header>
+              <div class="igc-png-wrap">
+                <img id="lazy-preview-png" class="igc-png" alt="Preview slide carousel">
+                <div id="lazy-preview-loading" class="igc-png-loading">
+                  <span class="igc-png-spinner"></span>
+                  Merender…
+                </div>
+                <button type="button" id="lazy-prev" class="igc-nav-fab igc-nav-prev" aria-label="Slide sebelumnya">
+                  <i class="bi bi-chevron-left"></i>
+                </button>
+                <button type="button" id="lazy-next" class="igc-nav-fab igc-nav-next" aria-label="Slide berikutnya">
+                  <i class="bi bi-chevron-right"></i>
+                </button>
               </div>
-              <span id="lazy-preview-meta" class="igc-meta text-ink">0 / 0</span>
-            </div>
+              <div class="igc-ig-bar">
+                <div class="igc-ig-icons" aria-hidden="true">
+                  <i class="bi bi-heart"></i>
+                  <i class="bi bi-chat"></i>
+                  <i class="bi bi-send"></i>
+                  <i class="bi bi-bookmark ms-auto"></i>
+                </div>
+                <div class="igc-png-meta">
+                  <div class="igc-dots" id="lazy-preview-dots"></div>
+                  <span id="lazy-preview-meta" class="igc-meta">0 / 0</span>
+                </div>
+              </div>
+            </article>
           </div>
-          <p class="text-[11px] text-muted mt-2 mb-0 text-center">PNG sama seperti yang di-publish ke IG</p>
+          <p class="igc-hint">PNG sama seperti yang di-publish ke IG</p>
         </div>
         <div class="lazy-parts-col min-w-0">
           <div id="lazy-parts" class="gen-thread"></div>
@@ -127,8 +152,8 @@
     </div>
   </div>
 </main>
-<script src="/js/api.js?v=saas37"></script>
-<script src="/js/layout.js?v=saas37"></script>
-<script src="/js/pages/lazy.js?v=saas37"></script>
+<script src="/js/api.js?v=strand1"></script>
+<script src="/js/layout.js?v=strand1"></script>
+<script src="/js/pages/lazy.js?v=strand6"></script>
 </body>
 </html>

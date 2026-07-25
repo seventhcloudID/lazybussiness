@@ -8,10 +8,14 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
 )
+
+// earliestInsightsUnix — Meta menolak since/until sebelum 13 Apr 2024.
+const earliestInsightsUnix int64 = 1712991600
 
 const BaseURL = "https://graph.threads.net/v1.0"
 
@@ -214,7 +218,7 @@ func (c *Client) SnapshotForAI(limit int) (map[string]any, error) {
 	var me map[string]any
 	_ = json.Unmarshal(meRaw, &me)
 
-	detail, err := c.collectPostInsights(limit)
+	detail, err := c.collectPostInsights(limit, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -314,6 +318,8 @@ func (c *Client) GetInsightsOpts(since, until string, aggregate bool) (json.RawM
 	totals := map[string]float64{}
 
 	if aggregate {
+		// Clamp ke frontier Meta + isi default "semua" kalau kosong (bukan 2 hari Meta).
+		since, until = normalizeInsightRange(since, until)
 		q := url.Values{"metric": {"views,likes,replies,reposts,quotes,clicks"}}
 		if since != "" {
 			q.Set("since", since)
@@ -349,8 +355,9 @@ func (c *Client) GetInsightsOpts(since, until string, aggregate bool) (json.RawM
 			}
 		}
 
-		// Selalu ambil breakdown post (lebih actionable daripada angka akun saja)
-		detail, err := c.collectPostInsights(12)
+		// Breakdown post mengikuti rentang since/until (bukan selalu 12 post terbaru).
+		postLimit := 40
+		detail, err := c.collectPostInsights(postLimit, since, until)
 		if err == nil {
 			posts = detail.Posts
 			totals = detail.Totals
@@ -421,6 +428,10 @@ func (c *Client) GetInsightsOpts(since, until string, aggregate bool) (json.RawM
 		"posts":           posts,
 		"post_count":      len(posts),
 	}
+	if aggregate {
+		out["since"] = since
+		out["until"] = until
+	}
 	if accountErr != "" && aggregate {
 		out["warning"] = accountErr
 	}
@@ -481,7 +492,57 @@ type postInsightDetail struct {
 	Totals map[string]float64
 }
 
-func (c *Client) collectPostInsights(limit int) (postInsightDetail, error) {
+// normalizeInsightRange: kosong = sejak frontier Meta → sekarang (bukan default 2 hari API).
+// until tidak boleh > now — Meta menolak timestamp masa depan (mis. akhir hari lokal).
+func normalizeInsightRange(since, until string) (string, string) {
+	now := time.Now().Unix()
+	s := parseUnixBound(since)
+	u := parseUnixBound(until)
+	if s <= 0 && u <= 0 {
+		return strconv.FormatInt(earliestInsightsUnix, 10), strconv.FormatInt(now, 10)
+	}
+	if s <= 0 {
+		s = earliestInsightsUnix
+	}
+	if s < earliestInsightsUnix {
+		s = earliestInsightsUnix
+	}
+	if u <= 0 || u > now {
+		u = now
+	}
+	if u < s {
+		u = s
+	}
+	return strconv.FormatInt(s, 10), strconv.FormatInt(u, 10)
+}
+
+func parseUnixBound(s string) int64 {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return 0
+	}
+	n, err := strconv.ParseInt(s, 10, 64)
+	if err != nil || n <= 0 {
+		return 0
+	}
+	return n
+}
+
+func postTimestampUnix(ts string) int64 {
+	ts = strings.TrimSpace(ts)
+	if ts == "" {
+		return 0
+	}
+	if t, err := time.Parse(time.RFC3339, ts); err == nil {
+		return t.Unix()
+	}
+	if t, err := time.Parse("2006-01-02T15:04:05+0000", ts); err == nil {
+		return t.Unix()
+	}
+	return 0
+}
+
+func (c *Client) collectPostInsights(limit int, since, until string) (postInsightDetail, error) {
 	out := postInsightDetail{
 		Totals: map[string]float64{
 			"views": 0, "likes": 0, "replies": 0, "reposts": 0, "quotes": 0,
@@ -490,9 +551,14 @@ func (c *Client) collectPostInsights(limit int) (postInsightDetail, error) {
 	if limit <= 0 {
 		limit = 12
 	}
-	threadsRaw, err := c.GetThreads("", "")
+	since, until = normalizeInsightRange(since, until)
+	threadsRaw, err := c.GetThreads(since, until)
 	if err != nil {
-		return out, err
+		// Fallback: ambil tanpa filter API, filter tanggal di sisi kita
+		threadsRaw, err = c.GetThreads("", "")
+		if err != nil {
+			return out, err
+		}
 	}
 	var list struct {
 		Data []struct {
@@ -507,6 +573,9 @@ func (c *Client) collectPostInsights(limit int) (postInsightDetail, error) {
 		return out, err
 	}
 
+	sinceU := parseUnixBound(since)
+	untilU := parseUnixBound(until)
+
 	type job struct {
 		post postInsightRow
 	}
@@ -514,6 +583,14 @@ func (c *Client) collectPostInsights(limit int) (postInsightDetail, error) {
 	for _, p := range list.Data {
 		if strings.EqualFold(p.MediaType, "REPOST_FACADE") || p.ID == "" {
 			continue
+		}
+		if ts := postTimestampUnix(p.Timestamp); ts > 0 {
+			if sinceU > 0 && ts < sinceU {
+				continue
+			}
+			if untilU > 0 && ts > untilU {
+				continue
+			}
 		}
 		jobs = append(jobs, job{post: postInsightRow{
 			ID: p.ID, Text: p.Text, Permalink: p.Permalink,
@@ -583,7 +660,7 @@ func (c *Client) collectPostInsights(limit int) (postInsightDetail, error) {
 }
 
 func (c *Client) aggregatePostInsights(limit int) ([]aggMetric, error) {
-	detail, err := c.collectPostInsights(limit)
+	detail, err := c.collectPostInsights(limit, "", "")
 	if err != nil {
 		return nil, err
 	}
@@ -974,6 +1051,126 @@ func (c *Client) GetRepliesEnriched(mediaID string, deep, refresh bool) (json.Ra
 	c.repliesCache[cacheKey] = cachedJSON{raw: out, at: time.Now()}
 	c.repliesCacheMu.Unlock()
 	return out, nil
+}
+
+// ListPendingInbox mengumpulkan komentar masuk yang belum dibalas dari post terbaru.
+func (c *Client) ListPendingInbox(maxPosts, maxItems int) (json.RawMessage, error) {
+	if maxPosts <= 0 {
+		maxPosts = 20
+	}
+	if maxPosts > 40 {
+		maxPosts = 40
+	}
+	if maxItems <= 0 {
+		maxItems = 40
+	}
+	if maxItems > 80 {
+		maxItems = 80
+	}
+
+	threadsRaw, err := c.GetThreads("", "")
+	if err != nil {
+		return nil, err
+	}
+	var list struct {
+		Data []struct {
+			ID        string `json:"id"`
+			Text      string `json:"text"`
+			Timestamp string `json:"timestamp"`
+			MediaType string `json:"media_type"`
+			HasReplies bool  `json:"has_replies"`
+			IsReply   bool   `json:"is_reply"`
+			RepliedTo *struct {
+				ID string `json:"id"`
+			} `json:"replied_to"`
+			Permalink string `json:"permalink"`
+		} `json:"data"`
+	}
+	if err := json.Unmarshal(threadsRaw, &list); err != nil {
+		return nil, err
+	}
+
+	type postRef struct {
+		ID, Text, Timestamp, Permalink string
+	}
+	var candidates []postRef
+	for _, p := range list.Data {
+		if strings.EqualFold(p.MediaType, "REPOST_FACADE") || p.ID == "" {
+			continue
+		}
+		if p.IsReply || (p.RepliedTo != nil && p.RepliedTo.ID != "") {
+			continue
+		}
+		if !p.HasReplies {
+			continue
+		}
+		candidates = append(candidates, postRef{
+			ID: p.ID, Text: p.Text, Timestamp: p.Timestamp, Permalink: p.Permalink,
+		})
+		if len(candidates) >= maxPosts {
+			break
+		}
+	}
+
+	type pendingItem struct {
+		ID            string `json:"id"`
+		Username      string `json:"username"`
+		Text          string `json:"text"`
+		Timestamp     string `json:"timestamp"`
+		Permalink     string `json:"permalink,omitempty"`
+		MediaID       string `json:"media_id"`
+		PostText      string `json:"post_text"`
+		PostTimestamp string `json:"post_timestamp,omitempty"`
+		PostPermalink string `json:"post_permalink,omitempty"`
+	}
+
+	items := make([]pendingItem, 0, maxItems)
+	scanned := 0
+	for _, post := range candidates {
+		if len(items) >= maxItems {
+			break
+		}
+		raw, err := c.GetRepliesEnriched(post.ID, false, false)
+		scanned++
+		if err != nil {
+			continue
+		}
+		var env struct {
+			Data []struct {
+				ID        string `json:"id"`
+				Username  string `json:"username"`
+				Text      string `json:"text"`
+				Timestamp string `json:"timestamp"`
+				Permalink string `json:"permalink"`
+				IsMine    bool   `json:"is_mine"`
+				Answered  bool   `json:"answered"`
+			} `json:"data"`
+			PendingCount int `json:"pending_count"`
+		}
+		if json.Unmarshal(raw, &env) != nil {
+			continue
+		}
+		for _, n := range env.Data {
+			if len(items) >= maxItems {
+				break
+			}
+			if n.IsMine || n.Answered || strings.TrimSpace(n.ID) == "" {
+				continue
+			}
+			items = append(items, pendingItem{
+				ID: n.ID, Username: n.Username, Text: n.Text, Timestamp: n.Timestamp,
+				Permalink: n.Permalink, MediaID: post.ID, PostText: post.Text,
+				PostTimestamp: post.Timestamp, PostPermalink: post.Permalink,
+			})
+		}
+	}
+
+	return json.Marshal(map[string]any{
+		"items":         items,
+		"count":         len(items),
+		"posts_scanned": scanned,
+		"posts_capped":  len(candidates),
+	})
 }
 
 func (c *Client) ManageReply(replyID string, hide bool) (json.RawMessage, error) {

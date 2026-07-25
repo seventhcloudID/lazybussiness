@@ -67,19 +67,34 @@ function renderFilmstrip() {
     const active = i === previewIdx ? ' active' : '';
     const filled = s.text ? ' filled' : '';
     const hasImg = (s.image_url || '').trim() ? ' has-img' : '';
-    const snip = (s.text || 'Kosong').replace(/\s+/g, ' ').slice(0, 48);
+    const snip = (s.text || 'Kosong').replace(/\s+/g, ' ').slice(0, 40);
+    const n = String(i + 1).padStart(2, '0');
     return `
-      <button type="button" class="igc-thumb${active}${filled}${hasImg}" data-jump="${i}">
-        <span class="igc-thumb-n">${i + 1}</span>
+      <button type="button" class="igc-thumb${active}${filled}${hasImg}" data-jump="${i}" title="Slide ${i + 1}">
+        <span class="igc-thumb-frame">
+          <span class="igc-thumb-n">${n}</span>
+        </span>
         <span class="igc-thumb-title">${Threads.escapeHtml(snip)}</span>
       </button>`;
   }).join('');
   root.querySelector('.igc-thumb.active')?.scrollIntoView({ inline: 'nearest', block: 'nearest', behavior: 'smooth' });
 }
 
+function brandRaw() {
+  return (document.getElementById('brand')?.value || '').trim().replace(/^@+/, '');
+}
+
 function brandHandle() {
-  const raw = (document.getElementById('brand')?.value || '').trim().replace(/^@+/, '');
+  const raw = brandRaw();
   return raw ? `@${raw}` : '';
+}
+
+function syncPreviewChrome() {
+  const raw = brandRaw();
+  const handle = document.getElementById('preview-handle');
+  const avatar = document.getElementById('preview-avatar');
+  if (handle) handle.textContent = raw || 'brand';
+  if (avatar) avatar.textContent = (raw || '?').charAt(0).toUpperCase();
 }
 
 function renderPreview() {
@@ -87,22 +102,29 @@ function renderPreview() {
   if (previewIdx < 0) previewIdx = 0;
   const s = slides[previewIdx] || {};
 
-  document.getElementById('preview-meta').textContent = `${previewIdx + 1} / ${slides.length}`;
+  syncPreviewChrome();
+  document.getElementById('preview-meta').textContent =
+    `${String(previewIdx + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}`;
   document.getElementById('preview-dots').innerHTML = slides.map((_, i) =>
-    `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}"></button>`
+    `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}" aria-label="Slide ${i + 1}"></button>`
   ).join('');
 
-  schedulePngPreview(s.text || '', document.getElementById('brand')?.value.trim() || '');
+  schedulePngPreview(
+    s.text || '',
+    brandRaw(),
+    previewIdx,
+    slides.length,
+  );
 }
 
-function schedulePngPreview(text, brand) {
+function schedulePngPreview(text, brand, index, total) {
   clearTimeout(renderTimer);
   const loading = document.getElementById('preview-png-loading');
   if (loading) loading.classList.add('show');
-  renderTimer = setTimeout(() => renderPngPreview(text, brand), 280);
+  renderTimer = setTimeout(() => renderPngPreview(text, brand, index, total), 280);
 }
 
-async function renderPngPreview(text, brand) {
+async function renderPngPreview(text, brand, index, total) {
   const seq = ++renderSeq;
   const img = document.getElementById('preview-png');
   const loading = document.getElementById('preview-png-loading');
@@ -112,7 +134,12 @@ async function renderPngPreview(text, brand) {
       method: 'POST',
       credentials: 'same-origin',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ text: text || 'Isi slide (= bagian utas) muncul di sini.', brand }),
+      body: JSON.stringify({
+        text: text || 'Isi slide (= bagian utas) muncul di sini.',
+        brand,
+        index: Number(index) || 0,
+        total: Number(total) || 0,
+      }),
     });
     if (seq !== renderSeq) return;
     if (res.status === 401) {
@@ -127,9 +154,12 @@ async function renderPngPreview(text, brand) {
     if (seq !== renderSeq) return;
     if (previewBlobUrl) URL.revokeObjectURL(previewBlobUrl);
     previewBlobUrl = URL.createObjectURL(blob);
+    img.classList.remove('igc-png-in');
     img.src = previewBlobUrl;
     img.onload = () => {
       if (loading) loading.classList.remove('show');
+      void img.offsetWidth;
+      img.classList.add('igc-png-in');
     };
     if (warn) {
       warn.hidden = true;

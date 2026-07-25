@@ -84,10 +84,10 @@ function renderPosts(data) {
         <div class="shrink-0">${avatar}</div>
         <div class="min-w-0 flex-1">
           <div class="flex items-center gap-1.5 min-w-0">
-            <span class="font-semibold text-sm truncate">${Threads.escapeHtml(uname)}</span>
-            <span class="text-muted text-[11px] shrink-0">· ${Threads.fmtDate(p.timestamp)}</span>
+            <span class="font-semibold text-sm truncate text-ink">${Threads.escapeHtml(uname)}</span>
+            <span class="text-muted text-[11px] shrink-0 mono">· ${Threads.fmtDate(p.timestamp)}</span>
           </div>
-          <div class="text-[10px] uppercase tracking-wide text-muted mt-0.5">
+          <div class="text-[10px] uppercase tracking-wide text-muted mt-0.5 font-semibold">
             <i class="bi ${typeIcon(p.media_type)}"></i> ${Threads.escapeHtml(typeLabel(p.media_type))}
           </div>
         </div>

@@ -3,10 +3,12 @@ Threads.pageShell('balasan');
 let posts = [];
 let selectedId = null;
 let repliesPayload = null;
-let filter = 'all';
 let selectSeq = 0;
+let running = false;
+/** pending roots for selected post */
+let pending = [];
 const repliesCache = new Map();
-const postStats = new Map(); // id -> { answered, pending, total }
+const postStats = new Map();
 
 function previewText(t, n = 90) {
   const s = String(t || '').replace(/\s+/g, ' ').trim();
@@ -29,6 +31,17 @@ function relTime(iso) {
   return Threads.fmtDate(iso);
 }
 
+function showAlert(msg) {
+  const el = document.getElementById('balasan-alert');
+  if (!msg) {
+    el.classList.add('hidden');
+    el.textContent = '';
+    return;
+  }
+  el.textContent = msg;
+  el.classList.remove('hidden');
+}
+
 function setSummary(text, ok) {
   const el = document.getElementById('inbox-summary');
   el.textContent = text;
@@ -45,13 +58,48 @@ function badgeLabel(n) {
   return String(n);
 }
 
+function updateRunUI() {
+  const intent = document.getElementById('ar-intent').value.trim();
+  const n = pending.filter(p => p.selected !== false).length;
+  document.getElementById('btn-run').disabled = running || !selectedId || !n || !intent;
+  const hint = document.getElementById('ar-hint');
+  if (!selectedId) {
+    hint.textContent = 'Pilih post dulu.';
+  } else if (!pending.length) {
+    hint.textContent = 'Tidak ada reply yang belum dibalas di post ini.';
+  } else {
+    hint.textContent = `${n} reply belum dibalas. Isi instruksi, lalu Jalankan balasan.`;
+  }
+  document.getElementById('pending-count').textContent = pending.length
+    ? `${pending.length} reply`
+    : '0';
+}
+
+function syncPendingFromPayload() {
+  const roots = (repliesPayload?.data || []).filter(r => !r.is_mine && !r.answered);
+  const prev = new Map(pending.map(p => [p.id, p]));
+  pending = roots.map(r => {
+    const old = prev.get(r.id);
+    return {
+      id: r.id,
+      username: r.username,
+      text: r.text,
+      timestamp: r.timestamp,
+      permalink: r.permalink,
+      selected: old ? old.selected !== false : true,
+      status: old?.status || '',
+      statusKind: old?.statusKind || '',
+      draftText: old?.draftText || '',
+    };
+  });
+}
+
 function renderPosts() {
   const q = (document.getElementById('post-search').value || '').trim().toLowerCase();
   const list = document.getElementById('posts-list');
   const items = posts.filter(p => {
     const t = String(p.media_type || '').toUpperCase();
     if (t === 'REPOST_FACADE') return false;
-    // Utas berantai: hanya starter (bukan lanjutan reply)
     if (p.is_reply === true) return false;
     if (p.replied_to?.id) return false;
     if (!q) return true;
@@ -67,7 +115,7 @@ function renderPosts() {
   list.innerHTML = items.map(p => {
     const active = p.id === selectedId ? ' is-active' : '';
     const st = postStats.get(p.id);
-    const pending = st?.pending;
+    const pend = st?.pending;
     const total = st?.total;
     const done = st && st.pending === 0 && st.total > 0;
     const ratio = st && st.total > 0 ? Math.max(8, Math.round((st.answered / st.total) * 100)) : (p.has_replies ? 35 : 0);
@@ -75,7 +123,7 @@ function renderPosts() {
     const thumbHtml = thumb
       ? `<img class="ri-post-thumb" src="${Threads.escapeHtml(thumb)}" alt="" loading="lazy">`
       : `<div class="ri-post-thumb is-empty"><i class="bi bi-chat-left-text"></i></div>`;
-    const badgeN = pending != null ? pending : (p.has_replies ? null : 0);
+    const badgeN = pend != null ? pend : (p.has_replies ? null : 0);
     const badge = badgeN == null
       ? (p.has_replies ? `<span class="ri-post-badge" title="Ada balasan">•</span>` : '')
       : `<span class="ri-post-badge${done ? ' is-clear' : ''}">${badgeLabel(done ? total : badgeN)}</span>`;
@@ -99,99 +147,69 @@ function renderSelectedPost(post) {
   const total = st.total ?? repliesPayload?.count ?? 0;
   const thumb = thumbUrl(post);
   const full = String(post.text || '(tanpa teks)');
-  const short = previewText(full, 140);
+  const short = previewText(full, 160);
   el.innerHTML = `
     <div class="ri-hero">
       <div class="min-w-0">
         <div class="ri-hero-time">${Threads.fmtDate(post.timestamp)}</div>
         <div class="ri-hero-text" title="${Threads.escapeHtml(full)}">${Threads.escapeHtml(short)}</div>
         <div class="ri-hero-stats">
-          <strong>${answered} replied</strong> / ${total} total
+          <strong>${pending.length} belum</strong> · ${answered} sudah / ${total} total
         </div>
       </div>
       ${thumb ? `<img class="ri-hero-thumb" src="${Threads.escapeHtml(thumb)}" alt="">` : ''}
     </div>`;
 }
 
-function filteredRoots() {
-  const items = (repliesPayload?.data || []).filter(r => !r.is_mine);
-  if (filter === 'pending') return items.filter(r => !r.answered);
-  if (filter === 'answered') return items.filter(r => r.answered);
-  return items;
-}
-
-function renderNode(r) {
-  const answered = !!r.answered;
-  const hidden = String(r.hide_status || '').toLowerCase().includes('hide')
-    || String(r.hide_status || '').toLowerCase().includes('hushed');
-  const stateClass = answered ? ' is-answered' : ' is-pending';
-  const status = answered
-    ? `<span class="ri-status ok">Sudah</span>`
-    : `<span class="ri-status pending">Belum</span>`;
-  const nestCount = Array.isArray(r.children) ? r.children.length : 0;
-  const nestHint = nestCount
-    ? `<span class="ri-nest-hint">${nestCount} balasan dalam utas · disembunyikan</span>`
-    : '';
-  const media = (r.media_url || r.thumbnail_url)
-    ? `<div class="ri-media"><img src="${Threads.escapeHtml(r.media_url || r.thumbnail_url)}" alt="" loading="lazy"></div>`
-    : '';
-  return `<article class="ri-node${stateClass}${hidden ? ' opacity-70' : ''}" data-id="${Threads.escapeHtml(r.id)}">
-    <div class="ri-node-head">
-      <div class="ri-avatar">${Threads.escapeHtml((r.username || '?')[0].toUpperCase())}</div>
-      <span class="ri-user">${Threads.escapeHtml(r.username || '—')}</span>
-      <span class="ri-ago">${relTime(r.timestamp)}</span>
-      ${status}
-    </div>
-    <p class="ri-body">${Threads.escapeHtml(previewText(r.text || '', 220))}</p>
-    ${media}
-    ${nestHint}
-    <div class="ri-actions">
-      <button type="button" class="th-btn th-btn-soft !py-1 !px-2.5 text-xs" data-compose="${Threads.escapeHtml(r.id)}">
-        <i class="bi bi-reply-fill"></i> Balas
-      </button>
-      <button type="button" class="th-btn th-btn-ghost !py-1 !px-2.5 text-xs" data-hide="${Threads.escapeHtml(r.id)}" data-val="${hidden ? 'false' : 'true'}">
-        ${hidden ? 'Tampilkan' : 'Sembunyikan'}
-      </button>
-      ${r.permalink ? `<a class="th-btn th-btn-ghost !py-1 !px-2.5 text-xs" href="${Threads.escapeHtml(r.permalink)}" target="_blank" rel="noopener"><i class="bi bi-box-arrow-up-right"></i></a>` : ''}
-    </div>
-    <div class="ri-composer hidden" data-composer-for="${Threads.escapeHtml(r.id)}">
-      <textarea class="th-textarea" rows="2" placeholder="Balas @${Threads.escapeHtml(r.username || '')}…"></textarea>
-      <div class="flex gap-2 mt-2 justify-end">
-        <button type="button" class="th-btn th-btn-ghost !py-1 !px-2.5 text-xs" data-cancel-compose>Batal</button>
-        <button type="button" class="th-btn th-btn-primary !py-1 !px-2.5 text-xs" data-send-reply="${Threads.escapeHtml(r.id)}">Kirim</button>
-      </div>
-    </div>
-  </article>`;
-}
-
-function renderReplies() {
-  const list = document.getElementById('replies-list');
-  const items = filteredRoots();
-  const pending = repliesPayload?.pending_count ?? 0;
-  const answered = repliesPayload?.answered_count ?? 0;
-  const total = repliesPayload?.count ?? 0;
-
-  if (selectedId) {
-    postStats.set(selectedId, { answered, pending, total });
-    renderPosts();
-    const post = posts.find(p => p.id === selectedId);
-    renderSelectedPost(post);
-  }
-
-  document.getElementById('thread-title').textContent = 'Conversation';
-  document.getElementById('thread-sub').textContent = total
-    ? `${answered} replied / ${total} total`
-    : 'Tidak ada balasan';
-  setSummary(pending ? `${pending} belum dibalas` : (total ? 'Semua sudah dibalas' : '0 balasan'), pending === 0 && total > 0);
-
-  if (!items.length) {
-    list.innerHTML = `<div class="th-empty py-12">
-      <p class="font-semibold mb-1">${filter === 'all' ? 'Belum ada balasan' : 'Kosong di filter ini'}</p>
-      <p class="text-sm text-muted">Coba filter lain atau pilih post berbeda.</p>
+function renderPending() {
+  const root = document.getElementById('pending-list');
+  if (!pending.length) {
+    root.innerHTML = `<div class="th-empty py-12">
+      <p class="font-semibold mb-1">Tidak ada yang pending</p>
+      <p class="text-sm text-muted">Semua reply di post ini sudah dibalas.</p>
     </div>`;
+    updateRunUI();
     return;
   }
-  list.innerHTML = items.map(r => renderNode(r)).join('');
+
+  root.innerHTML = pending.map((p, i) => `
+    <article class="ar-pending${p.selected !== false ? ' is-on' : ''}" data-idx="${i}">
+      <label class="ar-pending-check">
+        <input type="checkbox" data-pick ${p.selected !== false ? 'checked' : ''} ${running ? 'disabled' : ''}>
+      </label>
+      <div class="ar-pending-body">
+        <div class="ar-pending-head">
+          <strong>@${Threads.escapeHtml(p.username || 'user')}</strong>
+          <span class="text-muted">${relTime(p.timestamp)}</span>
+          ${p.status ? `<span class="ar-status ${p.statusKind || ''}">${Threads.escapeHtml(p.status)}</span>` : ''}
+        </div>
+        <p class="ar-pending-text">${Threads.escapeHtml(previewText(p.text, 240))}</p>
+      </div>
+    </article>
+  `).join('');
+  updateRunUI();
+}
+
+function renderThreadChrome() {
+  const answered = repliesPayload?.answered_count ?? 0;
+  const total = repliesPayload?.count ?? 0;
+  const pendN = pending.length;
+  document.getElementById('thread-title').textContent = 'Belum dibalas';
+  document.getElementById('thread-sub').textContent = total
+    ? `${pendN} pending · ${answered} sudah / ${total} total`
+    : 'Tidak ada balasan';
+  setSummary(pendN ? `${pendN} belum dibalas` : (total ? 'Semua sudah dibalas' : '0 balasan'), pendN === 0 && total > 0);
+
+  if (selectedId) {
+    postStats.set(selectedId, {
+      answered,
+      pending: pendN,
+      total,
+    });
+    renderPosts();
+    renderSelectedPost(posts.find(p => p.id === selectedId));
+  }
+  renderPending();
 }
 
 async function loadPosts() {
@@ -221,28 +239,33 @@ async function fetchReplies(id, { refresh = false } = {}) {
 async function selectPost(id, { refresh = false } = {}) {
   const seq = ++selectSeq;
   selectedId = id;
+  pending = [];
+  document.getElementById('ar-progress').textContent = '';
   const post = posts.find(p => p.id === id);
   renderPosts();
   document.getElementById('thread-empty').classList.add('hidden');
   document.getElementById('thread-body').classList.remove('hidden');
   renderSelectedPost(post);
+  updateRunUI();
 
   const cached = !refresh ? repliesCache.get(id) : null;
   const freshEnough = cached && (Date.now() - cached.at) < 60_000;
   if (freshEnough) {
     repliesPayload = cached.data;
-    renderReplies();
+    syncPendingFromPayload();
+    renderThreadChrome();
   } else {
-    document.getElementById('thread-title').textContent = 'Conversation';
-    document.getElementById('thread-sub').textContent = 'Memuat thread…';
-    document.getElementById('replies-list').innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">Memuat…</p></div>`;
+    document.getElementById('thread-sub').textContent = 'Memuat reply…';
+    document.getElementById('pending-list').innerHTML =
+      `<div class="th-empty py-10"><p class="text-sm text-muted">Memuat…</p></div>`;
   }
 
   try {
     const data = await fetchReplies(id, { refresh: refresh || !freshEnough });
     if (seq !== selectSeq || selectedId !== id) return;
     repliesPayload = data;
-    renderReplies();
+    syncPendingFromPayload();
+    renderThreadChrome();
     const url = new URL(location.href);
     url.searchParams.set('media_id', id);
     history.replaceState(null, '', url);
@@ -250,85 +273,150 @@ async function selectPost(id, { refresh = false } = {}) {
     if (seq !== selectSeq) return;
     if (!freshEnough) {
       Threads.toast(e.message, false);
-      document.getElementById('replies-list').innerHTML =
+      document.getElementById('pending-list').innerHTML =
         `<div class="th-empty py-10"><p class="text-sm text-muted">${Threads.escapeHtml(e.message)}</p></div>`;
     }
   }
 }
 
+async function jalankanBalasan() {
+  showAlert('');
+  if (!selectedId) return Threads.toast('Pilih post dulu', false);
+  const intent = document.getElementById('ar-intent').value.trim();
+  if (!intent) return Threads.toast('Isi instruksi dulu', false);
+
+  const queue = pending.filter(p => p.selected !== false);
+  if (!queue.length) return Threads.toast('Centang minimal 1 reply', false);
+
+  const post = posts.find(p => p.id === selectedId);
+  running = true;
+  updateRunUI();
+  const btn = document.getElementById('btn-run');
+  const prog = document.getElementById('ar-progress');
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Menjalankan…';
+  btn.disabled = true;
+
+  queue.forEach(p => {
+    p.status = 'AI menulis…';
+    p.statusKind = 'run';
+  });
+  renderPending();
+  prog.textContent = 'Generate draf…';
+
+  let drafts = [];
+  try {
+    const result = await Threads.api('/api/ai/replies', {
+      method: 'POST',
+      body: JSON.stringify({
+        media_id: selectedId,
+        post_text: post?.text || '',
+        intent,
+        only_pending: true,
+        limit: queue.length,
+        incoming: queue.map(p => ({ id: p.id, username: p.username, text: p.text })),
+      }),
+    });
+    drafts = result.drafts || [];
+    if (result.consideration) {
+      document.getElementById('ar-hint').textContent = result.consideration;
+    }
+  } catch (e) {
+    showAlert(e.message);
+    Threads.toast(e.message, false);
+    queue.forEach(p => {
+      p.status = 'Gagal AI';
+      p.statusKind = 'err';
+    });
+    renderPending();
+    running = false;
+    btn.innerHTML = '<i class="bi bi-play-fill"></i> Jalankan balasan';
+    updateRunUI();
+    return;
+  }
+
+  const byID = new Map(drafts.map(d => [d.reply_to_id, d]));
+  let ok = 0;
+  let fail = 0;
+  let skipped = 0;
+
+  for (const item of pending) {
+    if (item.selected === false) continue;
+    const d = byID.get(item.id);
+    if (!d || d.skip || !String(d.text || '').trim()) {
+      item.status = d?.skip_reason || 'Dilewati AI';
+      item.statusKind = '';
+      item.selected = false;
+      skipped++;
+      renderPending();
+      continue;
+    }
+    item.status = 'Mengirim…';
+    item.statusKind = 'run';
+    renderPending();
+    prog.textContent = `Kirim @${item.username || 'user'}…`;
+    try {
+      await Threads.api('/api/publish', {
+        method: 'POST',
+        body: JSON.stringify({
+          media_type: 'TEXT',
+          text: String(d.text).trim(),
+          reply_to_id: item.id,
+          publish: true,
+        }),
+      });
+      item.status = 'Terkirim';
+      item.statusKind = 'ok';
+      item.selected = false;
+      ok++;
+    } catch (e) {
+      item.status = 'Gagal: ' + (e.message || e);
+      item.statusKind = 'err';
+      fail++;
+    }
+    renderPending();
+    await new Promise(r => setTimeout(r, 650));
+  }
+
+  running = false;
+  btn.innerHTML = '<i class="bi bi-play-fill"></i> Jalankan balasan';
+  prog.textContent = `Selesai · ${ok} terkirim` + (skipped ? ` · ${skipped} skip` : '') + (fail ? ` · ${fail} gagal` : '');
+  Threads.toast(prog.textContent, fail === 0);
+  updateRunUI();
+
+  repliesCache.delete(selectedId);
+  if (selectedId) await selectPost(selectedId, { refresh: true });
+}
+
 document.getElementById('posts-list').addEventListener('click', e => {
   const item = e.target.closest('[data-id]');
-  if (!item) return;
+  if (!item || running) return;
   selectPost(item.dataset.id);
 });
 
 document.getElementById('post-search').addEventListener('input', () => renderPosts());
 document.getElementById('btn-refresh-posts').onclick = () => {
+  if (running) return;
   repliesCache.clear();
   postStats.clear();
   loadPosts();
   if (selectedId) selectPost(selectedId, { refresh: true });
 };
 
-document.getElementById('reply-filter').addEventListener('click', e => {
-  const btn = e.target.closest('[data-filter]');
-  if (!btn) return;
-  filter = btn.dataset.filter;
-  document.querySelectorAll('#reply-filter [data-filter]').forEach(b => b.classList.toggle('active', b === btn));
-  if (repliesPayload) renderReplies();
-});
+document.getElementById('ar-intent').addEventListener('input', updateRunUI);
+document.getElementById('btn-run').onclick = () => jalankanBalasan();
 
-document.getElementById('replies-list').addEventListener('click', async e => {
-  const compose = e.target.closest('[data-compose]');
-  if (compose) {
-    const id = compose.dataset.compose;
-    document.querySelectorAll('.ri-composer').forEach(el => {
-      el.classList.toggle('hidden', el.dataset.composerFor !== id);
-    });
-    document.querySelector(`[data-composer-for="${CSS.escape(id)}"] textarea`)?.focus();
-    return;
-  }
-  if (e.target.closest('[data-cancel-compose]')) {
-    e.target.closest('.ri-composer')?.classList.add('hidden');
-    return;
-  }
-  const send = e.target.closest('[data-send-reply]');
-  if (send) {
-    const replyTo = send.dataset.sendReply;
-    const text = send.closest('.ri-composer')?.querySelector('textarea')?.value?.trim();
-    if (!text) return Threads.toast('Tulis balasan dulu', false);
-    send.disabled = true;
-    try {
-      await Threads.api('/api/publish', {
-        method: 'POST',
-        body: JSON.stringify({ media_type: 'TEXT', text, reply_to_id: replyTo, publish: true }),
-      });
-      Threads.toast('Balasan terkirim', true);
-      repliesCache.delete(selectedId);
-      if (selectedId) await selectPost(selectedId, { refresh: true });
-    } catch (err) {
-      Threads.toast(err.message, false);
-      send.disabled = false;
-    }
-    return;
-  }
-  const hideBtn = e.target.closest('[data-hide]');
-  if (hideBtn) {
-    try {
-      await Threads.api('/api/replies/manage', {
-        method: 'POST',
-        body: JSON.stringify({ reply_id: hideBtn.dataset.hide, hide: hideBtn.dataset.val === 'true' }),
-      });
-      Threads.toast('Status diubah', true);
-      repliesCache.delete(selectedId);
-      if (selectedId) await selectPost(selectedId, { refresh: true });
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
-  }
+document.getElementById('pending-list').addEventListener('change', e => {
+  if (!e.target.matches('[data-pick]') || running) return;
+  const card = e.target.closest('[data-idx]');
+  const i = Number(card?.dataset.idx);
+  if (!pending[i]) return;
+  pending[i].selected = e.target.checked;
+  card.classList.toggle('is-on', e.target.checked);
+  updateRunUI();
 });
 
 (async () => {
+  updateRunUI();
   await loadPosts();
   const mid = new URLSearchParams(location.search).get('media_id');
   if (mid) {

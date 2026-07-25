@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IG Carousel — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=saas35">
+<link rel="stylesheet" href="/css/app.css?v=strand6">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -47,7 +47,7 @@
   <div class="igc-film-wrap mb-4">
     <div class="igc-film-head">
       <span id="film-label" class="text-sm font-semibold text-ink">0 slide</span>
-      <div class="flex gap-2">
+      <div class="flex gap-2 flex-wrap justify-end">
         <button type="button" id="btn-from-utas" class="th-btn th-btn-ghost text-xs">
           <i class="bi bi-box-arrow-in-down"></i> Ambil utas tersimpan
         </button>
@@ -87,25 +87,51 @@
 
     <aside class="igc-preview-col">
       <div class="igc-preview-sticky th-panel">
-        <div class="th-panel-head flex items-center justify-between">
-          <span>Preview</span>
-          <div class="igc-nav-btns">
-            <button type="button" id="btn-prev" class="th-btn th-btn-ghost !py-1 !px-2"><i class="bi bi-chevron-left"></i></button>
-            <button type="button" id="btn-next" class="th-btn th-btn-ghost !py-1 !px-2"><i class="bi bi-chevron-right"></i></button>
-          </div>
+        <div class="th-panel-head flex items-center justify-between gap-2">
+          <span>Preview feed</span>
+          <span class="igc-preview-tag">PNG publish</span>
         </div>
         <div class="th-panel-body">
           <div class="igc-stage">
-            <div class="igc-png-wrap">
-              <img id="preview-png" class="igc-png" alt="Preview slide (hasil render publish)">
-              <div id="preview-png-loading" class="igc-png-loading">Merender gambar…</div>
-            </div>
-            <div class="igc-png-meta">
-              <div class="igc-dots" id="preview-dots"></div>
-              <span id="preview-meta" class="igc-meta text-ink">1 / 6</span>
-            </div>
+            <article class="igc-phone">
+              <header class="igc-ig-chrome">
+                <div class="igc-ig-user">
+                  <span class="igc-ig-avatar" id="preview-avatar">?</span>
+                  <div class="igc-ig-user-meta">
+                    <strong id="preview-handle">brand</strong>
+                    <span class="igc-ig-sub">Carousel · 4:5</span>
+                  </div>
+                </div>
+                <span class="igc-ig-more" aria-hidden="true"><i class="bi bi-three-dots"></i></span>
+              </header>
+              <div class="igc-png-wrap">
+                <img id="preview-png" class="igc-png" alt="Preview slide (hasil render publish)">
+                <div id="preview-png-loading" class="igc-png-loading">
+                  <span class="igc-png-spinner"></span>
+                  Merender…
+                </div>
+                <button type="button" id="btn-prev" class="igc-nav-fab igc-nav-prev" aria-label="Slide sebelumnya">
+                  <i class="bi bi-chevron-left"></i>
+                </button>
+                <button type="button" id="btn-next" class="igc-nav-fab igc-nav-next" aria-label="Slide berikutnya">
+                  <i class="bi bi-chevron-right"></i>
+                </button>
+              </div>
+              <div class="igc-ig-bar">
+                <div class="igc-ig-icons" aria-hidden="true">
+                  <i class="bi bi-heart"></i>
+                  <i class="bi bi-chat"></i>
+                  <i class="bi bi-send"></i>
+                  <i class="bi bi-bookmark ms-auto"></i>
+                </div>
+                <div class="igc-png-meta">
+                  <div class="igc-dots" id="preview-dots"></div>
+                  <span id="preview-meta" class="igc-meta">1 / 6</span>
+                </div>
+              </div>
+            </article>
           </div>
-          <p class="text-[11px] text-muted mt-2 mb-0">Preview = PNG asli yang di-upload ke IG (bukan mock CSS).</p>
+          <p class="igc-hint">Ini PNG asli yang di-upload ke IG — geser panah atau klik dot.</p>
           <p id="consideration" class="igc-consideration"></p>
           <p id="fit-warn" class="igc-fit-warn" hidden></p>
           <div class="igc-actions">
@@ -139,8 +165,8 @@
     </div>
   </div>
 </main>
-<script src="/js/api.js?v=saas35"></script>
-<script src="/js/layout.js?v=saas35"></script>
-<script src="/js/pages/ig-carousel.js?v=saas35"></script>
+<script src="/js/api.js?v=strand1"></script>
+<script src="/js/layout.js?v=strand1"></script>
+<script src="/js/pages/ig-carousel.js?v=strand6"></script>
 </body>
 </html>
