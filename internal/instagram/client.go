@@ -24,9 +24,13 @@ type Client struct {
 }
 
 func New() *Client {
+	return NewWithTokenPath(filepath.Join(".data", "ig_access_token"))
+}
+
+func NewWithTokenPath(tokenPath string) *Client {
 	c := &Client{
 		http:      &http.Client{Timeout: 120 * time.Second},
-		tokenPath: filepath.Join(".data", "ig_access_token"),
+		tokenPath: tokenPath,
 	}
 	c.loadTokenFile()
 	return c

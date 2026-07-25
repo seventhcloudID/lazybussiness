@@ -129,7 +129,10 @@ document.getElementById('posts-list').addEventListener('click', async e => {
       return;
     }
     if (del) {
-      if (!confirm('Hapus post ini?')) return;
+      if (!(await Threads.confirm('Hapus post ini?', {
+        title: 'Hapus post',
+        okLabel: 'Hapus post',
+      }))) return;
       try {
         await Threads.api('/api/media/' + del.dataset.delete, { method: 'DELETE' });
         Threads.toast('Post dihapus', true);
@@ -154,7 +157,7 @@ document.getElementById('posts-list').addEventListener('click', async e => {
         return `${m.title || m.name}: ${Threads.fmtNum(v)}`;
       });
       if (!lines.length) return Threads.toast('Tidak ada metrik', false);
-      alert(lines.join('\n'));
+      await Threads.alert(lines.join('\n'), { title: 'Insight post' });
     }
   } catch (err) { Threads.toast(err.message, false); }
 });
@@ -164,10 +167,10 @@ document.getElementById('posts-list').addEventListener('click', async e => {
   if (!(await Threads.requireConnected())) {
     document.getElementById('posts-list').innerHTML = emptyState(
       'Belum terhubung',
-      'Hubungkan token di halaman Token & Izin dulu.'
+      'Hubungkan token Threads di Akun & API → Kelola.'
     );
     const cta = document.querySelector('#posts-list a');
-    if (cta) { cta.href = '/token.html'; cta.textContent = 'Ke Token & Izin'; }
+    if (cta) { cta.href = '/akun.html'; cta.textContent = 'Ke Akun & API'; }
     return;
   }
   try {

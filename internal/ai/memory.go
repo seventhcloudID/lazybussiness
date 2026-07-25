@@ -17,23 +17,16 @@ type MemoryStore struct {
 	data Memory
 }
 
-const (
-	CategoryGeneral       = "general"
-	CategoryYoutubeToUtas = "youtube_to_utas"
-)
-
 type Memory struct {
-	Instructions        string          `json:"instructions"`         // general
-	InstructionsYoutube string          `json:"instructions_youtube"` // youtube_to_utas (selalu dikirim, boleh kosong)
-	Niche                string          `json:"niche"`                           // legacy / joined display
-	Niches               []string        `json:"niches"`                          // preferred: multi niche
-	Brand                string          `json:"brand"`                           // nama brand di carousel/IG
-	ContentCategory      string          `json:"content_category,omitempty"`      // general | youtube_to_utas
-	UpdatedAt            string          `json:"updated_at"`
-	Lessons              Lessons         `json:"lessons"`
-	Daily                []DailyFocus    `json:"daily"`
-	History              []GenHistory    `json:"history"`
-	Feedback             []DraftFeedback `json:"feedback"`
+	Instructions string          `json:"instructions"`
+	Niche        string          `json:"niche"`  // legacy / joined display
+	Niches       []string        `json:"niches"` // preferred: multi niche
+	Brand        string          `json:"brand"`  // nama brand di carousel/IG
+	UpdatedAt    string          `json:"updated_at"`
+	Lessons      Lessons         `json:"lessons"`
+	Daily        []DailyFocus    `json:"daily"`
+	History      []GenHistory    `json:"history"`
+	Feedback     []DraftFeedback `json:"feedback"`
 }
 
 type Lessons struct {
@@ -93,7 +86,11 @@ type GeneratedDraft struct {
 }
 
 func NewMemoryStore() *MemoryStore {
-	s := &MemoryStore{path: filepath.Join(".data", "ai_memory.json")}
+	return NewMemoryStoreAt(filepath.Join(".data", "ai_memory.json"))
+}
+
+func NewMemoryStoreAt(path string) *MemoryStore {
+	s := &MemoryStore{path: path}
 	s.load()
 	return s
 }
@@ -133,42 +130,14 @@ func (s *MemoryStore) persistLocked() error {
 func (s *MemoryStore) Get() Memory {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	m := s.data
-	m.ContentCategory = NormalizeCategory(m.ContentCategory)
-	return m
-}
-
-func NormalizeCategory(c string) string {
-	switch strings.TrimSpace(strings.ToLower(c)) {
-	case CategoryYoutubeToUtas, "youtube", "yt", "youtube_utas":
-		return CategoryYoutubeToUtas
-	default:
-		return CategoryGeneral
-	}
+	return s.data
 }
 
 func (s *MemoryStore) SetInstructions(text string) error {
-	return s.SetInstructionsForCategory(CategoryGeneral, text)
-}
-
-func (s *MemoryStore) SetInstructionsForCategory(cat, text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
-	text = strings.TrimSpace(text)
-	if NormalizeCategory(cat) == CategoryYoutubeToUtas {
-		s.data.InstructionsYoutube = text
-	} else {
-		s.data.Instructions = text
-	}
+	s.data.Instructions = strings.TrimSpace(text)
 	return s.persistLocked()
-}
-
-// InstructionsForCategory returns saved instructions for the category (may be empty).
-func InstructionsForCategory(m Memory, cat string) string {
-	if NormalizeCategory(cat) == CategoryYoutubeToUtas {
-		return strings.TrimSpace(m.InstructionsYoutube)
-	}
-	return strings.TrimSpace(m.Instructions)
 }
 
 func (s *MemoryStore) SetNiche(text string) error {
@@ -187,13 +156,6 @@ func (s *MemoryStore) SetBrand(text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.Brand = strings.TrimSpace(text)
-	return s.persistLocked()
-}
-
-func (s *MemoryStore) SetContentCategory(cat string) error {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-	s.data.ContentCategory = NormalizeCategory(cat)
 	return s.persistLocked()
 }
 

@@ -41,9 +41,13 @@ type cachedJSON struct {
 }
 
 func New() *Client {
+	return NewWithTokenPath(filepath.Join(".data", "access_token"))
+}
+
+func NewWithTokenPath(tokenPath string) *Client {
 	c := &Client{
 		http:         &http.Client{Timeout: 30 * time.Second},
-		tokenPath:    filepath.Join(".data", "access_token"),
+		tokenPath:    tokenPath,
 		repliesCache: map[string]cachedJSON{},
 	}
 	c.loadTokenFile()
@@ -180,6 +184,119 @@ func (c *Client) Do(method, path string, query url.Values, form url.Values) (jso
 		return nil, &APIError{Status: res.StatusCode, Body: raw}
 	}
 	return raw, nil
+}
+
+// DoGetURL fetches an absolute Graph URL (used for paging.next).
+func (c *Client) DoGetURL(rawURL string) (json.RawMessage, error) {
+	if strings.TrimSpace(rawURL) == "" {
+		return nil, fmt.Errorf("url kosong")
+	}
+	req, err := http.NewRequest(http.MethodGet, rawURL, nil)
+	if err != nil {
+		return nil, err
+	}
+	res, err := c.http.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer res.Body.Close()
+	raw, err := io.ReadAll(res.Body)
+	if err != nil {
+		return nil, err
+	}
+	if res.StatusCode >= 400 {
+		return nil, &APIError{Status: res.StatusCode, Body: raw}
+	}
+	return raw, nil
+}
+
+// DoPaged follows Graph paging until exhausted (or maxPages).
+// Returns a single JSON object {"data":[...]} merging all pages.
+func (c *Client) DoPaged(path string, query url.Values, maxPages int) (json.RawMessage, error) {
+	if maxPages <= 0 {
+		maxPages = 20
+	}
+	if query == nil {
+		query = url.Values{}
+	}
+	if query.Get("limit") == "" {
+		query.Set("limit", "50")
+	}
+
+	var all []json.RawMessage
+	seen := map[string]bool{}
+	raw, err := c.Do(http.MethodGet, path, query, nil)
+	if err != nil {
+		return nil, err
+	}
+	for page := 0; page < maxPages; page++ {
+		var env struct {
+			Data   []json.RawMessage `json:"data"`
+			Paging *struct {
+				Cursors *struct {
+					After string `json:"after"`
+				} `json:"cursors"`
+				Next string `json:"next"`
+			} `json:"paging"`
+		}
+		if err := json.Unmarshal(raw, &env); err != nil {
+			return nil, err
+		}
+		for _, item := range env.Data {
+			var idWrap struct {
+				ID string `json:"id"`
+			}
+			_ = json.Unmarshal(item, &idWrap)
+			key := idWrap.ID
+			if key == "" {
+				key = string(item)
+			}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			all = append(all, item)
+		}
+		next := ""
+		after := ""
+		if env.Paging != nil {
+			next = strings.TrimSpace(env.Paging.Next)
+			if env.Paging.Cursors != nil {
+				after = strings.TrimSpace(env.Paging.Cursors.After)
+			}
+		}
+		if next == "" && after == "" {
+			break
+		}
+		if len(env.Data) == 0 {
+			break
+		}
+		if next != "" {
+			raw, err = c.DoGetURL(next)
+		} else {
+			q := cloneValues(query)
+			q.Set("after", after)
+			raw, err = c.Do(http.MethodGet, path, q, nil)
+		}
+		if err != nil {
+			return nil, err
+		}
+	}
+	out, err := json.Marshal(map[string]any{"data": all})
+	if err != nil {
+		return nil, err
+	}
+	return out, nil
+}
+
+func cloneValues(in url.Values) url.Values {
+	out := make(url.Values, len(in))
+	for k, vs := range in {
+		cp := make([]string, len(vs))
+		copy(cp, vs)
+		out[k] = cp
+	}
+	return out
 }
 
 func (c *Client) GetMe() (json.RawMessage, error) {
@@ -784,18 +901,20 @@ func (c *Client) KeywordSearch(q, searchType string) (json.RawMessage, error) {
 }
 
 func (c *Client) GetReplies(mediaID string) (json.RawMessage, error) {
-	return c.Do(http.MethodGet, "/"+mediaID+"/replies", url.Values{
+	return c.DoPaged("/"+mediaID+"/replies", url.Values{
 		"fields":  {"id,text,username,timestamp,permalink,hide_status,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,media_url,thumbnail_url,media_type"},
 		"reverse": {"false"},
-	}, nil)
+		"limit":   {"50"},
+	}, 20)
 }
 
 // GetConversation returns the full reply tree (all depths) under a post.
 func (c *Client) GetConversation(mediaID string) (json.RawMessage, error) {
-	return c.Do(http.MethodGet, "/"+mediaID+"/conversation", url.Values{
+	return c.DoPaged("/"+mediaID+"/conversation", url.Values{
 		"fields":  {"id,text,username,timestamp,permalink,hide_status,has_replies,is_reply,is_reply_owned_by_me,replied_to,root_post,media_url,thumbnail_url,media_type"},
 		"reverse": {"false"},
-	}, nil)
+		"limit":   {"50"},
+	}, 20)
 }
 
 // GetMyReplies returns replies authored by the connected account.
@@ -803,10 +922,10 @@ func (c *Client) GetMyReplies(limit string) (json.RawMessage, error) {
 	if limit == "" {
 		limit = "50"
 	}
-	return c.Do(http.MethodGet, "/me/replies", url.Values{
+	return c.DoPaged("/me/replies", url.Values{
 		"fields": {"id,text,username,timestamp,permalink,replied_to,root_post,is_reply_owned_by_me"},
 		"limit":  {limit},
-	}, nil)
+	}, 3)
 }
 
 func (c *Client) InvalidateReplyCaches() {
@@ -985,52 +1104,52 @@ func (c *Client) GetRepliesEnriched(mediaID string, deep, refresh bool) (json.Ra
 		roots = append(roots, n)
 	}
 
-	var mark func(n node) bool
-	mark = func(n node) bool {
+	var mark func(n node)
+	mark = func(n node) {
 		id := idOf(n)
 		kids, _ := n["children"].([]node)
-		childAnswered := false
 		for i := range kids {
-			if mark(kids[i]) {
-				childAnswered = true
-			}
+			mark(kids[i])
 		}
 		n["children"] = kids
-		isAns := answered[id] || childAnswered || owned(n)
-		// own top-level reply to post doesn't count as "answered incoming"
-		if owned(n) && parentOf[id] == mediaID {
-			isAns = true // our own comment on our post
-		}
-		if !owned(n) {
-			n["answered"] = isAns
-			if isAns {
-				n["reply_status"] = "answered"
-			} else {
-				n["reply_status"] = "pending"
-			}
-		} else {
+		if owned(n) {
 			n["answered"] = true
 			n["reply_status"] = "mine"
 			n["is_mine"] = true
+			return
 		}
-		return isAns || owned(n)
+		// Hanya "answered" bila kita membalas LANGSUNG ke node ini —
+		// jangan wariskan dari anak, supaya nested pending tetap terlihat.
+		isAns := answered[id]
+		n["answered"] = isAns
+		if isAns {
+			n["reply_status"] = "answered"
+		} else {
+			n["reply_status"] = "pending"
+		}
 	}
 
 	answeredN, pendingN := 0, 0
+	var walkCount func(n node)
+	walkCount = func(n node) {
+		if !owned(n) {
+			if a, _ := n["answered"].(bool); a {
+				answeredN++
+			} else {
+				pendingN++
+			}
+		}
+		kids, _ := n["children"].([]node)
+		for i := range kids {
+			walkCount(kids[i])
+		}
+	}
+
 	incoming := make([]node, 0, len(roots))
 	for _, r := range roots {
 		mark(r)
-		if owned(r) {
-			// skip own top-level in incoming list? keep them in tree under filter
-			incoming = append(incoming, r)
-			continue
-		}
 		incoming = append(incoming, r)
-		if a, _ := r["answered"].(bool); a {
-			answeredN++
-		} else {
-			pendingN++
-		}
+		walkCount(r)
 	}
 
 	out, err := json.Marshal(map[string]any{
@@ -1135,34 +1254,41 @@ func (c *Client) ListPendingInbox(maxPosts, maxItems int) (json.RawMessage, erro
 		if err != nil {
 			continue
 		}
-		var env struct {
-			Data []struct {
-				ID        string `json:"id"`
-				Username  string `json:"username"`
-				Text      string `json:"text"`
-				Timestamp string `json:"timestamp"`
-				Permalink string `json:"permalink"`
-				IsMine    bool   `json:"is_mine"`
-				Answered  bool   `json:"answered"`
-			} `json:"data"`
-			PendingCount int `json:"pending_count"`
+		type treeNode struct {
+			ID        string     `json:"id"`
+			Username  string     `json:"username"`
+			Text      string     `json:"text"`
+			Timestamp string     `json:"timestamp"`
+			Permalink string     `json:"permalink"`
+			IsMine    bool       `json:"is_mine"`
+			Answered  bool       `json:"answered"`
+			Children  []treeNode `json:"children"`
 		}
-		if json.Unmarshal(raw, &env) != nil {
+		var roots []treeNode
+		if err := json.Unmarshal(raw, &struct {
+			Data *[]treeNode `json:"data"`
+		}{Data: &roots}); err != nil {
 			continue
 		}
-		for _, n := range env.Data {
-			if len(items) >= maxItems {
-				break
+		var walk func([]treeNode)
+		walk = func(nodes []treeNode) {
+			for _, n := range nodes {
+				if len(items) >= maxItems {
+					return
+				}
+				if !n.IsMine && !n.Answered && strings.TrimSpace(n.ID) != "" {
+					items = append(items, pendingItem{
+						ID: n.ID, Username: n.Username, Text: n.Text, Timestamp: n.Timestamp,
+						Permalink: n.Permalink, MediaID: post.ID, PostText: post.Text,
+						PostTimestamp: post.Timestamp, PostPermalink: post.Permalink,
+					})
+				}
+				if len(n.Children) > 0 {
+					walk(n.Children)
+				}
 			}
-			if n.IsMine || n.Answered || strings.TrimSpace(n.ID) == "" {
-				continue
-			}
-			items = append(items, pendingItem{
-				ID: n.ID, Username: n.Username, Text: n.Text, Timestamp: n.Timestamp,
-				Permalink: n.Permalink, MediaID: post.ID, PostText: post.Text,
-				PostTimestamp: post.Timestamp, PostPermalink: post.Permalink,
-			})
 		}
+		walk(roots)
 	}
 
 	return json.Marshal(map[string]any{

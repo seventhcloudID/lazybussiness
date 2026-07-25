@@ -29,16 +29,70 @@ function fmtTime(iso) {
   }
 }
 
+function fmtDay(ymd) {
+  if (!ymd) return '';
+  try {
+    const d = new Date(ymd + 'T12:00:00');
+    return d.toLocaleDateString('id-ID', { weekday: 'short', day: 'numeric', month: 'short' });
+  } catch {
+    return ymd;
+  }
+}
+
+function statusClass(st) {
+  if (st === 'pending') return 'pend';
+  if (st === 'running') return 'run';
+  if (st === 'done' || st === 'skipped_ig') return 'ok';
+  if (st === 'failed') return 'bad';
+  return '';
+}
+
+function jobRowHTML(j, compact) {
+  const snip = (j.parts?.[0] || '').replace(/\s+/g, ' ').slice(0, 90);
+  const st = j.status || 'pending';
+  const cls = statusClass(st);
+  const tags = [];
+  if (j.buffer_x_post_id) tags.push('X');
+  if (j.buffer_post_id) tags.push('TikTok');
+  if (j.thumb_url) tags.push('Thumb');
+  if (j.threads_ids?.length) tags.push('Threads');
+  if (j.ig_container) tags.push('IG');
+  const title = j.title || (compact ? 'Slot terjadwal' : j.id);
+  return `
+    <button type="button" class="lazy-job is-${cls || 'pend'}${st === 'done' || st === 'skipped_ig' ? ' is-done' : ''}" data-job="${Threads.escapeHtml(j.id)}">
+      <div class="lazy-job-time">
+        <span class="lazy-job-dot" aria-hidden="true"></span>
+        <span class="lazy-job-rail" aria-hidden="true"></span>
+        <strong>${fmtTime(j.scheduled_at)}</strong>
+      </div>
+      <div class="lazy-job-body">
+        <div class="lazy-job-main">
+          ${statusBadge(st)}
+          <span class="lazy-job-title">${Threads.escapeHtml(title)}</span>
+        </div>
+        ${!compact && snip ? `<div class="lazy-job-snip">${Threads.escapeHtml(snip)}${(j.parts?.[0] || '').length > 90 ? '…' : ''}</div>` : ''}
+        ${tags.length ? `<div class="lazy-job-tags">${tags.map(t => `<span class="lazy-tag">${t}</span>`).join('')}</div>` : ''}
+        ${j.buffer_x_error ? `<div class="lazy-job-err">Buffer X: ${Threads.escapeHtml(j.buffer_x_error)}</div>` : ''}
+        ${j.buffer_error ? `<div class="lazy-job-err">Buffer TikTok: ${Threads.escapeHtml(j.buffer_error)}</div>` : ''}
+        ${j.error ? `<div class="lazy-job-err">${Threads.escapeHtml(j.error)}</div>` : ''}
+      </div>
+    </button>`;
+}
+
 function statusBadge(st) {
   const map = {
     pending: ['Menunggu', 'pend'],
     running: ['Jalan', 'run'],
     done: ['Selesai', 'ok'],
     failed: ['Gagal', 'bad'],
-    skipped_ig: ['Threads OK · IG skip', 'warn'],
+    skipped_ig: ['IG skip', 'warn'],
   };
   const [label, cls] = map[st] || [st, ''];
   return `<span class="lazy-badge ${cls}">${Threads.escapeHtml(label)}</span>`;
+}
+
+function channelPill(ok, icon, label) {
+  return `<span class="lazy-ch ${ok ? 'is-ok' : 'is-off'}"><i class="bi ${icon}"></i>${Threads.escapeHtml(label)}</span>`;
 }
 
 function showJobDetail(job) {
@@ -82,9 +136,6 @@ function showJobDetail(job) {
       thumbBox.hidden = true;
       thumbImg.removeAttribute('src');
     }
-  }
-  if (job.category === 'youtube_to_utas' && job.youtube_title) {
-    bits.push('YouTube: ' + job.youtube_title + (job.youtube_url ? ' · ' + job.youtube_url : ''));
   }
   if (job.buffer_x_post_id) bits.push('Buffer X (shareNow): ' + job.buffer_x_post_id);
   if (job.buffer_x_error) bits.push('Buffer X: ' + job.buffer_x_error);
@@ -194,22 +245,47 @@ async function renderPng(text, brand, index, total) {
 
 function renderStatus(st) {
   const cfg = st.config || {};
-  document.getElementById('enabled').checked = !!cfg.enabled;
-  document.getElementById('enabled-label').textContent = cfg.enabled ? 'ON' : 'OFF';
+  const on = !!cfg.enabled;
+  document.getElementById('enabled').checked = on;
+  document.getElementById('enabled-label').textContent = on ? 'ON' : 'OFF';
+  const thumbOn = cfg.thumbnail_enabled !== false;
+  document.getElementById('thumb-enabled').checked = thumbOn;
+  document.getElementById('thumb-label').textContent = thumbOn ? 'ON' : 'OFF';
   document.getElementById('posts-per-day').value = cfg.posts_per_day || 5;
   if (cfg.topic_hint != null && document.getElementById('topic').dataset.dirty !== '1') {
     document.getElementById('topic').value = cfg.topic_hint || '';
   }
-  const catEl = document.getElementById('content-category');
-  if (catEl && catEl.dataset.dirty !== '1') {
-    catEl.value = st.content_category === 'youtube_to_utas' ? 'youtube_to_utas' : 'general';
-  }
-
   document.getElementById('stat-today').textContent = st.today || '—';
   const c = st.counts || {};
   document.getElementById('stat-done').textContent = String((c.done || 0) + (c.skipped_ig || 0));
   document.getElementById('stat-pending').textContent = String((c.pending || 0) + (c.running || 0));
   document.getElementById('stat-fail').textContent = String((c.failed || 0));
+
+  const hero = document.getElementById('lazy-hero');
+  if (hero) hero.dataset.on = on ? '1' : '0';
+  const heroTitle = document.getElementById('lazy-hero-title');
+  if (heroTitle) heroTitle.textContent = on ? 'ON' : 'OFF';
+  let heroNext = 'Nyalakan otomasi lalu simpan untuk mulai jadwal.';
+  if (on && st.next_pending) {
+    heroNext = `Post berikutnya hari ini jam ${fmtTime(st.next_pending.scheduled_at)}.`;
+  } else if (on && st.next_tomorrow) {
+    heroNext = `Hari ini selesai. Besok mulai jam ${fmtTime(st.next_tomorrow.scheduled_at)}.`;
+  } else if (on) {
+    heroNext = 'Otomasi aktif — menunggu slot terjadwal.';
+  }
+  document.getElementById('lazy-hero-next').textContent = heroNext;
+
+  const ch = document.getElementById('lazy-channels');
+  if (ch) {
+    ch.innerHTML = [
+      channelPill(!!st.threads_ok, 'bi-at', 'Threads'),
+      channelPill(!!st.instagram_ok, 'bi-instagram', 'Instagram'),
+      channelPill(!!st.buffer_ok, 'bi-broadcast', 'Buffer'),
+      channelPill(!!st.ai_ok, 'bi-stars', 'Gemini'),
+      channelPill(thumbOn && !!st.thumb_ok, 'bi-image', thumbOn ? 'Thumbnail' : 'Thumb OFF'),
+      channelPill(!!st.public_ok, 'bi-link-45deg', 'Public URL'),
+    ].join('');
+  }
 
   const warns = st.warnings || [];
   const wEl = document.getElementById('lazy-warnings');
@@ -221,23 +297,20 @@ function renderStatus(st) {
     wEl.innerHTML = '';
   }
 
-  const bits = [];
-  bits.push(`TZ ${st.timezone || '—'}`);
-  bits.push(st.public_ok ? 'PUBLIC_BASE_URL OK' : 'PUBLIC_BASE_URL belum');
-  bits.push(st.threads_ok ? 'Threads OK' : 'Threads —');
-  bits.push(st.instagram_ok ? 'IG OK' : 'IG —');
-  bits.push(st.buffer_ok ? 'Buffer OK' : 'Buffer —');
-  bits.push(st.ai_ok ? 'AI OK' : 'AI —');
-  document.getElementById('lazy-meta').textContent = bits.join(' · ');
+  document.getElementById('lazy-meta').textContent = `TZ ${st.timezone || '—'} · ${cfg.posts_per_day || 5}x/hari`;
 
   if (st.next_pending) {
     document.getElementById('next-hint').textContent =
-      `Berikutnya post jam ${fmtTime(st.next_pending.scheduled_at)}`;
+      `Berikutnya ${fmtTime(st.next_pending.scheduled_at)}`;
+  } else if (st.next_tomorrow) {
+    document.getElementById('next-hint').textContent =
+      `Selesai · besok ${fmtTime(st.next_tomorrow.scheduled_at)}`;
   } else {
-    document.getElementById('next-hint').textContent = cfg.enabled
-      ? 'Tidak ada antrian hari ini'
-      : 'Otomasi OFF — centang ON + Simpan untuk jadwal 5×/hari';
+    document.getElementById('next-hint').textContent = on ? 'Tidak ada antrian' : 'Otomasi OFF';
   }
+
+  const todayTitle = document.getElementById('schedule-today-title');
+  if (todayTitle) todayTitle.textContent = st.today ? fmtDay(st.today) : 'Antrian';
 
   const jobs = st.jobs_today || [];
   const list = document.getElementById('job-list');
@@ -245,25 +318,27 @@ function renderStatus(st) {
   setFastPoll(anyActive || !!watchJobId);
 
   if (!jobs.length) {
-    list.innerHTML = '<p class="text-sm text-muted p-4 m-0">Belum ada rencana — nyalakan otomasi lalu simpan (baru muncul jam post).</p>';
+    list.innerHTML = '<p class="lazy-empty">Belum ada rencana — nyalakan otomasi lalu simpan.</p>';
   } else {
-    list.innerHTML = jobs.map(j => {
-      const snip = (j.parts?.[0] || '').replace(/\s+/g, ' ').slice(0, 80);
-      return `
-      <button type="button" class="lazy-job" data-job="${Threads.escapeHtml(j.id)}">
-        <div class="lazy-job-main">
-          <strong>${fmtTime(j.scheduled_at)}</strong>
-          ${statusBadge(j.status)}
-          <span class="lazy-job-title">${Threads.escapeHtml(j.title || j.id)}</span>
-        </div>
-        ${snip ? `<div class="lazy-job-snip">${Threads.escapeHtml(snip)}${(j.parts?.[0] || '').length > 80 ? '…' : ''}</div>` : ''}
-        ${j.buffer_x_post_id ? `<div class="lazy-job-snip">Buffer X · shareNow</div>` : ''}
-        ${j.buffer_post_id ? `<div class="lazy-job-snip">Buffer TikTok · Notify Me</div>` : ''}
-        ${j.buffer_x_error ? `<div class="lazy-job-err">Buffer X: ${Threads.escapeHtml(j.buffer_x_error)}</div>` : ''}
-        ${j.buffer_error ? `<div class="lazy-job-err">Buffer TikTok: ${Threads.escapeHtml(j.buffer_error)}</div>` : ''}
-        ${j.error ? `<div class="lazy-job-err">${Threads.escapeHtml(j.error)}</div>` : ''}
-      </button>`;
-    }).join('');
+    list.innerHTML = jobs.map(j => jobRowHTML(j, false)).join('');
+  }
+
+  const tomEl = document.getElementById('tomorrow-date');
+  if (tomEl) tomEl.textContent = st.tomorrow ? fmtDay(st.tomorrow) : 'Jadwal';
+  const tomJobs = st.jobs_tomorrow || [];
+  const tomList = document.getElementById('tomorrow-list');
+  const tomHint = document.getElementById('tomorrow-hint');
+  if (st.next_tomorrow) {
+    tomHint.textContent = `${tomJobs.length} slot · mulai ${fmtTime(st.next_tomorrow.scheduled_at)}`;
+  } else if (on) {
+    tomHint.textContent = tomJobs.length ? `${tomJobs.length} slot` : 'Belum terbuat';
+  } else {
+    tomHint.textContent = 'Otomasi OFF';
+  }
+  if (!tomJobs.length) {
+    tomList.innerHTML = '<p class="lazy-empty">Belum ada jadwal besok. Simpan saat otomasi ON.</p>';
+  } else {
+    tomList.innerHTML = tomJobs.map(j => jobRowHTML(j, true)).join('');
   }
 
   if (watchJobId) {
@@ -308,6 +383,11 @@ document.getElementById('enabled').addEventListener('change', () => {
     document.getElementById('enabled').checked ? 'ON' : 'OFF';
 });
 
+document.getElementById('thumb-enabled').addEventListener('change', () => {
+  document.getElementById('thumb-label').textContent =
+    document.getElementById('thumb-enabled').checked ? 'ON' : 'OFF';
+});
+
 document.getElementById('topic').addEventListener('input', () => {
   document.getElementById('topic').dataset.dirty = '1';
 });
@@ -316,7 +396,7 @@ document.getElementById('brand').addEventListener('input', () => {
   if (detailJob?.parts?.length) renderCarouselPreview();
 });
 
-document.getElementById('job-list').addEventListener('click', async e => {
+async function openJobFromClick(e) {
   const btn = e.target.closest('[data-job]');
   if (!btn) return;
   try {
@@ -326,7 +406,10 @@ document.getElementById('job-list').addEventListener('click', async e => {
   } catch (err) {
     Threads.toast(err.message, false);
   }
-});
+}
+
+document.getElementById('job-list').addEventListener('click', openJobFromClick);
+document.getElementById('tomorrow-list').addEventListener('click', openJobFromClick);
 
 document.getElementById('lazy-parts').addEventListener('click', e => {
   const btn = e.target.closest('[data-part]');
@@ -356,10 +439,6 @@ document.getElementById('lazy-next').onclick = () => {
   renderCarouselPreview();
 };
 
-document.getElementById('content-category')?.addEventListener('change', () => {
-  document.getElementById('content-category').dataset.dirty = '1';
-});
-
 document.getElementById('btn-save').onclick = async () => {
   showAlert('');
   const posts = Math.max(5, Math.min(12, Number(document.getElementById('posts-per-day').value) || 5));
@@ -369,18 +448,13 @@ document.getElementById('btn-save').onclick = async () => {
     if (brand) {
       await Threads.api('/api/ai/brand', { method: 'PUT', body: JSON.stringify({ brand }) });
     }
-    const cat = document.getElementById('content-category')?.value || 'general';
-    await Threads.api('/api/ai/category', {
-      method: 'POST',
-      body: JSON.stringify({ category: cat }),
-    });
-    delete document.getElementById('content-category')?.dataset.dirty;
     await Threads.api('/api/lazy/config', {
       method: 'PUT',
       body: JSON.stringify({
         enabled: document.getElementById('enabled').checked,
         posts_per_day: posts,
         topic_hint: document.getElementById('topic').value.trim(),
+        thumbnail_enabled: document.getElementById('thumb-enabled').checked,
       }),
     });
     delete document.getElementById('topic').dataset.dirty;
@@ -421,7 +495,10 @@ document.getElementById('btn-run-now').onclick = async () => {
 document.getElementById('btn-refresh').onclick = () => refresh();
 
 document.getElementById('btn-replan').onclick = async () => {
-  if (!confirm('Hapus antrian hari ini dan buat jadwal baru dari sekarang?')) return;
+  if (!(await Threads.confirm('Hapus antrian hari ini dan buat jadwal baru dari sekarang?', {
+    title: 'Reset jadwal hari ini',
+    okLabel: 'Reset jadwal',
+  }))) return;
   try {
     await Threads.api('/api/lazy/replan', { method: 'POST', body: '{}' });
     Threads.toast('Jadwal hari ini di-reset', true);

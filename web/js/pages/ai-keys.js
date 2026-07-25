@@ -63,7 +63,10 @@ document.getElementById('btn-save').onclick = async () => {
 };
 
 document.getElementById('btn-clear').onclick = async () => {
-  if (!confirm('Hapus semua API key yang disimpan lewat UI? Key di .env tidak diubah.')) return;
+  if (!(await Threads.confirm('Hapus semua API key yang disimpan lewat UI? Key di .env tidak diubah.', {
+    title: 'Hapus Gemini keys',
+    okLabel: 'Hapus keys',
+  }))) return;
   try {
     const data = await Threads.api('/api/ai/keys', { method: 'DELETE' });
     renderStatus(data.keys);

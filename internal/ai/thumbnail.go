@@ -65,12 +65,109 @@ func collectOpenAIKeys() []string {
 			out = append(out, p)
 		}
 	}
+	// UI file dulu, lalu .env (merge; dedupe)
+	for _, k := range loadStoredOpenAIKeys() {
+		add(k)
+	}
 	add(os.Getenv("OPENAI_API_KEY"))
 	add(os.Getenv("OPENAI_API_KEYS"))
 	for i := 2; i <= 8; i++ {
 		add(os.Getenv(fmt.Sprintf("OPENAI_API_KEY_%d", i)))
 	}
 	return out
+}
+
+func collectOpenAIKeysFromEnvOnly() []string {
+	seen := map[string]bool{}
+	var out []string
+	add := func(raw string) {
+		for _, p := range strings.Split(raw, ",") {
+			p = strings.TrimSpace(p)
+			if p == "" || seen[p] {
+				continue
+			}
+			seen[p] = true
+			out = append(out, p)
+		}
+	}
+	add(os.Getenv("OPENAI_API_KEY"))
+	add(os.Getenv("OPENAI_API_KEYS"))
+	for i := 2; i <= 8; i++ {
+		add(os.Getenv(fmt.Sprintf("OPENAI_API_KEY_%d", i)))
+	}
+	return out
+}
+
+func (c *ThumbnailClient) reloadKeys() {
+	if c == nil {
+		return
+	}
+	c.keyMu.Lock()
+	c.apiKeys = collectOpenAIKeys()
+	c.keyIdx = 0
+	c.keyMu.Unlock()
+}
+
+// ApplyStoredOpenAIKeys menyimpan key dari UI lalu reload.
+func (c *ThumbnailClient) ApplyStoredOpenAIKeys(keys []string) error {
+	if c == nil {
+		return fmt.Errorf("thumbnail client nil")
+	}
+	if err := saveStoredOpenAIKeys(keys); err != nil {
+		return err
+	}
+	c.reloadKeys()
+	return nil
+}
+
+// ClearStoredOpenAIKeys menghapus key UI; key .env tetap dipakai.
+func (c *ThumbnailClient) ClearStoredOpenAIKeys() error {
+	if c == nil {
+		return fmt.Errorf("thumbnail client nil")
+	}
+	if err := clearStoredOpenAIKeys(); err != nil {
+		return err
+	}
+	c.reloadKeys()
+	return nil
+}
+
+func (c *ThumbnailClient) KeysStatus() map[string]any {
+	if c == nil {
+		return map[string]any{"enabled": false}
+	}
+	c.keyMu.Lock()
+	n := len(c.apiKeys)
+	masked := make([]string, 0, n)
+	for _, k := range c.apiKeys {
+		masked = append(masked, maskKey(k))
+	}
+	c.keyMu.Unlock()
+	stored := loadStoredOpenAIKeys()
+	envN := len(collectOpenAIKeysFromEnvOnly())
+	return map[string]any{
+		"enabled":     n > 0,
+		"provider":    "openai",
+		"model":       c.Model(),
+		"total":       n,
+		"store_count": len(stored),
+		"env_count":   envN,
+		"key_hint":    firstKeyHint(c),
+		"masked":      masked,
+		"note":        "Key UI di .data/openai_keys.json. Key .env digabung otomatis.",
+	}
+}
+
+func firstKeyHint(c *ThumbnailClient) string {
+	if c == nil {
+		return ""
+	}
+	c.keyMu.Lock()
+	defer c.keyMu.Unlock()
+	if len(c.apiKeys) == 0 {
+		return ""
+	}
+	return maskKey(c.apiKeys[0])
 }
 
 func (c *ThumbnailClient) Enabled() bool {
@@ -204,7 +301,7 @@ func (c *ThumbnailClient) Generate(hook string) (*ThumbnailResult, error) {
 
 func (c *ThumbnailClient) GenerateRequest(req ThumbnailRequest) (*ThumbnailResult, error) {
 	if !c.Enabled() {
-		return nil, fmt.Errorf("thumbnail ChatGPT belum dikonfigurasi — set OPENAI_API_KEY di .env")
+		return nil, fmt.Errorf("thumbnail ChatGPT belum dikonfigurasi — isi OpenAI key di Kelola akun")
 	}
 	hook := strings.TrimSpace(req.Hook)
 	if hook == "" {

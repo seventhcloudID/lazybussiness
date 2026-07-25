@@ -10,11 +10,12 @@ import (
 )
 
 type Scheduler struct {
-	deps   *Deps
-	stopCh chan struct{}
-	once   sync.Once
-	mu     sync.Mutex
-	busy   bool
+	deps    *Deps
+	stopCh  chan struct{}
+	once    sync.Once
+	mu      sync.Mutex
+	busy    bool
+	started bool
 }
 
 func NewScheduler(deps *Deps) *Scheduler {
@@ -25,6 +26,14 @@ func NewScheduler(deps *Deps) *Scheduler {
 }
 
 func (s *Scheduler) Start() {
+	s.mu.Lock()
+	if s.started {
+		s.mu.Unlock()
+		return
+	}
+	s.started = true
+	s.mu.Unlock()
+
 	// Job yang putus tengah jalan (restart server) → kembalikan ke pending
 	n := s.deps.Store.RecoverStuckJobs()
 	if n > 0 {
@@ -71,6 +80,11 @@ func (s *Scheduler) tick() {
 	if cfg.Enabled {
 		if err := s.EnsureDayPlan(now, cfg.PostsPerDay, s.deps.Threads); err != nil {
 			log.Printf("lazy plan: %v", err)
+		}
+		// Siapkan juga jadwal besok supaya UI bisa tampilkan jam post berikutnya.
+		tomorrow := time.Date(now.Year(), now.Month(), now.Day()+1, 12, 0, 0, 0, loc)
+		if err := s.EnsureDayPlan(tomorrow, cfg.PostsPerDay, s.deps.Threads); err != nil {
+			log.Printf("lazy plan tomorrow: %v", err)
 		}
 	}
 
@@ -133,19 +147,22 @@ func (s *Scheduler) tick() {
 	}(job)
 }
 
-// EnsureDayPlan creates today's pending jobs if missing (idempotent).
-func (s *Scheduler) EnsureDayPlan(now time.Time, postsPerDay int, client *threads.Client) error {
+// EnsureDayPlan creates pending jobs for the calendar day of `day` if missing (idempotent).
+func (s *Scheduler) EnsureDayPlan(day time.Time, postsPerDay int, client *threads.Client) error {
 	loc := s.deps.Store.Location()
-	now = now.In(loc)
-	date := now.Format("2006-01-02")
+	day = day.In(loc)
+	date := day.Format("2006-01-02")
 	if s.deps.Store.HasPlanForDate(date) {
 		return nil
 	}
 	if postsPerDay < 5 {
 		postsPerDay = 5
 	}
-	slots := BestSlotTimes(client, loc, now, postsPerDay)
-	slots = adjustPastSlots(slots, now, 90*time.Minute)
+	slots := BestSlotTimes(client, loc, day, postsPerDay)
+	today := time.Now().In(loc).Format("2006-01-02")
+	if date == today {
+		slots = adjustPastSlots(slots, time.Now().In(loc), 90*time.Minute)
+	}
 
 	jobs := make([]Job, 0, len(slots))
 	for i, t := range slots {
@@ -259,9 +276,12 @@ type Status struct {
 	Enabled         bool           `json:"enabled"`
 	Timezone        string         `json:"timezone"`
 	Today           string         `json:"today"`
+	Tomorrow        string         `json:"tomorrow"`
 	Counts          map[string]int `json:"counts"`
 	JobsToday       []Job          `json:"jobs_today"`
+	JobsTomorrow    []Job          `json:"jobs_tomorrow"`
 	NextPending     *Job           `json:"next_pending,omitempty"`
+	NextTomorrow    *Job           `json:"next_tomorrow,omitempty"`
 	PublicBaseURL   string         `json:"public_base_url"`
 	PublicOK        bool           `json:"public_ok"`
 	ThreadsOK       bool           `json:"threads_ok"`
@@ -269,7 +289,6 @@ type Status struct {
 	AIOK            bool           `json:"ai_ok"`
 	ThumbOK         bool           `json:"thumb_ok"`
 	BufferOK        bool           `json:"buffer_ok"`
-	ContentCategory string         `json:"content_category,omitempty"`
 	Warnings        []string       `json:"warnings"`
 }
 
@@ -278,26 +297,28 @@ func (s *Scheduler) Status() Status {
 	loc := s.deps.Store.Location()
 	now := time.Now().In(loc)
 	today := now.Format("2006-01-02")
+	tomorrow := now.AddDate(0, 0, 1).Format("2006-01-02")
 	jobs := s.deps.Store.JobsForDate(today)
+	jobsTom := s.deps.Store.JobsForDate(tomorrow)
 	counts := s.deps.Store.CountTodayByStatus(today)
 
+	thumbProviderOK := s.deps.Thumb != nil && s.deps.Thumb.Enabled()
 	st := Status{
 		Config:        cfg,
 		Enabled:       cfg.Enabled,
 		Timezone:      cfg.Timezone,
 		Today:         today,
+		Tomorrow:      tomorrow,
 		Counts:        counts,
 		JobsToday:     jobs,
+		JobsTomorrow:  jobsTom,
 		PublicBaseURL: s.deps.Public,
 		PublicOK:      s.deps.publicOK(),
 		ThreadsOK:     s.deps.Threads != nil && s.deps.Threads.Connected(),
 		InstagramOK:   s.deps.IG != nil && s.deps.IG.Connected(),
 		AIOK:          s.deps.AI != nil && s.deps.AI.Enabled(),
-		ThumbOK:       s.deps.Thumb != nil && s.deps.Thumb.Enabled(),
-		BufferOK: s.deps.Buffer != nil && s.deps.Buffer.Enabled(),
-	}
-	if s.deps.Memory != nil {
-		st.ContentCategory = s.deps.Memory.Get().ContentCategory
+		ThumbOK:       thumbProviderOK && cfg.ThumbnailEnabled,
+		BufferOK:      s.deps.Buffer != nil && s.deps.Buffer.Enabled(),
 	}
 	var warns []string
 	if !st.AIOK {
@@ -309,11 +330,11 @@ func (s *Scheduler) Status() Status {
 	if !st.InstagramOK {
 		warns = append(warns, "Token Instagram belum — IG akan di-skip")
 	}
-	if !st.ThumbOK {
-		warns = append(warns, "OPENAI_API_KEY belum — thumbnail utas Threads di-skip")
+	if cfg.ThumbnailEnabled && !thumbProviderOK {
+		warns = append(warns, "OpenAI key belum — thumbnail utas Threads di-skip")
 	}
 	if !st.BufferOK {
-		warns = append(warns, "BUFFER_API_KEY belum — antrian Buffer TikTok/X di-skip")
+		warns = append(warns, "Buffer key akun ini belum — antrian Buffer TikTok/X di-skip")
 	}
 	if !st.PublicOK {
 		warns = append(warns, "PUBLIC_BASE_URL belum valid — IG + Buffer TikTok butuh URL publik HTTPS")
@@ -327,6 +348,13 @@ func (s *Scheduler) Status() Status {
 		if jobs[i].Status == StatusPending {
 			j := jobs[i]
 			st.NextPending = &j
+			break
+		}
+	}
+	for i := range jobsTom {
+		if jobsTom[i].Status == StatusPending {
+			j := jobsTom[i]
+			st.NextTomorrow = &j
 			break
 		}
 	}

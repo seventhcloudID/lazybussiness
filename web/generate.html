@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generate Konten — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand10">
+<link rel="stylesheet" href="/css/app.css?v=strand44" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -36,16 +36,8 @@
     <div class="th-panel">
       <div class="th-panel-head">Instruksi AI</div>
       <div class="th-panel-body">
-        <div class="mb-4">
-          <label class="th-label" for="content-category">Jenis konten</label>
-          <select id="content-category" class="th-input">
-            <option value="general">Umum</option>
-            <option value="youtube_to_utas">YouTube → utas</option>
-          </select>
-          <p class="text-[11px] text-muted m-0 mt-1.5">Tiap jenis punya instruksi sendiri. YouTube → utas: cari video niche yang rame, tulis utas, thumb = thumb video.</p>
-        </div>
-        <label class="th-label" id="instructions-label" for="instructions">Instruksi Umum (style & larangan)</label>
-        <textarea id="instructions" class="th-textarea" rows="12" placeholder="Isi aturan tetap untuk jenis konten ini…"></textarea>
+        <label class="th-label">Instruksi tetap (style & larangan)</label>
+        <textarea id="instructions" class="th-textarea" rows="12" placeholder="Isi aturan tetap kamu di sini…"></textarea>
         <div class="flex flex-wrap gap-2 mt-3">
           <button id="btn-save-instructions" class="th-btn th-btn-soft" type="button">Simpan instruksi</button>
           <button id="btn-fill-template" class="th-btn th-btn-ghost" type="button">Isi template edukasi</button>
@@ -76,13 +68,6 @@
     </div>
   </div>
 
-  <div id="youtube-source-box" class="th-panel mb-5 hidden">
-    <div class="th-panel-head">Sumber YouTube</div>
-    <div class="th-panel-body text-sm">
-      <p id="youtube-source" class="m-0 leading-relaxed"></p>
-    </div>
-  </div>
-
   <div id="consideration-box" class="th-panel mb-5 hidden">
     <div class="th-panel-head">Pertimbangan generate</div>
     <div class="th-panel-body">
@@ -92,8 +77,8 @@
 
   <div id="drafts" class="ai-draft-grid"></div>
 </main>
-<script src="/js/api.js?v=strand15"></script>
-<script src="/js/layout.js?v=strand13"></script>
-<script src="/js/pages/generate.js?v=strand22"></script>
+<script src="/js/api.js?v=strand44"></script>
+<script src="/js/layout.js?v=strand44"></script>
+<script src="/js/pages/generate.js?v=strand26"></script>
 </body>
 </html>

@@ -15,8 +15,10 @@ import (
 const endpoint = "https://api.buffer.com"
 
 // Client pushes to Buffer (TikTok photos + X/Twitter threads, Notify Me).
+// Satu instance per akun — key disimpan di keyPath (bukan global).
 type Client struct {
 	apiKey           string
+	keyPath          string
 	orgID            string
 	tiktokChannelID  string
 	twitterChannelID string
@@ -46,25 +48,80 @@ type CreateResult struct {
 // CreatePhotoResult kept for callers; same shape as CreateResult.
 type CreatePhotoResult = CreateResult
 
-// NewFromEnv builds a client when BUFFER_API_KEY is set.
-func NewFromEnv() *Client {
-	key := strings.TrimSpace(os.Getenv("BUFFER_API_KEY"))
-	key = strings.TrimPrefix(key, "Bearer ")
-	key = strings.TrimPrefix(key, "bearer ")
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return nil
-	}
+// NewAt builds a Buffer client for one account. Key dari file keyPath saja.
+// Channel/org di-detect dari key akun ini — jangan pakai BUFFER_*_CHANNEL_ID global
+// supaya multi-akun tidak salah kirim ke channel akun lain.
+func NewAt(keyPath string) *Client {
 	if v := strings.TrimSpace(os.Getenv("BUFFER_ENABLED")); v == "0" || strings.EqualFold(v, "false") {
-		return nil
+		return &Client{keyPath: keyPath, hc: &http.Client{Timeout: 90 * time.Second}}
 	}
 	return &Client{
-		apiKey:           key,
-		orgID:            strings.TrimSpace(os.Getenv("BUFFER_ORG_ID")),
-		tiktokChannelID:  strings.TrimSpace(os.Getenv("BUFFER_TIKTOK_CHANNEL_ID")),
-		twitterChannelID: firstNonEmpty(os.Getenv("BUFFER_TWITTER_CHANNEL_ID"), os.Getenv("BUFFER_X_CHANNEL_ID")),
-		hc:               &http.Client{Timeout: 90 * time.Second},
+		apiKey:  loadStoredAPIKeyAt(keyPath),
+		keyPath: keyPath,
+		hc:      &http.Client{Timeout: 90 * time.Second},
 	}
+}
+
+// SeedFromEnv writes BUFFER_API_KEY into keyPath if file kosong (sekali, per akun yang dipanggil).
+func SeedFromEnv(keyPath string) {
+	if loadStoredAPIKeyAt(keyPath) != "" {
+		return
+	}
+	key := normalizeKey(os.Getenv("BUFFER_API_KEY"))
+	if key == "" {
+		return
+	}
+	_ = saveStoredAPIKeyAt(keyPath, key)
+}
+
+// SetAPIKey menyimpan key ke file akun ini dan reset cache channel.
+func (c *Client) SetAPIKey(key string) error {
+	if c == nil {
+		return fmt.Errorf("buffer client nil")
+	}
+	key = normalizeKey(key)
+	if key == "" {
+		return fmt.Errorf("api key wajib")
+	}
+	if err := saveStoredAPIKeyAt(c.keyPath, key); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.apiKey = key
+	c.orgID = ""
+	c.tiktokChannelID = ""
+	c.twitterChannelID = ""
+	c.resolvedTikTok = ""
+	c.resolvedX = ""
+	c.mu.Unlock()
+	return nil
+}
+
+// ClearAPIKey menghapus key UI akun ini.
+func (c *Client) ClearAPIKey() error {
+	if c == nil {
+		return fmt.Errorf("buffer client nil")
+	}
+	if err := saveStoredAPIKeyAt(c.keyPath, ""); err != nil {
+		return err
+	}
+	c.mu.Lock()
+	c.apiKey = ""
+	c.orgID = ""
+	c.tiktokChannelID = ""
+	c.twitterChannelID = ""
+	c.resolvedTikTok = ""
+	c.resolvedX = ""
+	c.mu.Unlock()
+	return nil
+}
+
+// KeySource: "file" or "".
+func (c *Client) KeySource() string {
+	if c == nil || !c.Enabled() {
+		return ""
+	}
+	return "file"
 }
 
 func firstNonEmpty(vals ...string) string {
@@ -90,6 +147,87 @@ func (c *Client) KeyHint() string {
 
 func (c *Client) Enabled() bool {
 	return c != nil && strings.TrimSpace(c.apiKey) != ""
+}
+
+func (c *Client) Status() map[string]any {
+	if c == nil || !c.Enabled() {
+		return map[string]any{
+			"ok":      false,
+			"enabled": false,
+			"note":    "Tempel Buffer API key untuk akun/workspace ini (tidak dipakai akun lain).",
+		}
+	}
+	out := map[string]any{
+		"ok":      true,
+		"enabled": true,
+	}
+	out["key_hint"] = c.KeyHint()
+	out["key_source"] = c.KeySource()
+	if org, err := c.OrganizationID(); err == nil {
+		out["org_id"] = org
+	} else {
+		out["org_error"] = err.Error()
+		out["token_ok"] = false
+		return out
+	}
+
+	chs, err := c.ListChannels()
+	if err != nil {
+		out["channels_error"] = err.Error()
+		out["token_ok"] = false
+		return out
+	}
+
+	channels := make([]map[string]any, 0, len(chs))
+	for _, ch := range chs {
+		channels = append(channels, map[string]any{
+			"id":           ch.ID,
+			"name":         ch.Name,
+			"display_name": ch.DisplayName,
+			"service":      ch.Service,
+			"locked":       ch.IsLocked,
+		})
+	}
+	out["channels"] = channels
+	out["channel_count"] = len(channels)
+
+	tokenOK := true
+	if ch, err := c.TikTokChannelID(); err == nil {
+		out["tiktok_channel_id"] = ch
+		out["tiktok_ok"] = true
+		for _, x := range chs {
+			if x.ID == ch {
+				out["tiktok_name"] = firstNonEmpty(x.DisplayName, x.Name)
+				out["tiktok_service"] = x.Service
+				break
+			}
+		}
+	} else {
+		out["tiktok_ok"] = false
+		out["tiktok_error"] = err.Error()
+		if strings.Contains(strings.ToLower(err.Error()), "access token") {
+			tokenOK = false
+		}
+	}
+	if ch, err := c.TwitterChannelID(); err == nil {
+		out["twitter_channel_id"] = ch
+		out["twitter_ok"] = true
+		for _, x := range chs {
+			if x.ID == ch {
+				out["twitter_name"] = firstNonEmpty(x.DisplayName, x.Name)
+				out["twitter_service"] = x.Service
+				break
+			}
+		}
+	} else {
+		out["twitter_ok"] = false
+		out["twitter_error"] = err.Error()
+		if strings.Contains(strings.ToLower(err.Error()), "access token") {
+			tokenOK = false
+		}
+	}
+	out["token_ok"] = tokenOK
+	return out
 }
 
 func (c *Client) gql(query string, variables map[string]any, out any) error {
@@ -135,7 +273,7 @@ func (c *Client) gql(query string, variables map[string]any, out any) error {
 			strings.Contains(low, "unauthorized") ||
 			strings.Contains(low, "access token") ||
 			(strings.Contains(low, "invalid") && strings.Contains(low, "token")) {
-			return fmt.Errorf("buffer: access token tidak valid — buat API key baru di publish.buffer.com/settings/api, paste ke BUFFER_API_KEY di .env VPS, lalu systemctl restart lazybussiness")
+			return fmt.Errorf("buffer: access token tidak valid — buat API key baru di publish.buffer.com/settings/api, lalu simpan di Workspace → Kelola untuk akun ini")
 		}
 		return fmt.Errorf("buffer: %s", msg)
 	}

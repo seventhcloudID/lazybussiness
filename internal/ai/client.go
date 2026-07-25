@@ -14,14 +14,15 @@ import (
 )
 
 type Client struct {
-	provider string
-	baseURL  string
-	model    string
-	apiKeys  []string
-	keyMu    sync.Mutex
-	keyIdx   int
-	http     *http.Client
-	quota    *quotaTracker
+	provider    string
+	baseURL     string
+	model       string
+	searchModel string // Google Search grounding (sering beda kuota dari AI_MODEL)
+	apiKeys     []string
+	keyMu       sync.Mutex
+	keyIdx      int
+	http        *http.Client
+	quota       *quotaTracker
 }
 
 func NewFromEnv() *Client {
@@ -35,16 +36,34 @@ func NewFromEnv() *Client {
 	if provider == "deepseek" {
 		modelDefault = "deepseek-v4-flash"
 	}
+	model := env("AI_MODEL", modelDefault)
 	keys := mergeAPIKeys(collectAPIKeysFromEnv(), LoadStoredAPIKeys())
 	c := &Client{
-		provider: provider,
-		baseURL:  base,
-		model:    env("AI_MODEL", modelDefault),
-		apiKeys:  keys,
-		http:     &http.Client{Timeout: 120 * time.Second},
-		quota:    newQuotaTrackerFromEnv(len(keys)),
+		provider:    provider,
+		baseURL:     base,
+		model:       model,
+		searchModel: resolveSearchModel(provider, model),
+		apiKeys:     keys,
+		http:        &http.Client{Timeout: 120 * time.Second},
+		quota:       newQuotaTrackerFromEnv(len(keys)),
 	}
 	return c
+}
+
+// resolveSearchModel picks a model that still has free-tier Google Search grounding.
+// Gemini 3.x free: grounding "Not available" → 429; 2.5 Flash free: up to ~500 RPD search.
+func resolveSearchModel(provider, mainModel string) string {
+	if override := strings.TrimSpace(os.Getenv("AI_SEARCH_MODEL")); override != "" {
+		return override
+	}
+	if provider != "gemini" && provider != "google" {
+		return mainModel
+	}
+	m := strings.ToLower(strings.TrimSpace(mainModel))
+	if strings.Contains(m, "gemini-3") || strings.HasPrefix(m, "gemini-3") {
+		return "gemini-2.5-flash"
+	}
+	return mainModel
 }
 
 func (c *Client) Enabled() bool {
@@ -80,8 +99,9 @@ func (c *Client) rotateKey() (string, bool) {
 	return c.apiKeys[c.keyIdx], true
 }
 
-func (c *Client) Provider() string { return c.provider }
-func (c *Client) Model() string    { return c.model }
+func (c *Client) Provider() string    { return c.provider }
+func (c *Client) Model() string       { return c.model }
+func (c *Client) SearchModel() string { return c.searchModel }
 
 func (c *Client) Quota() QuotaStatus {
 	if c == nil || c.quota == nil {
@@ -265,7 +285,7 @@ Aturan ketat:
 }
 
 func (c *Client) chatGemini(system, user string) (string, *TokenUsage, error) {
-	return c.chatGeminiRequest(map[string]any{
+	return c.chatGeminiRequest(c.model, map[string]any{
 		"systemInstruction": map[string]any{
 			"parts": []map[string]string{{"text": system}},
 		},
@@ -284,8 +304,13 @@ func (c *Client) chatGemini(system, user string) (string, *TokenUsage, error) {
 }
 
 // chatGeminiSearch enables Google Search grounding (no responseMimeType — extract JSON from text).
+// Uses searchModel (default gemini-2.5-flash) because Gemini 3 free tier has no search grounding.
 func (c *Client) chatGeminiSearch(system, user string) (string, *TokenUsage, error) {
-	return c.chatGeminiRequest(map[string]any{
+	model := c.searchModel
+	if strings.TrimSpace(model) == "" {
+		model = c.model
+	}
+	content, usage, err := c.chatGeminiRequest(model, map[string]any{
 		"systemInstruction": map[string]any{
 			"parts": []map[string]string{{"text": system}},
 		},
@@ -303,36 +328,17 @@ func (c *Client) chatGeminiSearch(system, user string) (string, *TokenUsage, err
 			"maxOutputTokens": 4096,
 		},
 	})
+	if err != nil && isGeminiQuotaError(0, []byte(err.Error())) {
+		return "", usage, fmt.Errorf("kuota Google Search grounding habis/tidak tersedia (model %s). Umum tetap bisa jalan. Set AI_SEARCH_MODEL=gemini-2.5-flash atau aktifkan billing. Detail: %w", model, err)
+	}
+	return content, usage, err
 }
 
-// chatGeminiYouTube sends a public YouTube URL as file_data for video understanding.
-func (c *Client) chatGeminiYouTube(system, user, watchURL string) (string, *TokenUsage, error) {
-	return c.chatGeminiRequest(map[string]any{
-		"systemInstruction": map[string]any{
-			"parts": []map[string]string{{"text": system}},
-		},
-		"contents": []map[string]any{
-			{
-				"role": "user",
-				"parts": []map[string]any{
-					{
-						"fileData": map[string]any{
-							"fileUri": watchURL,
-						},
-					},
-					{"text": user},
-				},
-			},
-		},
-		"generationConfig": map[string]any{
-			"temperature":     0.35,
-			"maxOutputTokens": 4096,
-		},
-	})
-}
-
-func (c *Client) chatGeminiRequest(reqBody map[string]any) (string, *TokenUsage, error) {
-	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent", c.baseURL, url.PathEscape(c.model))
+func (c *Client) chatGeminiRequest(model string, reqBody map[string]any) (string, *TokenUsage, error) {
+	if strings.TrimSpace(model) == "" {
+		model = c.model
+	}
+	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent", c.baseURL, url.PathEscape(model))
 	rawReq, _ := json.Marshal(reqBody)
 
 	var lastErr error
@@ -365,7 +371,7 @@ func (c *Client) chatGeminiRequest(reqBody map[string]any) (string, *TokenUsage,
 			return "", nil, err
 		}
 		if res.StatusCode >= 400 {
-			lastErr = fmt.Errorf("Gemini API status %d: %s", res.StatusCode, truncate(string(body), 500))
+			lastErr = fmt.Errorf("Gemini API status %d (%s): %s", res.StatusCode, model, truncate(string(body), 500))
 			if isGeminiQuotaError(res.StatusCode, body) {
 				if _, ok := c.rotateKey(); ok {
 					continue
@@ -410,7 +416,7 @@ func (c *Client) chatGeminiRequest(reqBody map[string]any) (string, *TokenUsage,
 		return strings.TrimSpace(b.String()), usage, nil
 	}
 	if lastErr != nil {
-		return "", nil, fmt.Errorf("semua API key kena limit: %w", lastErr)
+		return "", nil, fmt.Errorf("semua API key kena limit (search/model %s): %w", model, lastErr)
 	}
 	return "", nil, fmt.Errorf("Gemini gagal setelah rotasi key")
 }

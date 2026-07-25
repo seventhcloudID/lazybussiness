@@ -1,11 +1,11 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Balasan — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand4">
+<link rel="stylesheet" href="/css/app.css?v=strand44" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -16,7 +16,7 @@
     <div>
       <p class="th-eyebrow">Konten</p>
       <h1 class="th-title">Balasan</h1>
-      <p class="th-lead">Pilih post → lihat reply yang belum dibalas → kasih instruksi → Jalankan.</p>
+      <p class="th-lead">Pilih post → generate draf → review/edit → approve baru kirim.</p>
     </div>
     <div class="flex gap-2 flex-wrap items-center">
       <span id="inbox-summary" class="th-chip">Belum pilih post</span>
@@ -67,7 +67,13 @@
           <textarea id="ar-intent" class="th-textarea" rows="3" placeholder="Contoh: jawab singkat & ramah, akui poin mereka, ajak diskusi. Tone founder santai. Jangan jualan."></textarea>
           <div class="ar-row">
             <button type="button" id="btn-run" class="th-btn th-btn-primary" disabled>
-              <i class="bi bi-play-fill"></i> Jalankan balasan
+              <i class="bi bi-magic"></i> Generate draf
+            </button>
+            <button type="button" id="btn-send" class="th-btn th-btn-soft" disabled>
+              <i class="bi bi-send"></i> Kirim yang di-approve
+            </button>
+            <button type="button" id="btn-discard" class="th-btn th-btn-ghost" disabled title="Buang semua draf">
+              Buang draf
             </button>
             <span id="ar-progress" class="ar-hint mono"></span>
           </div>
@@ -83,8 +89,8 @@
     </section>
   </div>
 </main>
-<script src="/js/api.js?v=strand15"></script>
-<script src="/js/layout.js?v=strand4"></script>
-<script src="/js/pages/balasan.js?v=strand4"></script>
+<script src="/js/api.js?v=strand44"></script>
+<script src="/js/layout.js?v=strand44"></script>
+<script src="/js/pages/balasan.js?v=strand30"></script>
 </body>
 </html>

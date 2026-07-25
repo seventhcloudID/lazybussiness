@@ -17,14 +17,15 @@ import (
 )
 
 type Deps struct {
-	Store   *Store
-	Threads *threads.Client
-	IG      *instagram.Client
-	AI      *ai.Client
-	Thumb   *ai.ThumbnailClient
-	Buffer  *buff.Client
-	Memory  *ai.MemoryStore
-	Public  string // PUBLIC_BASE_URL, no trailing slash
+	Store    *Store
+	Threads  *threads.Client
+	IG       *instagram.Client
+	AI       *ai.Client
+	Thumb    *ai.ThumbnailClient
+	Buffer   *buff.Client
+	Memory   *ai.MemoryStore
+	Public   string // PUBLIC_BASE_URL, no trailing slash
+	ThumbDir string // optional per-account thumbs dir
 }
 
 func (d *Deps) publicOK() bool {
@@ -77,11 +78,9 @@ func (d *Deps) runOnce(job Job) error {
 	for attempt := 1; attempt <= 2; attempt++ {
 		lastErr = nil
 		thumbURL = ""
-		cat := ai.NormalizeCategory(mem.ContentCategory)
 		gen, err := d.AI.GenerateContent(nil, mem, ai.GenerateRequest{
-			Topic:    cfg.TopicHint,
-			Count:    1,
-			Category: cat,
+			Topic: cfg.TopicHint,
+			Count: 1,
 		})
 		if err != nil {
 			lastErr = err
@@ -117,28 +116,15 @@ func (d *Deps) runOnce(job Job) error {
 			}
 		}
 
-		// Thumbnail: YouTube asli untuk kategori youtube_to_utas; selain itu ChatGPT.
-		if cat == ai.CategoryYoutubeToUtas && gen.YouTube != nil && gen.YouTube.VideoID != "" {
-			thumbURL, err = ai.MirrorYouTubeThumbnail(gen.YouTube.VideoID, d.Public)
-			if err != nil {
-				log.Printf("lazy job %s yt-thumb: %v (lanjut TEXT)", job.ID, err)
-				thumbURL = ""
-			}
-		} else {
+		if cfg.ThumbnailEnabled {
 			thumbURL, err = d.generateThreadsThumb(job, parts[0])
 			if err != nil {
 				log.Printf("lazy job %s thumb: %v (lanjut publish TEXT)", job.ID, err)
 				thumbURL = ""
 			}
+		} else {
+			log.Printf("lazy job %s thumb: OFF di pengaturan", job.ID)
 		}
-		_ = d.Store.UpdateJob(job.ID, func(j *Job) {
-			j.Category = cat
-			if gen.YouTube != nil {
-				j.YouTubeID = gen.YouTube.VideoID
-				j.YouTubeTitle = gen.YouTube.Title
-				j.YouTubeURL = gen.YouTube.URL
-			}
-		})
 
 		threadIDs, err = d.publishThreads(parts, thumbURL)
 		if err != nil {
@@ -240,12 +226,6 @@ func (d *Deps) runOnce(job Job) error {
 			j.BufferError = bufferErr
 			j.BufferXPostID = bufferXPostID
 			j.BufferXError = bufferXErr
-			j.Category = cat
-			if gen.YouTube != nil {
-				j.YouTubeID = gen.YouTube.VideoID
-				j.YouTubeTitle = gen.YouTube.Title
-				j.YouTubeURL = gen.YouTube.URL
-			}
 			j.FinishedAt = time.Now().UTC()
 			if igSkipped {
 				j.Status = StatusSkippedIG
@@ -283,7 +263,7 @@ func envOr(k, def string) string {
 // generateThreadsThumb membuat thumbnail 4:3 dari hook utas via ChatGPT Image.
 func (d *Deps) generateThreadsThumb(job Job, hook string) (string, error) {
 	if d.Thumb == nil || !d.Thumb.Enabled() {
-		return "", fmt.Errorf("OPENAI_API_KEY belum di-set")
+		return "", fmt.Errorf("OpenAI key belum — isi di Kelola akun")
 	}
 	hook = strings.TrimSpace(hook)
 	if hook == "" {
@@ -300,8 +280,12 @@ func (d *Deps) generateThreadsThumb(job Job, hook string) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	// Simpan di folder job biar rapi; tetap di-serve via /media/thumbs atau copy path.
-	dir := filepath.Join(ai.DefaultThumbMediaDir(), job.Date)
+	// Simpan di folder job biar rapi; tetap di-serve via /media/thumbs.
+	baseThumb := strings.TrimSpace(d.ThumbDir)
+	if baseThumb == "" {
+		baseThumb = ai.DefaultThumbMediaDir()
+	}
+	dir := filepath.Join(baseThumb, job.Date)
 	name, err := ai.SaveThumbnailPNG(dir, result.PNG)
 	if err != nil {
 		return "", err

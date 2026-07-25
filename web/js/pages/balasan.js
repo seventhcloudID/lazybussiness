@@ -58,40 +58,69 @@ function badgeLabel(n) {
   return String(n);
 }
 
+function draftReadyCount() {
+  return pending.filter(p => String(p.draftText || '').trim() && p.approved !== false && p.selected !== false).length;
+}
+
+function hasAnyDraft() {
+  return pending.some(p => String(p.draftText || '').trim() || p.statusKind === 'draft' || p.statusKind === 'skip');
+}
+
 function updateRunUI() {
   const intent = document.getElementById('ar-intent').value.trim();
   const n = pending.filter(p => p.selected !== false).length;
+  const ready = draftReadyCount();
+  const anyDraft = hasAnyDraft();
   document.getElementById('btn-run').disabled = running || !selectedId || !n || !intent;
+  document.getElementById('btn-send').disabled = running || !selectedId || !ready;
+  document.getElementById('btn-discard').disabled = running || !anyDraft;
   const hint = document.getElementById('ar-hint');
   if (!selectedId) {
     hint.textContent = 'Pilih post dulu.';
   } else if (!pending.length) {
     hint.textContent = 'Tidak ada reply yang belum dibalas di post ini.';
+  } else if (anyDraft) {
+    hint.textContent = ready
+      ? `${ready} draf siap kirim. Edit kalau perlu, centang approve, lalu Kirim.`
+      : 'Draf ada — centang approve + pastikan teks tidak kosong sebelum kirim.';
   } else {
-    hint.textContent = `${n} reply belum dibalas. Isi instruksi, lalu Jalankan balasan.`;
+    hint.textContent = `${n} reply dipilih. Generate draf dulu — belum dikirim otomatis.`;
   }
   document.getElementById('pending-count').textContent = pending.length
-    ? `${pending.length} reply`
+    ? `${pending.length} reply` + (ready ? ` · ${ready} draf` : '')
     : '0';
 }
 
 function syncPendingFromPayload() {
-  const roots = (repliesPayload?.data || []).filter(r => !r.is_mine && !r.answered);
   const prev = new Map(pending.map(p => [p.id, p]));
-  pending = roots.map(r => {
-    const old = prev.get(r.id);
-    return {
-      id: r.id,
-      username: r.username,
-      text: r.text,
-      timestamp: r.timestamp,
-      permalink: r.permalink,
-      selected: old ? old.selected !== false : true,
-      status: old?.status || '',
-      statusKind: old?.statusKind || '',
-      draftText: old?.draftText || '',
-    };
-  });
+  const collected = [];
+  const walk = (nodes, depth, parentUser) => {
+    for (const r of nodes || []) {
+      const mine = r.is_mine || r.reply_status === 'mine';
+      if (!mine && !r.answered) {
+        const old = prev.get(r.id);
+        collected.push({
+          id: r.id,
+          username: r.username,
+          text: r.text,
+          timestamp: r.timestamp,
+          permalink: r.permalink,
+          depth: depth || 0,
+          parentUser: parentUser || '',
+          selected: old ? old.selected !== false : true,
+          approved: old?.approved !== false,
+          status: old?.status || '',
+          statusKind: old?.statusKind || '',
+          draftText: old?.draftText || '',
+        });
+      }
+      if (Array.isArray(r.children) && r.children.length) {
+        walk(r.children, (depth || 0) + 1, r.username || parentUser);
+      }
+    }
+  };
+  walk(repliesPayload?.data || [], 0, '');
+  pending = collected;
 }
 
 function renderPosts() {
@@ -172,21 +201,41 @@ function renderPending() {
     return;
   }
 
-  root.innerHTML = pending.map((p, i) => `
-    <article class="ar-pending${p.selected !== false ? ' is-on' : ''}" data-idx="${i}">
+  root.innerHTML = pending.map((p, i) => {
+    const depth = Math.min(Number(p.depth) || 0, 6);
+    const nest = depth
+      ? `<span class="ar-pending-nest">↳ balas @${Threads.escapeHtml(p.parentUser || '…')}</span>`
+      : '';
+    const full = String(p.text || '(tanpa teks)');
+    const hasDraft = String(p.draftText || '').trim() || p.statusKind === 'draft' || p.statusKind === 'skip';
+    const draftBlock = hasDraft ? `
+      <div class="ar-draft${p.statusKind === 'skip' ? ' is-skip' : ''}">
+        <div class="ar-draft-head">
+          <label>
+            <input type="checkbox" data-approve ${p.approved !== false && p.statusKind !== 'skip' ? 'checked' : ''} ${running || p.statusKind === 'skip' ? 'disabled' : ''}>
+            Approve kirim
+          </label>
+          <span class="ar-draft-meta">${p.statusKind === 'skip' ? 'Dilewati' : 'Draf AI — bisa diedit'}</span>
+        </div>
+        <textarea class="th-textarea" data-draft rows="3" ${running || p.statusKind === 'skip' ? 'disabled' : ''}>${Threads.escapeHtml(p.draftText || '')}</textarea>
+      </div>` : '';
+    return `
+    <article class="ar-pending${p.selected !== false ? ' is-on' : ''}" data-idx="${i}" style="padding-left:${16 + depth * 14}px">
       <label class="ar-pending-check">
         <input type="checkbox" data-pick ${p.selected !== false ? 'checked' : ''} ${running ? 'disabled' : ''}>
       </label>
       <div class="ar-pending-body">
         <div class="ar-pending-head">
           <strong>@${Threads.escapeHtml(p.username || 'user')}</strong>
+          ${nest}
           <span class="text-muted">${relTime(p.timestamp)}</span>
           ${p.status ? `<span class="ar-status ${p.statusKind || ''}">${Threads.escapeHtml(p.status)}</span>` : ''}
         </div>
-        <p class="ar-pending-text">${Threads.escapeHtml(previewText(p.text, 240))}</p>
+        <p class="ar-pending-text">${Threads.escapeHtml(full)}</p>
+        ${draftBlock}
       </div>
-    </article>
-  `).join('');
+    </article>`;
+  }).join('');
   updateRunUI();
 }
 
@@ -279,7 +328,7 @@ async function selectPost(id, { refresh = false } = {}) {
   }
 }
 
-async function jalankanBalasan() {
+async function generateDrafts() {
   showAlert('');
   if (!selectedId) return Threads.toast('Pilih post dulu', false);
   const intent = document.getElementById('ar-intent').value.trim();
@@ -293,7 +342,7 @@ async function jalankanBalasan() {
   updateRunUI();
   const btn = document.getElementById('btn-run');
   const prog = document.getElementById('ar-progress');
-  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Menjalankan…';
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Generate…';
   btn.disabled = true;
 
   queue.forEach(p => {
@@ -329,27 +378,70 @@ async function jalankanBalasan() {
     });
     renderPending();
     running = false;
-    btn.innerHTML = '<i class="bi bi-play-fill"></i> Jalankan balasan';
+    btn.innerHTML = '<i class="bi bi-magic"></i> Generate draf';
     updateRunUI();
     return;
   }
 
   const byID = new Map(drafts.map(d => [d.reply_to_id, d]));
-  let ok = 0;
-  let fail = 0;
+  let ready = 0;
   let skipped = 0;
 
   for (const item of pending) {
     if (item.selected === false) continue;
     const d = byID.get(item.id);
     if (!d || d.skip || !String(d.text || '').trim()) {
+      item.draftText = '';
+      item.approved = false;
       item.status = d?.skip_reason || 'Dilewati AI';
-      item.statusKind = '';
-      item.selected = false;
+      item.statusKind = 'skip';
       skipped++;
-      renderPending();
       continue;
     }
+    item.draftText = String(d.text).trim();
+    item.approved = true;
+    item.status = 'Draf siap — review dulu';
+    item.statusKind = 'draft';
+    ready++;
+  }
+
+  running = false;
+  btn.innerHTML = '<i class="bi bi-magic"></i> Generate draf';
+  prog.textContent = `Draf siap · ${ready}` + (skipped ? ` · ${skipped} skip` : '') + ' — belum dikirim';
+  Threads.toast(prog.textContent, true);
+  renderPending();
+}
+
+async function kirimApproved() {
+  showAlert('');
+  if (!selectedId) return Threads.toast('Pilih post dulu', false);
+
+  // sinkron teks dari textarea sebelum kirim
+  document.querySelectorAll('#pending-list [data-draft]').forEach(el => {
+    const card = el.closest('[data-idx]');
+    const i = Number(card?.dataset.idx);
+    if (pending[i]) pending[i].draftText = el.value;
+  });
+
+  const queue = pending.filter(p =>
+    p.selected !== false && p.approved !== false && String(p.draftText || '').trim()
+  );
+  if (!queue.length) return Threads.toast('Tidak ada draf yang di-approve', false);
+
+  running = true;
+  updateRunUI();
+  const btn = document.getElementById('btn-send');
+  const prog = document.getElementById('ar-progress');
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Mengirim…';
+  btn.disabled = true;
+
+  let ok = 0;
+  let fail = 0;
+
+  for (const item of pending) {
+    if (item.selected === false || item.approved === false) continue;
+    const text = String(item.draftText || '').trim();
+    if (!text) continue;
     item.status = 'Mengirim…';
     item.statusKind = 'run';
     renderPending();
@@ -359,7 +451,7 @@ async function jalankanBalasan() {
         method: 'POST',
         body: JSON.stringify({
           media_type: 'TEXT',
-          text: String(d.text).trim(),
+          text,
           reply_to_id: item.id,
           publish: true,
         }),
@@ -367,6 +459,8 @@ async function jalankanBalasan() {
       item.status = 'Terkirim';
       item.statusKind = 'ok';
       item.selected = false;
+      item.approved = false;
+      item.draftText = '';
       ok++;
     } catch (e) {
       item.status = 'Gagal: ' + (e.message || e);
@@ -378,13 +472,29 @@ async function jalankanBalasan() {
   }
 
   running = false;
-  btn.innerHTML = '<i class="bi bi-play-fill"></i> Jalankan balasan';
-  prog.textContent = `Selesai · ${ok} terkirim` + (skipped ? ` · ${skipped} skip` : '') + (fail ? ` · ${fail} gagal` : '');
+  btn.innerHTML = '<i class="bi bi-send"></i> Kirim yang di-approve';
+  prog.textContent = `Selesai · ${ok} terkirim` + (fail ? ` · ${fail} gagal` : '');
   Threads.toast(prog.textContent, fail === 0);
   updateRunUI();
 
   repliesCache.delete(selectedId);
   if (selectedId) await selectPost(selectedId, { refresh: true });
+}
+
+function buangDraft() {
+  if (running) return;
+  pending.forEach(p => {
+    if (p.statusKind === 'ok') return;
+    p.draftText = '';
+    p.approved = true;
+    if (p.statusKind === 'draft' || p.statusKind === 'skip' || p.statusKind === 'err' || p.statusKind === 'run') {
+      p.status = '';
+      p.statusKind = '';
+    }
+  });
+  document.getElementById('ar-progress').textContent = '';
+  renderPending();
+  Threads.toast('Draf dibuang', true);
 }
 
 document.getElementById('posts-list').addEventListener('click', e => {
@@ -403,15 +513,32 @@ document.getElementById('btn-refresh-posts').onclick = () => {
 };
 
 document.getElementById('ar-intent').addEventListener('input', updateRunUI);
-document.getElementById('btn-run').onclick = () => jalankanBalasan();
+document.getElementById('btn-run').onclick = () => generateDrafts();
+document.getElementById('btn-send').onclick = () => kirimApproved();
+document.getElementById('btn-discard').onclick = () => buangDraft();
 
 document.getElementById('pending-list').addEventListener('change', e => {
-  if (!e.target.matches('[data-pick]') || running) return;
+  const card = e.target.closest('[data-idx]');
+  const i = Number(card?.dataset.idx);
+  if (i == null || !pending[i] || running) return;
+  if (e.target.matches('[data-pick]')) {
+    pending[i].selected = e.target.checked;
+    card.classList.toggle('is-on', e.target.checked);
+    updateRunUI();
+    return;
+  }
+  if (e.target.matches('[data-approve]')) {
+    pending[i].approved = e.target.checked;
+    updateRunUI();
+  }
+});
+
+document.getElementById('pending-list').addEventListener('input', e => {
+  if (!e.target.matches('[data-draft]')) return;
   const card = e.target.closest('[data-idx]');
   const i = Number(card?.dataset.idx);
   if (!pending[i]) return;
-  pending[i].selected = e.target.checked;
-  card.classList.toggle('is-on', e.target.checked);
+  pending[i].draftText = e.target.value;
   updateRunUI();
 });
 

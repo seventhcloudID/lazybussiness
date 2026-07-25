@@ -1,7 +1,8 @@
 window.Threads = window.Threads || {};
 
 Threads.ensureAssets = function () {
-  if (document.getElementById('app-css')) return;
+  // Jangan inject ulang kalau halaman sudah punya app.css (hindari override versi lama).
+  if (document.getElementById('app-css') || document.querySelector('link[href*="/css/app.css"]')) return;
 
   const pre1 = document.createElement('link');
   pre1.rel = 'preconnect';
@@ -22,7 +23,7 @@ Threads.ensureAssets = function () {
   const css = document.createElement('link');
   css.id = 'app-css';
   css.rel = 'stylesheet';
-  css.href = '/css/app.css?v=strand12';
+  css.href = '/css/app.css?v=strand44';
   document.head.appendChild(css);
 };
 
@@ -58,22 +59,27 @@ Threads.mountSidebar = function (active) {
     </div>
   </div>
 
-  <div class="sb-acct" id="sb-acct">
-    <div class="sb-avatar" id="sb-avatar">··</div>
-    <div class="sb-acct-text">
-      <div class="sb-acct-name" id="sb-handle">Belum connect</div>
-      <div class="sb-acct-sub">Personal workspace</div>
-    </div>
+  <div class="sb-ws" id="sb-ws">
+    <button type="button" class="sb-acct" id="sb-acct" aria-expanded="false" aria-haspopup="listbox">
+      <div class="sb-avatar" id="sb-avatar">··</div>
+      <div class="sb-acct-text">
+        <div class="sb-acct-name" id="sb-handle">Memuat…</div>
+        <div class="sb-acct-sub" id="sb-acct-sub">Pilih workspace</div>
+      </div>
+      <i class="bi bi-chevron-down sb-acct-caret" aria-hidden="true"></i>
+    </button>
+    <div class="sb-ws-menu" id="sb-ws-menu" hidden role="listbox"></div>
   </div>
 
   <nav class="sb-nav">
-    ${group('Overview', `
+    ${group('Umum', `
       ${link('ringkasan', '/ringkasan.html', 'bi-grid-1x2', 'Ringkasan')}
       ${link('profil', '/profil.html', 'bi-person-circle', 'Profil')}
     `)}
     ${group('Content', `
       ${link('buat', '/buat.html', 'bi-pencil-square', 'Buat Post')}
       ${link('generate', '/generate.html', 'bi-magic', 'Generate AI')}
+      ${link('gemini-chat', '/gemini-chat.html', 'bi-chat-heart', 'Chat Gemini')}
       ${link('thumbnail', '/thumbnail.html', 'bi-image', 'Lab Thumbnail')}
       ${link('lazy', '/lazy.html', 'bi-lightning-charge', 'Lazy Business')}
       ${link('posts', '/posts.html', 'bi-collection', 'Post Saya')}
@@ -88,11 +94,9 @@ Threads.mountSidebar = function (active) {
       ${link('ig-profil', '/ig-profil.html', 'bi-instagram', 'IG Profil')}
       ${link('ig-posts', '/ig-posts.html', 'bi-images', 'IG Posts')}
       ${link('ig-carousel', '/ig-carousel.html', 'bi-collection-play', 'IG Carousel')}
-      ${link('ig-token', '/ig-token.html', 'bi-key-fill', 'IG Token')}
     `)}
     ${group('Settings', `
-      ${link('token', '/token.html', 'bi-key', 'Threads Token')}
-      ${link('ai-keys', '/ai-keys.html', 'bi-robot', 'Gemini API')}
+      ${link('akun', '/akun.html', 'bi-people', 'Akun & API')}
       <button type="button" id="btn-logout" class="sb-item sb-logout">
         <span class="sb-icon"><i class="bi bi-box-arrow-right"></i></span>
         <span>Logout</span>
@@ -113,22 +117,80 @@ Threads.mountSidebar = function (active) {
   </div>
   `;
 
+  const acctBtn = el.querySelector('#sb-acct');
+  const menu = el.querySelector('#sb-ws-menu');
+  const closeMenu = () => {
+    menu.hidden = true;
+    acctBtn?.setAttribute('aria-expanded', 'false');
+    el.querySelector('#sb-ws')?.classList.remove('is-open');
+  };
+  const openMenu = () => {
+    menu.hidden = false;
+    acctBtn?.setAttribute('aria-expanded', 'true');
+    el.querySelector('#sb-ws')?.classList.add('is-open');
+  };
+
+  acctBtn?.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (menu.hidden) openMenu();
+    else closeMenu();
+  });
+  document.addEventListener('click', (e) => {
+    if (!el.contains(e.target)) closeMenu();
+  });
+
   el.querySelector('#btn-logout')?.addEventListener('click', async () => {
     try { await Threads.api('/api/auth/logout', { method: 'POST', body: '{}' }); } catch {}
     location.href = '/login.html';
   });
 
-  // Soft-fill account chip (non-blocking)
   (async () => {
     try {
-      const me = await Threads.api('/api/me');
-      const handle = me?.username ? '@' + String(me.username).replace(/^@/, '') : '';
-      if (handle) {
-        document.getElementById('sb-handle').textContent = handle;
-        const initials = String(me.username || 'T').replace(/^@/, '').slice(0, 2).toUpperCase();
-        document.getElementById('sb-avatar').textContent = initials;
-      }
-    } catch {}
+      const data = await Threads.api('/api/accounts');
+      const list = data.accounts || [];
+      const activeAcct = list.find(a => a.active) || list[0];
+      const label = activeAcct?.threads_username
+        ? '@' + String(activeAcct.threads_username).replace(/^@/, '')
+        : (activeAcct?.name || 'Belum connect');
+      document.getElementById('sb-handle').textContent = label;
+      document.getElementById('sb-acct-sub').textContent = activeAcct
+        ? (activeAcct.lazy_enabled ? 'Lazy ON' : (list.length > 1 ? list.length + ' akun' : '1 akun'))
+        : 'Belum ada akun';
+      const initials = String(activeAcct?.threads_username || activeAcct?.name || 'T')
+        .replace(/^@/, '').slice(0, 2).toUpperCase();
+      document.getElementById('sb-avatar').textContent = initials;
+
+      menu.innerHTML = list.map(a => {
+        const name = a.threads_username
+          ? '@' + String(a.threads_username).replace(/^@/, '')
+          : (a.name || a.id);
+        const mark = a.active ? '<i class="bi bi-check2"></i>' : '';
+        return `<button type="button" class="sb-ws-opt${a.active ? ' is-current' : ''}" data-switch-acct="${Threads.escapeHtml(a.id)}" role="option" aria-selected="${a.active ? 'true' : 'false'}">
+          <span class="sb-ws-opt-name">${Threads.escapeHtml(name)}</span>
+          <span class="sb-ws-opt-meta">${a.lazy_enabled ? 'Lazy' : ''}${mark}</span>
+        </button>`;
+      }).join('') + `<a class="sb-ws-opt sb-ws-manage" href="/akun.html"><span>Kelola akun & API</span><i class="bi bi-arrow-right"></i></a>`;
+
+      menu.querySelectorAll('[data-switch-acct]').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const id = btn.getAttribute('data-switch-acct');
+          if (!id || btn.classList.contains('is-current')) {
+            closeMenu();
+            return;
+          }
+          try {
+            await Threads.api('/api/accounts/switch', { method: 'POST', body: JSON.stringify({ id }) });
+            location.reload();
+          } catch (err) {
+            Threads.toast(err.message || 'Gagal ganti akun', false);
+          }
+        });
+      });
+    } catch {
+      document.getElementById('sb-handle').textContent = 'Belum connect';
+      document.getElementById('sb-acct-sub').textContent = 'Buka kelola akun';
+      menu.innerHTML = `<a class="sb-ws-opt sb-ws-manage" href="/akun.html"><span>Kelola akun</span><i class="bi bi-arrow-right"></i></a>`;
+    }
     try {
       const q = await Threads.api('/api/quota');
       const row = Array.isArray(q?.data) ? q.data[0] : q;

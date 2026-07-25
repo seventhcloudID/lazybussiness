@@ -1,31 +1,31 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lazy Business — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand9">
+<link rel="stylesheet" href="/css/app.css?v=strand46" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
 <body>
 <nav id="sidebar"></nav>
-<main>
+<main class="lazy-page">
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Automasi</p>
       <h1 class="th-title">Lazy Business</h1>
-      <p class="th-lead">24/7 otomatis: Threads + IG carousel + Buffer TikTok (Notify Me) + Buffer X (shareNow). Centang ON + Simpan.</p>
+      <p class="th-lead">Otomasi 24/7: Threads · IG carousel · Buffer TikTok · Buffer X</p>
     </div>
     <div class="th-toolbar">
       <button id="btn-replan" class="th-btn th-btn-ghost" type="button" title="Buat ulang jadwal hari ini">
-        <i class="bi bi-calendar2-plus"></i> Reset jadwal hari ini
+        <i class="bi bi-calendar2-plus"></i> Reset hari ini
       </button>
       <button id="btn-run-now" class="th-btn th-btn-soft" type="button">
         <i class="bi bi-play-fill"></i> Run 1 sekarang
       </button>
-      <button id="btn-refresh" class="th-btn th-btn-ghost" type="button">
+      <button id="btn-refresh" class="th-btn th-btn-ghost" type="button" title="Refresh">
         <i class="bi bi-arrow-clockwise"></i>
       </button>
     </div>
@@ -34,72 +34,127 @@
   <div id="lazy-alert" class="th-alert hidden"></div>
   <div id="lazy-warnings" class="lazy-warns mb-4 hidden"></div>
 
-  <div class="th-panel mb-4">
-    <div class="th-panel-body grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
-      <div>
-        <label class="th-label" for="enabled">Otomasi</label>
-        <label class="lazy-toggle">
+  <section class="lazy-hero mb-4" id="lazy-hero" data-on="0">
+    <div class="lazy-hero-main">
+      <div class="lazy-hero-copy">
+        <p class="lazy-hero-kicker">Status otomasi</p>
+        <h2 class="lazy-hero-title">
+          <span class="lazy-hero-pulse" aria-hidden="true"></span>
+          <span id="lazy-hero-title">OFF</span>
+        </h2>
+        <p class="lazy-hero-next" id="lazy-hero-next">Nyalakan otomasi lalu simpan untuk mulai jadwal.</p>
+      </div>
+      <div class="lazy-hero-toggles">
+        <label class="lazy-switch">
           <input type="checkbox" id="enabled">
-          <span id="enabled-label">OFF</span>
+          <span class="lazy-switch-ui" aria-hidden="true"></span>
+          <span class="lazy-switch-text">
+            <strong id="enabled-label">OFF</strong>
+            <small>Otomasi</small>
+          </span>
+        </label>
+        <label class="lazy-switch">
+          <input type="checkbox" id="thumb-enabled" checked>
+          <span class="lazy-switch-ui" aria-hidden="true"></span>
+          <span class="lazy-switch-text">
+            <strong id="thumb-label">ON</strong>
+            <small>Thumbnail utas</small>
+          </span>
         </label>
       </div>
-      <div>
-        <label class="th-label" for="posts-per-day">Konten / hari (min 5)</label>
-        <input id="posts-per-day" class="th-input" type="number" min="5" max="12" value="5">
-      </div>
-      <div>
-        <label class="th-label" for="content-category">Jenis konten</label>
-        <select id="content-category" class="th-input">
-          <option value="general">Umum</option>
-          <option value="youtube_to_utas">YouTube → utas</option>
-        </select>
-      </div>
-      <div>
-        <label class="th-label" for="brand">Brand (@handle)</label>
-        <input id="brand" class="th-input" placeholder="bimosept">
-      </div>
-      <div>
-        <label class="th-label" for="topic">Topik hint (opsional)</label>
-        <input id="topic" class="th-input" placeholder="Kosong = dari niche">
-      </div>
     </div>
-    <div class="th-panel-body pt-0 flex flex-wrap gap-2">
-      <button type="button" id="btn-save" class="th-btn th-btn-primary text-sm">
-        <i class="bi bi-check2"></i> Simpan pengaturan
-      </button>
-      <span id="lazy-meta" class="text-xs text-muted self-center"></span>
-    </div>
-  </div>
+    <div class="lazy-channels" id="lazy-channels"></div>
+  </section>
 
   <div class="lazy-stats mb-4" id="lazy-stats">
     <div class="lazy-stat">
-      <span class="lazy-stat-k">Hari ini</span>
-      <strong id="stat-today">—</strong>
+      <span class="lazy-stat-ico" aria-hidden="true"><i class="bi bi-calendar3"></i></span>
+      <div>
+        <span class="lazy-stat-k">Hari ini</span>
+        <strong id="stat-today">—</strong>
+      </div>
     </div>
     <div class="lazy-stat">
-      <span class="lazy-stat-k">Selesai</span>
-      <strong id="stat-done">0</strong>
+      <span class="lazy-stat-ico is-ok" aria-hidden="true"><i class="bi bi-check2-circle"></i></span>
+      <div>
+        <span class="lazy-stat-k">Selesai</span>
+        <strong id="stat-done">0</strong>
+      </div>
     </div>
     <div class="lazy-stat">
-      <span class="lazy-stat-k">Antri</span>
-      <strong id="stat-pending">0</strong>
+      <span class="lazy-stat-ico is-pend" aria-hidden="true"><i class="bi bi-hourglass-split"></i></span>
+      <div>
+        <span class="lazy-stat-k">Antri</span>
+        <strong id="stat-pending">0</strong>
+      </div>
     </div>
     <div class="lazy-stat">
-      <span class="lazy-stat-k">Gagal / skip IG</span>
-      <strong id="stat-fail">0</strong>
+      <span class="lazy-stat-ico is-bad" aria-hidden="true"><i class="bi bi-exclamation-triangle"></i></span>
+      <div>
+        <span class="lazy-stat-k">Gagal / skip</span>
+        <strong id="stat-fail">0</strong>
+      </div>
     </div>
   </div>
 
-  <div class="th-panel mb-6">
-    <div class="th-panel-head flex items-center justify-between">
-      <span>Antrian hari ini</span>
-      <span id="next-hint" class="text-xs text-muted font-medium"></span>
+  <section class="th-panel lazy-settings mb-4">
+    <div class="th-panel-head">
+      <span>Pengaturan</span>
+      <span id="lazy-meta" class="text-xs text-muted font-medium"></span>
     </div>
-    <div class="th-panel-body p-0">
-      <div id="job-list" class="lazy-jobs">
-        <p class="text-sm text-muted p-4 m-0">Belum ada rencana — nyalakan otomasi lalu simpan.</p>
+    <div class="th-panel-body">
+      <div class="lazy-settings-grid">
+        <div>
+          <label class="th-label" for="posts-per-day">Konten / hari</label>
+          <input id="posts-per-day" class="th-input" type="number" min="5" max="12" value="5">
+        </div>
+        <div>
+          <label class="th-label" for="brand">Brand (@handle)</label>
+          <input id="brand" class="th-input" placeholder="bimosept">
+        </div>
+        <div class="lazy-settings-wide">
+          <label class="th-label" for="topic">Topik hint (opsional)</label>
+          <input id="topic" class="th-input" placeholder="Kosong = dari niche memory">
+        </div>
+        <div class="lazy-settings-action">
+          <button type="button" id="btn-save" class="th-btn th-btn-primary">
+            <i class="bi bi-check2"></i> Simpan
+          </button>
+        </div>
       </div>
     </div>
+  </section>
+
+  <div class="lazy-schedule-grid mb-6">
+    <section class="th-panel lazy-schedule">
+      <div class="th-panel-head">
+        <div>
+          <span class="lazy-schedule-label">Hari ini</span>
+          <strong class="lazy-schedule-title" id="schedule-today-title">Antrian</strong>
+        </div>
+        <span id="next-hint" class="lazy-schedule-hint"></span>
+      </div>
+      <div class="th-panel-body p-0">
+        <div id="job-list" class="lazy-jobs">
+          <p class="lazy-empty">Belum ada rencana — nyalakan otomasi lalu simpan.</p>
+        </div>
+      </div>
+    </section>
+
+    <section class="th-panel lazy-schedule">
+      <div class="th-panel-head">
+        <div>
+          <span class="lazy-schedule-label">Besok</span>
+          <strong class="lazy-schedule-title" id="tomorrow-date">Jadwal</strong>
+        </div>
+        <span id="tomorrow-hint" class="lazy-schedule-hint"></span>
+      </div>
+      <div class="th-panel-body p-0">
+        <div id="tomorrow-list" class="lazy-jobs">
+          <p class="lazy-empty">Belum ada jadwal besok.</p>
+        </div>
+      </div>
+    </section>
   </div>
 
   <div id="lazy-last" class="th-panel mb-6 hidden">
@@ -112,7 +167,7 @@
         <div class="lazy-preview-col">
           <div id="lazy-thumb-box" class="gen-thumb-box mb-3" hidden>
             <img id="lazy-thumb-img" class="gen-thumb-img" alt="Thumbnail Threads 4:3">
-            <p class="gen-thumb-cap">Thumbnail utas Threads (ChatGPT) — bagian 1</p>
+            <p class="gen-thumb-cap">Thumbnail utas Threads — bagian 1</p>
           </div>
           <div class="igc-stage">
             <article class="igc-phone">
@@ -163,8 +218,8 @@
     </div>
   </div>
 </main>
-<script src="/js/api.js?v=strand15"></script>
-<script src="/js/layout.js?v=strand1"></script>
-<script src="/js/pages/lazy.js?v=strand22"></script>
+<script src="/js/api.js?v=strand44"></script>
+<script src="/js/layout.js?v=strand44"></script>
+<script src="/js/pages/lazy.js?v=strand46"></script>
 </body>
 </html>

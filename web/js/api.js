@@ -97,6 +97,187 @@ Threads.toast = function (msg, ok) {
   el._t = setTimeout(() => { el.style.display = 'none'; }, 3500);
 };
 
+/** Tutup dialog terbuka + resolve promise lama (hindari leak keydown). */
+Threads._dismissDialog = null;
+Threads._closeDialog = function () {
+  if (typeof Threads._dismissDialog === 'function') {
+    const fn = Threads._dismissDialog;
+    Threads._dismissDialog = null;
+    fn();
+  }
+};
+
+/** Dialog konfirmasi styled (ganti window.confirm). Returns Promise<boolean>. */
+Threads.confirm = function (message, opts = {}) {
+  const title = opts.title || 'Konfirmasi';
+  const okLabel = opts.okLabel || 'Ya, lanjut';
+  const cancelLabel = opts.cancelLabel || 'Batal';
+  const danger = opts.danger !== false;
+  return new Promise((resolve) => {
+    Threads._closeDialog();
+
+    const root = document.createElement('div');
+    root.id = 'th-dialog-root';
+    root.className = 'th-dialog-root';
+    root.setAttribute('role', 'presentation');
+    root.innerHTML = `
+      <div class="th-dialog-backdrop" data-dialog-cancel></div>
+      <div class="th-dialog" role="dialog" aria-modal="true" aria-labelledby="th-dialog-title">
+        <div class="th-dialog-icon${danger ? ' th-dialog-icon-danger' : ''}" aria-hidden="true">
+          <i class="bi ${danger ? 'bi-exclamation-triangle' : 'bi-question-circle'}"></i>
+        </div>
+        <h2 class="th-dialog-title" id="th-dialog-title">${Threads.escapeHtml(title)}</h2>
+        <p class="th-dialog-body">${Threads.escapeHtml(message)}</p>
+        <div class="th-dialog-actions">
+          <button type="button" class="th-btn th-btn-ghost" data-dialog-cancel>${Threads.escapeHtml(cancelLabel)}</button>
+          <button type="button" class="th-btn ${danger ? 'th-btn-danger' : 'th-btn-primary'}" data-dialog-ok>${Threads.escapeHtml(okLabel)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    document.body.classList.add('th-dialog-open');
+
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      Threads._dismissDialog = null;
+      document.removeEventListener('keydown', onKey);
+      document.body.classList.remove('th-dialog-open');
+      root.remove();
+      resolve(ok);
+    };
+    Threads._dismissDialog = () => finish(false);
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') finish(false);
+      if (e.key === 'Enter') {
+        const t = e.target;
+        if (t && t.matches && t.matches('[data-dialog-cancel]')) return;
+        if (t && t.matches && t.matches('button') && !t.matches('[data-dialog-ok]')) return;
+        e.preventDefault();
+        finish(true);
+      }
+    };
+    root.querySelectorAll('[data-dialog-cancel]').forEach((el) => {
+      el.addEventListener('click', () => finish(false));
+    });
+    root.querySelector('[data-dialog-ok]')?.addEventListener('click', () => finish(true));
+    document.addEventListener('keydown', onKey);
+    root.querySelector('[data-dialog-ok]')?.focus();
+  });
+};
+
+/** Dialog input styled (ganti window.prompt). Returns Promise<string|null>. */
+Threads.prompt = function (message, opts = {}) {
+  const title = opts.title || 'Input';
+  const okLabel = opts.okLabel || 'Simpan';
+  const cancelLabel = opts.cancelLabel || 'Batal';
+  const defaultValue = opts.defaultValue ?? opts.value ?? '';
+  const placeholder = opts.placeholder || '';
+  const inputType = opts.type || 'text';
+  return new Promise((resolve) => {
+    Threads._closeDialog();
+
+    const root = document.createElement('div');
+    root.id = 'th-dialog-root';
+    root.className = 'th-dialog-root';
+    root.setAttribute('role', 'presentation');
+    root.innerHTML = `
+      <div class="th-dialog-backdrop" data-dialog-cancel></div>
+      <div class="th-dialog" role="dialog" aria-modal="true" aria-labelledby="th-dialog-title">
+        <div class="th-dialog-icon" aria-hidden="true">
+          <i class="bi bi-person-plus"></i>
+        </div>
+        <h2 class="th-dialog-title" id="th-dialog-title">${Threads.escapeHtml(title)}</h2>
+        <p class="th-dialog-body">${Threads.escapeHtml(message)}</p>
+        <label class="th-label sr-only" for="th-dialog-input">${Threads.escapeHtml(message)}</label>
+        <input id="th-dialog-input" class="th-input th-dialog-input" type="${Threads.escapeHtml(inputType)}"
+          value="${Threads.escapeHtml(defaultValue)}" placeholder="${Threads.escapeHtml(placeholder)}" autocomplete="off">
+        <div class="th-dialog-actions">
+          <button type="button" class="th-btn th-btn-ghost" data-dialog-cancel>${Threads.escapeHtml(cancelLabel)}</button>
+          <button type="button" class="th-btn th-btn-primary" data-dialog-ok>${Threads.escapeHtml(okLabel)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    document.body.classList.add('th-dialog-open');
+
+    const input = root.querySelector('#th-dialog-input');
+    let settled = false;
+    const finish = (value) => {
+      if (settled) return;
+      settled = true;
+      Threads._dismissDialog = null;
+      document.removeEventListener('keydown', onKey);
+      document.body.classList.remove('th-dialog-open');
+      root.remove();
+      resolve(value);
+    };
+    Threads._dismissDialog = () => finish(null);
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') finish(null);
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        finish(input?.value ?? '');
+      }
+    };
+    root.querySelectorAll('[data-dialog-cancel]').forEach((el) => {
+      el.addEventListener('click', () => finish(null));
+    });
+    root.querySelector('[data-dialog-ok]')?.addEventListener('click', () => finish(input?.value ?? ''));
+    document.addEventListener('keydown', onKey);
+    input?.focus();
+    input?.select();
+  });
+};
+
+/** Dialog info styled (ganti window.alert). Returns Promise<void>. */
+Threads.alert = function (message, opts = {}) {
+  const title = opts.title || 'Info';
+  return new Promise((resolve) => {
+    Threads._closeDialog();
+
+    const root = document.createElement('div');
+    root.id = 'th-dialog-root';
+    root.className = 'th-dialog-root';
+    root.innerHTML = `
+      <div class="th-dialog-backdrop" data-dialog-ok></div>
+      <div class="th-dialog" role="dialog" aria-modal="true" aria-labelledby="th-dialog-title">
+        <h2 class="th-dialog-title" id="th-dialog-title">${Threads.escapeHtml(title)}</h2>
+        <p class="th-dialog-body th-dialog-body-pre">${Threads.escapeHtml(message)}</p>
+        <div class="th-dialog-actions">
+          <button type="button" class="th-btn th-btn-primary" data-dialog-ok autofocus>OK</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    document.body.classList.add('th-dialog-open');
+
+    let settled = false;
+    const finish = () => {
+      if (settled) return;
+      settled = true;
+      Threads._dismissDialog = null;
+      document.removeEventListener('keydown', onKey);
+      document.body.classList.remove('th-dialog-open');
+      root.remove();
+      resolve();
+    };
+    Threads._dismissDialog = finish;
+
+    const onKey = (e) => {
+      if (e.key === 'Escape' || e.key === 'Enter') finish();
+    };
+    root.querySelectorAll('[data-dialog-ok]').forEach((el) => {
+      el.addEventListener('click', finish);
+    });
+    document.addEventListener('keydown', onKey);
+    root.querySelector('[data-dialog-ok]')?.focus();
+  });
+};
+
 Threads.insightMap = function (data, opts = {}) {
   let map = {};
   if (data?.metrics && typeof data.metrics === 'object') {
@@ -161,7 +342,7 @@ Threads.requireConnected = async function () {
   try {
     const st = await Threads.api('/api/status');
     if (!st.connected) {
-      Threads.toast('Hubungkan token dulu di halaman Token & Izin', false);
+      Threads.toast('Hubungkan token dulu di Akun & API → Kelola', false);
       return false;
     }
     return true;

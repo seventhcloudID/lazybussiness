@@ -1,11 +1,12 @@
-<!DOCTYPE html>
+﻿<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ringkasan — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand1">
+<link rel="stylesheet" href="/css/app.css?v=strand44" id="app-css">
+<link rel="stylesheet" href="/css/overview.css?v=strand28">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -15,81 +16,90 @@
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Umum</p>
-      <h1 class="th-title">Ringkasan</h1>
-      <p class="th-lead">Snapshot metrik akun dan cakupan API yang tersedia di console ini.</p>
+      <h1 class="th-title" id="top-title">Ringkasan</h1>
+      <p class="th-lead">Snapshot metrik akun, tren engagement, dan post teratas.</p>
     </div>
-    <span id="overview-account" class="th-chip">Akun: belum terhubung</span>
+    <div class="ov-toolbar">
+      <div class="ov-seg" id="range-seg" role="group" aria-label="Rentang">
+        <button type="button" class="ov-seg-btn" data-range="7D">7D</button>
+        <button type="button" class="ov-seg-btn is-on" data-range="30D">30D</button>
+        <button type="button" class="ov-seg-btn" data-range="90D">90D</button>
+      </div>
+      <a class="th-btn th-btn-ghost text-xs" href="/insights.html"><i class="bi bi-bar-chart"></i> Insight</a>
+      <a class="th-btn th-btn-primary text-xs" href="/buat.html"><i class="bi bi-plus-lg"></i> Buat post</a>
+    </div>
   </header>
 
-  <div class="th-metrics th-metrics--overview" id="overview-stats">
-    <article class="th-metric th-metric--hero" data-tone="followers">
-      <div class="th-metric-top">
-        <span class="th-metric-icon"><i class="bi bi-people-fill"></i></span>
-        <span class="th-metric-label">Pengikut</span>
+  <section class="ov-kpi-row" id="kpi-row" aria-busy="true"></section>
+
+  <div class="ov-grid">
+    <section class="th-panel">
+      <div class="th-panel-head flex flex-wrap items-center justify-between gap-2">
+        <span>Tren engagement</span>
+        <div class="ov-metric-toggle" id="metric-toggle">
+          <button type="button" class="ov-mt-btn is-on" data-metric="likes"><span class="ov-mt-dot"></span>Likes</button>
+          <button type="button" class="ov-mt-btn" data-metric="replies"><span class="ov-mt-dot" style="background:#059669"></span>Balasan</button>
+          <button type="button" class="ov-mt-btn" data-metric="reposts"><span class="ov-mt-dot" style="background:#d97706"></span>Repost</button>
+          <button type="button" class="ov-mt-btn" data-metric="quotes"><span class="ov-mt-dot" style="background:#64748b"></span>Kutipan</button>
+        </div>
       </div>
-      <div class="th-metric-value" data-metric="followers_count">—</div>
-      <div class="th-metric-hint">Total pengikut akun</div>
-    </article>
-    <article class="th-metric" data-tone="views">
-      <div class="th-metric-top">
-        <span class="th-metric-icon"><i class="bi bi-eye-fill"></i></span>
-        <span class="th-metric-label">Views</span>
+      <div class="th-panel-body">
+        <p class="text-sm text-muted m-0 mb-1" id="chart-title">Per post (terbaru)</p>
+        <div class="ov-chart-wrap">
+          <svg class="ov-chart-svg" id="chart-svg" viewBox="0 0 880 320" preserveAspectRatio="none"></svg>
+          <div class="ov-chart-tip" id="chart-tip" hidden></div>
+        </div>
+        <div class="ov-chart-foot">
+          <span>Sample post dalam rentang</span>
+          <div class="ov-chart-stats">
+            <span>Peak <strong class="mono" id="stat-peak">—</strong></span>
+            <span>Avg <strong class="mono" id="stat-avg">—</strong></span>
+            <span>Low <strong class="mono" id="stat-low">—</strong></span>
+          </div>
+        </div>
       </div>
-      <div class="th-metric-value" data-metric="views">—</div>
-      <div class="th-metric-hint">Tayangan konten</div>
-    </article>
-    <article class="th-metric" data-tone="likes">
-      <div class="th-metric-top">
-        <span class="th-metric-icon"><i class="bi bi-heart-fill"></i></span>
-        <span class="th-metric-label">Likes</span>
+    </section>
+
+    <section class="th-panel">
+      <div class="th-panel-head">Snapshot akun</div>
+      <div class="th-panel-body">
+        <p class="text-xs text-muted m-0 mb-1">Akun terhubung</p>
+        <p class="text-xl font-semibold m-0 mono" id="pulse-handle">—</p>
+        <p class="text-xs text-muted mt-1 mb-3" id="pulse-meta">Memuat…</p>
+        <div id="pace-list"></div>
+        <a class="th-btn th-btn-soft text-xs mt-3" href="/profil.html"><i class="bi bi-person"></i> Buka profil</a>
       </div>
-      <div class="th-metric-value" data-metric="likes">—</div>
-      <div class="th-metric-hint">Suka pada post</div>
-    </article>
-    <article class="th-metric" data-tone="replies">
-      <div class="th-metric-top">
-        <span class="th-metric-icon"><i class="bi bi-chat-dots-fill"></i></span>
-        <span class="th-metric-label">Balasan</span>
-      </div>
-      <div class="th-metric-value" data-metric="replies">—</div>
-      <div class="th-metric-hint">Percakapan masuk</div>
-    </article>
-    <article class="th-metric" data-tone="reposts">
-      <div class="th-metric-top">
-        <span class="th-metric-icon"><i class="bi bi-arrow-repeat"></i></span>
-        <span class="th-metric-label">Repost</span>
-      </div>
-      <div class="th-metric-value" data-metric="reposts">—</div>
-      <div class="th-metric-hint">Dibagikan ulang</div>
-    </article>
-    <article class="th-metric" data-tone="quotes">
-      <div class="th-metric-top">
-        <span class="th-metric-icon"><i class="bi bi-quote"></i></span>
-        <span class="th-metric-label">Kutipan</span>
-      </div>
-      <div class="th-metric-value" data-metric="quotes">—</div>
-      <div class="th-metric-hint">Quote post</div>
-    </article>
+    </section>
   </div>
 
-  <div class="th-panel">
-    <div class="th-panel-head">Cakupan API</div>
-    <div class="overflow-x-auto">
-      <table class="th-table">
-        <thead><tr><th>Fitur</th><th>Endpoint</th><th>Izin</th></tr></thead>
-        <tbody>
-          <tr><td>Profil</td><td><code class="th-code">GET /me</code></td><td><code class="th-code">threads_basic</code></td></tr>
-          <tr><td>Buat &amp; publish</td><td><code class="th-code">POST /me/threads → publish</code></td><td><code class="th-code">threads_content_publish</code></td></tr>
-          <tr><td>Daftar post</td><td><code class="th-code">GET /me/threads</code></td><td><code class="th-code">threads_basic</code></td></tr>
-          <tr><td>Balasan</td><td><code class="th-code">GET /{id}/replies</code></td><td><code class="th-code">threads_read_replies</code></td></tr>
-          <tr><td>Insight</td><td><code class="th-code">GET /me/threads_insights</code></td><td><code class="th-code">threads_manage_insights</code></td></tr>
-        </tbody>
-      </table>
+  <section class="th-panel mb-4">
+    <div class="th-panel-head flex flex-wrap items-center justify-between gap-2">
+      <span>Post teratas</span>
+      <a class="th-btn th-btn-ghost text-xs" href="/posts.html">Semua post</a>
     </div>
+    <div class="th-panel-body">
+      <div class="ov-table">
+        <div class="ov-thead">
+          <div class="ov-td" style="flex:1">Post</div>
+          <div class="ov-td" style="width:72px">Waktu</div>
+          <div class="ov-td ov-td-num" style="width:88px">Likes</div>
+          <div class="ov-td ov-td-num" style="width:88px">Balasan</div>
+          <div class="ov-td ov-td-num" style="width:88px">Views</div>
+          <div class="ov-td ov-td-num" style="width:72px">ER</div>
+          <div class="ov-td" style="width:36px"></div>
+        </div>
+        <div id="posts-rows"></div>
+      </div>
+    </div>
+  </section>
+
+  <div class="ov-foot">
+    <span>Data dari Meta Threads API</span>
+    <span><button type="button" class="link" id="btn-refresh">Muat ulang</button></span>
   </div>
 </main>
-<script src="/js/api.js?v=strand15"></script>
-<script src="/js/layout.js?v=strand1"></script>
-<script src="/js/pages/ringkasan.js?v=saas4"></script>
+<script src="/js/api.js?v=strand44"></script>
+<script src="/js/layout.js?v=strand44"></script>
+<script src="/js/pages/ringkasan.js?v=strand28"></script>
 </body>
 </html>

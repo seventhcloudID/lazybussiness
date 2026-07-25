@@ -50,7 +50,7 @@ async function sendToBuffer(mediaId, btn) {
     const items = data?.data || [];
     const metaBits = [];
     metaBits.push(items.length ? `${items.length} media` : 'Belum ada media');
-    metaBits.push(bufferOK ? 'Buffer TikTok siap' : 'Buffer belum (BUFFER_API_KEY)');
+    metaBits.push(bufferOK ? 'Buffer TikTok siap' : 'Buffer belum (isi di Akun → Kelola)');
     document.getElementById('posts-meta').textContent = metaBits.join(' · ');
 
     if (!items.length) {
@@ -76,7 +76,7 @@ async function sendToBuffer(mediaId, btn) {
              <i class="bi bi-tiktok"></i> Kirim ke Buffer TikTok
            </button>`
         : canBuffer(p.media_type)
-          ? `<p class="text-[11px] text-muted mt-3 mb-0">Set BUFFER_API_KEY untuk kirim ke Buffer.</p>`
+          ? `<p class="text-[11px] text-muted mt-3 mb-0">Isi Buffer key di <a href="/akun.html" class="underline">Akun → Kelola</a>.</p>`
           : `<p class="text-[11px] text-muted mt-3 mb-0">Video/Reels belum didukung Buffer foto.</p>`;
       return `<div class="post-card p-4">
         ${media}

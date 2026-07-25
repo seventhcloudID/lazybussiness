@@ -17,10 +17,11 @@ const (
 )
 
 type Config struct {
-	Enabled     bool   `json:"enabled"`
-	PostsPerDay int    `json:"posts_per_day"`
-	Timezone    string `json:"timezone"`
-	TopicHint   string `json:"topic_hint,omitempty"`
+	Enabled            bool   `json:"enabled"`
+	PostsPerDay        int    `json:"posts_per_day"`
+	Timezone           string `json:"timezone"`
+	TopicHint          string `json:"topic_hint,omitempty"`
+	ThumbnailEnabled   bool   `json:"thumbnail_enabled"` // thumbnail utas Threads (OpenAI)
 }
 
 type Job struct {
@@ -39,10 +40,6 @@ type Job struct {
 	BufferError   string   `json:"buffer_error,omitempty"`    // TikTok
 	BufferXPostID string   `json:"buffer_x_post_id,omitempty"` // X/Twitter thread
 	BufferXError  string   `json:"buffer_x_error,omitempty"`
-	Category      string   `json:"category,omitempty"`
-	YouTubeID     string   `json:"youtube_id,omitempty"`
-	YouTubeTitle  string   `json:"youtube_title,omitempty"`
-	YouTubeURL    string   `json:"youtube_url,omitempty"`
 	Error         string   `json:"error,omitempty"`
 	StartedAt   time.Time `json:"started_at,omitempty"`
 	FinishedAt  time.Time `json:"finished_at,omitempty"`
@@ -62,14 +59,23 @@ type Store struct {
 }
 
 func NewStore() *Store {
+	return NewStoreAt(
+		filepath.Join(".data", "lazy_config.json"),
+		filepath.Join(".data", "lazy_jobs.json"),
+		filepath.Join(".data", "lazy-media"),
+	)
+}
+
+func NewStoreAt(configPath, jobsPath, mediaDir string) *Store {
 	s := &Store{
-		configPath: filepath.Join(".data", "lazy_config.json"),
-		jobsPath:   filepath.Join(".data", "lazy_jobs.json"),
-		mediaDir:   filepath.Join(".data", "lazy-media"),
+		configPath: configPath,
+		jobsPath:   jobsPath,
+		mediaDir:   mediaDir,
 		cfg: Config{
-			Enabled:     false,
-			PostsPerDay: 5,
-			Timezone:    "Asia/Jakarta",
+			Enabled:          false,
+			PostsPerDay:      5,
+			Timezone:         "Asia/Jakarta",
+			ThumbnailEnabled: true,
 		},
 	}
 	s.load()
@@ -80,6 +86,9 @@ func (s *Store) MediaDir() string { return s.mediaDir }
 
 func (s *Store) load() {
 	if b, err := os.ReadFile(s.configPath); err == nil {
+		// thumbnail_enabled: default true kalau field belum ada di file lama
+		var raw map[string]json.RawMessage
+		_ = json.Unmarshal(b, &raw)
 		var c Config
 		if json.Unmarshal(b, &c) == nil {
 			if c.PostsPerDay < 5 {
@@ -87,6 +96,9 @@ func (s *Store) load() {
 			}
 			if c.Timezone == "" {
 				c.Timezone = "Asia/Jakarta"
+			}
+			if _, ok := raw["thumbnail_enabled"]; !ok {
+				c.ThumbnailEnabled = true
 			}
 			s.cfg = c
 		}
