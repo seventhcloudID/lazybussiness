@@ -35,9 +35,11 @@ type Job struct {
 	ThumbURL    string    `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
 	ImageURLs   []string  `json:"image_urls,omitempty"`
 	IGContainer string    `json:"ig_container,omitempty"`
-	BufferPostID string   `json:"buffer_post_id,omitempty"`
-	BufferError  string   `json:"buffer_error,omitempty"`
-	Error       string    `json:"error,omitempty"`
+	BufferPostID  string   `json:"buffer_post_id,omitempty"`   // TikTok
+	BufferError   string   `json:"buffer_error,omitempty"`    // TikTok
+	BufferXPostID string   `json:"buffer_x_post_id,omitempty"` // X/Twitter thread
+	BufferXError  string   `json:"buffer_x_error,omitempty"`
+	Error         string   `json:"error,omitempty"`
 	StartedAt   time.Time `json:"started_at,omitempty"`
 	FinishedAt  time.Time `json:"finished_at,omitempty"`
 }

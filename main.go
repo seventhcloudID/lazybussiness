@@ -68,9 +68,9 @@ func main() {
 	}
 	buffClient := buffer.NewFromEnv()
 	if buffClient != nil && buffClient.Enabled() {
-		log.Println("Buffer TikTok Notify Me aktif (BUFFER_API_KEY)")
+		log.Println("Buffer aktif (TikTok carousel + X thread, Notify Me)")
 	} else {
-		log.Println("Buffer nonaktif — set BUFFER_API_KEY di .env untuk antri carousel TikTok")
+		log.Println("Buffer nonaktif — set BUFFER_API_KEY di .env")
 	}
 
 	lazyDeps := &lazy.Deps{
@@ -1113,15 +1113,61 @@ func main() {
 		}
 		if ok {
 			out["key_hint"] = buffClient.KeyHint()
+			tokenOK := false
 			if ch, err := buffClient.TikTokChannelID(); err == nil {
 				out["tiktok_channel_id"] = ch
-				out["token_ok"] = true
+				tokenOK = true
 			} else {
 				out["tiktok_error"] = err.Error()
-				out["token_ok"] = false
+				if strings.Contains(strings.ToLower(err.Error()), "access token") {
+					out["token_ok"] = false
+				}
+			}
+			if ch, err := buffClient.TwitterChannelID(); err == nil {
+				out["twitter_channel_id"] = ch
+				tokenOK = true
+			} else {
+				out["twitter_error"] = err.Error()
+				if strings.Contains(strings.ToLower(err.Error()), "access token") {
+					tokenOK = false
+				}
+			}
+			if _, denied := out["token_ok"]; !denied {
+				out["token_ok"] = tokenOK
 			}
 		}
 		writeJSON(w, http.StatusOK, out)
+	})
+
+	// Manual: utas teks → Buffer X/Twitter thread (Notify Me).
+	mux.HandleFunc("POST /api/buffer/twitter", func(w http.ResponseWriter, r *http.Request) {
+		if buffClient == nil || !buffClient.Enabled() {
+			writeErr(w, http.StatusServiceUnavailable, "BUFFER_API_KEY belum di-set")
+			return
+		}
+		var body struct {
+			Parts []string `json:"parts"`
+			Text  string   `json:"text"` // fallback single post
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		parts := body.Parts
+		if len(parts) == 0 && strings.TrimSpace(body.Text) != "" {
+			parts = []string{body.Text}
+		}
+		res, err := buffClient.QueueTwitterThread(parts)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":     true,
+			"parts":  len(parts),
+			"buffer": res,
+			"note":   "X Notify Me — selesai post dari notifikasi Buffer di HP",
+		})
 	})
 
 	// Manual: kirim image URLs + caption ke Buffer TikTok (Notify Me).

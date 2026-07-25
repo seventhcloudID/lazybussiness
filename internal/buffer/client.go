@@ -14,15 +14,17 @@ import (
 
 const endpoint = "https://api.buffer.com"
 
-// Client pushes photo carousels to Buffer (TikTok Notify Me).
+// Client pushes to Buffer (TikTok photos + X/Twitter threads, Notify Me).
 type Client struct {
-	apiKey    string
-	orgID     string
-	channelID string // TikTok; empty = auto-detect
-	hc        *http.Client
+	apiKey           string
+	orgID            string
+	tiktokChannelID  string
+	twitterChannelID string
+	hc               *http.Client
 
-	mu       sync.Mutex
-	resolved string // cached tiktok channel id
+	mu             sync.Mutex
+	resolvedTikTok string
+	resolvedX      string
 }
 
 type Channel struct {
@@ -33,12 +35,16 @@ type Channel struct {
 	IsLocked    bool   `json:"isLocked"`
 }
 
-type CreatePhotoResult struct {
-	PostID          string `json:"post_id"`
-	Status          string `json:"status"`
-	SchedulingType  string `json:"scheduling_type"`
-	ChannelID       string `json:"channel_id"`
+type CreateResult struct {
+	PostID         string `json:"post_id"`
+	Status         string `json:"status"`
+	SchedulingType string `json:"scheduling_type"`
+	ChannelID      string `json:"channel_id"`
+	Service        string `json:"service"`
 }
+
+// CreatePhotoResult kept for callers; same shape as CreateResult.
+type CreatePhotoResult = CreateResult
 
 // NewFromEnv builds a client when BUFFER_API_KEY is set.
 func NewFromEnv() *Client {
@@ -53,11 +59,21 @@ func NewFromEnv() *Client {
 		return nil
 	}
 	return &Client{
-		apiKey:    key,
-		orgID:     strings.TrimSpace(os.Getenv("BUFFER_ORG_ID")),
-		channelID: strings.TrimSpace(os.Getenv("BUFFER_TIKTOK_CHANNEL_ID")),
-		hc:        &http.Client{Timeout: 90 * time.Second},
+		apiKey:           key,
+		orgID:            strings.TrimSpace(os.Getenv("BUFFER_ORG_ID")),
+		tiktokChannelID:  strings.TrimSpace(os.Getenv("BUFFER_TIKTOK_CHANNEL_ID")),
+		twitterChannelID: firstNonEmpty(os.Getenv("BUFFER_TWITTER_CHANNEL_ID"), os.Getenv("BUFFER_X_CHANNEL_ID")),
+		hc:               &http.Client{Timeout: 90 * time.Second},
 	}
+}
+
+func firstNonEmpty(vals ...string) string {
+	for _, v := range vals {
+		if s := strings.TrimSpace(v); s != "" {
+			return s
+		}
+	}
+	return ""
 }
 
 // KeyHint returns last 4 chars for debug (never the full secret).
@@ -118,7 +134,7 @@ func (c *Client) gql(query string, variables map[string]any, out any) error {
 		if strings.Contains(low, "not authorized") ||
 			strings.Contains(low, "unauthorized") ||
 			strings.Contains(low, "access token") ||
-			strings.Contains(low, "invalid") && strings.Contains(low, "token") {
+			(strings.Contains(low, "invalid") && strings.Contains(low, "token")) {
 			return fmt.Errorf("buffer: access token tidak valid — buat API key baru di publish.buffer.com/settings/api, paste ke BUFFER_API_KEY di .env VPS, lalu systemctl restart lazybussiness")
 		}
 		return fmt.Errorf("buffer: %s", msg)
@@ -170,15 +186,17 @@ func (c *Client) ListChannels() ([]Channel, error) {
 	return data.Channels, err
 }
 
-func (c *Client) TikTokChannelID() (string, error) {
+func (c *Client) channelByServices(explicit string, cache *string, services ...string) (string, error) {
 	c.mu.Lock()
-	if id := strings.TrimSpace(c.channelID); id != "" {
+	if id := strings.TrimSpace(explicit); id != "" {
 		c.mu.Unlock()
 		return id, nil
 	}
-	if id := strings.TrimSpace(c.resolved); id != "" {
-		c.mu.Unlock()
-		return id, nil
+	if cache != nil {
+		if id := strings.TrimSpace(*cache); id != "" {
+			c.mu.Unlock()
+			return id, nil
+		}
 	}
 	c.mu.Unlock()
 
@@ -186,19 +204,74 @@ func (c *Client) TikTokChannelID() (string, error) {
 	if err != nil {
 		return "", err
 	}
+	want := map[string]bool{}
+	for _, s := range services {
+		want[strings.ToLower(s)] = true
+	}
 	for _, ch := range chs {
-		if strings.EqualFold(ch.Service, "tiktok") && !ch.IsLocked {
+		if want[strings.ToLower(ch.Service)] && !ch.IsLocked {
 			c.mu.Lock()
-			c.resolved = ch.ID
+			if cache != nil {
+				*cache = ch.ID
+			}
 			c.mu.Unlock()
 			return ch.ID, nil
 		}
 	}
-	return "", fmt.Errorf("buffer: tidak ada channel TikTok (connect di Buffer dulu)")
+	return "", fmt.Errorf("buffer: channel %s belum connect (atau locked)", strings.Join(services, "/"))
+}
+
+func (c *Client) TikTokChannelID() (string, error) {
+	return c.channelByServices(c.tiktokChannelID, &c.resolvedTikTok, "tiktok")
+}
+
+func (c *Client) TwitterChannelID() (string, error) {
+	return c.channelByServices(c.twitterChannelID, &c.resolvedX, "twitter", "x")
+}
+
+func (c *Client) createPost(input map[string]any, service, chID string) (*CreateResult, error) {
+	var data struct {
+		CreatePost json.RawMessage `json:"createPost"`
+	}
+	err := c.gql(`
+mutation($input: CreatePostInput!) {
+  createPost(input: $input) {
+    ... on PostActionSuccess {
+      post { id text status schedulingType }
+    }
+    ... on MutationError { message }
+  }
+}`, map[string]any{"input": input}, &data)
+	if err != nil {
+		return nil, err
+	}
+	var success struct {
+		Post *struct {
+			ID             string `json:"id"`
+			Status         string `json:"status"`
+			SchedulingType string `json:"schedulingType"`
+		} `json:"post"`
+	}
+	if err := json.Unmarshal(data.CreatePost, &success); err == nil && success.Post != nil && success.Post.ID != "" {
+		return &CreateResult{
+			PostID:         success.Post.ID,
+			Status:         success.Post.Status,
+			SchedulingType: success.Post.SchedulingType,
+			ChannelID:      chID,
+			Service:        service,
+		}, nil
+	}
+	var fail struct {
+		Message string `json:"message"`
+	}
+	if err := json.Unmarshal(data.CreatePost, &fail); err == nil && fail.Message != "" {
+		return nil, fmt.Errorf("buffer: %s", fail.Message)
+	}
+	return nil, fmt.Errorf("buffer: createPost gagal: %s", truncate(string(data.CreatePost), 240))
 }
 
 // QueueTikTokPhotos adds a photo carousel to Buffer with Notify Me (manual finish on phone).
-func (c *Client) QueueTikTokPhotos(caption, title string, imageURLs []string) (*CreatePhotoResult, error) {
+func (c *Client) QueueTikTokPhotos(caption, title string, imageURLs []string) (*CreateResult, error) {
 	urls := cleanURLs(imageURLs, 10)
 	if len(urls) < 1 {
 		return nil, fmt.Errorf("buffer: butuh minimal 1 gambar publik")
@@ -221,56 +294,54 @@ func (c *Client) QueueTikTokPhotos(caption, title string, imageURLs []string) (*
 		})
 	}
 	input := map[string]any{
-		"text":            text,
-		"channelId":       chID,
-		"schedulingType":  "notification", // Notify Me — post manual di HP
-		"mode":            "addToQueue",
-		"assets":          assets,
+		"text":           text,
+		"channelId":      chID,
+		"schedulingType": "notification",
+		"mode":           "addToQueue",
+		"assets":         assets,
 	}
 	if t := strings.TrimSpace(title); t != "" {
 		input["metadata"] = map[string]any{
 			"tiktok": map[string]any{"title": clip(t, 90)},
 		}
 	}
+	return c.createPost(input, "tiktok", chID)
+}
 
-	var data struct {
-		CreatePost json.RawMessage `json:"createPost"`
+// QueueTwitterThread queues an X/Twitter thread (same parts as Threads utas) with Notify Me.
+// X Premium long-form: parts dikirim utuh (tanpa potong).
+func (c *Client) QueueTwitterThread(parts []string) (*CreateResult, error) {
+	cleaned := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" {
+			continue
+		}
+		cleaned = append(cleaned, p)
 	}
-	err = c.gql(`
-mutation($input: CreatePostInput!) {
-  createPost(input: $input) {
-    ... on PostActionSuccess {
-      post { id text status schedulingType }
-    }
-    ... on MutationError { message }
-  }
-}`, map[string]any{"input": input}, &data)
+	if len(cleaned) < 1 {
+		return nil, fmt.Errorf("buffer: butuh minimal 1 bagian utas untuk X")
+	}
+	chID, err := c.TwitterChannelID()
 	if err != nil {
 		return nil, err
 	}
-
-	var success struct {
-		Post *struct {
-			ID             string `json:"id"`
-			Status         string `json:"status"`
-			SchedulingType string `json:"schedulingType"`
-		} `json:"post"`
+	thread := make([]map[string]any, 0, len(cleaned))
+	for _, p := range cleaned {
+		thread = append(thread, map[string]any{"text": p})
 	}
-	if err := json.Unmarshal(data.CreatePost, &success); err == nil && success.Post != nil && success.Post.ID != "" {
-		return &CreatePhotoResult{
-			PostID:         success.Post.ID,
-			Status:         success.Post.Status,
-			SchedulingType: success.Post.SchedulingType,
-			ChannelID:      chID,
-		}, nil
+	input := map[string]any{
+		"text":           cleaned[0],
+		"channelId":      chID,
+		"schedulingType": "notification",
+		"mode":           "addToQueue",
+		"metadata": map[string]any{
+			"twitter": map[string]any{
+				"thread": thread,
+			},
+		},
 	}
-	var fail struct {
-		Message string `json:"message"`
-	}
-	if err := json.Unmarshal(data.CreatePost, &fail); err == nil && fail.Message != "" {
-		return nil, fmt.Errorf("buffer: %s", fail.Message)
-	}
-	return nil, fmt.Errorf("buffer: createPost gagal: %s", truncate(string(data.CreatePost), 240))
+	return c.createPost(input, "twitter", chID)
 }
 
 func cleanURLs(in []string, max int) []string {

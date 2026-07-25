@@ -309,7 +309,7 @@ func (s *Scheduler) Status() Status {
 		warns = append(warns, "OPENAI_API_KEY belum — thumbnail utas Threads di-skip")
 	}
 	if !st.BufferOK {
-		warns = append(warns, "BUFFER_API_KEY belum — antrian TikTok Buffer di-skip")
+		warns = append(warns, "BUFFER_API_KEY belum — antrian Buffer TikTok/X di-skip")
 	}
 	if !st.PublicOK {
 		warns = append(warns, "PUBLIC_BASE_URL belum valid — IG + Buffer TikTok butuh URL publik HTTPS")

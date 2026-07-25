@@ -69,8 +69,8 @@ func (d *Deps) runOnce(job Job) error {
 	var thumbURL string
 	var imageURLs []string
 	var igContainer string
-	var bufferPostID string
-	bufferErr := ""
+	var bufferPostID, bufferXPostID string
+	bufferErr, bufferXErr := "", ""
 	igSkipped := false
 	igErr := ""
 
@@ -176,7 +176,19 @@ func (d *Deps) runOnce(job Job) error {
 			}
 		}
 
-		// Buffer TikTok — Notify Me (antrian; user post manual di HP)
+		// Buffer X/Twitter — Notify Me (utas teks, sama parts seperti Threads)
+		if d.Buffer != nil && d.Buffer.Enabled() && len(parts) > 0 {
+			res, err := d.Buffer.QueueTwitterThread(parts)
+			if err != nil {
+				bufferXErr = err.Error()
+				log.Printf("lazy job %s buffer x: %v", job.ID, err)
+			} else if res != nil {
+				bufferXPostID = res.PostID
+				log.Printf("lazy job %s buffer x notify-me id=%s parts=%d", job.ID, bufferXPostID, len(parts))
+			}
+		}
+
+		// Buffer TikTok — Notify Me (carousel gambar + caption)
 		if d.Buffer != nil && d.Buffer.Enabled() {
 			if !d.publicOK() {
 				bufferErr = "PUBLIC_BASE_URL belum valid"
@@ -190,7 +202,7 @@ func (d *Deps) runOnce(job Job) error {
 				res, err := d.Buffer.QueueTikTokPhotos(cap, title, imageURLs)
 				if err != nil {
 					bufferErr = err.Error()
-					log.Printf("lazy job %s buffer: %v", job.ID, err)
+					log.Printf("lazy job %s buffer tiktok: %v", job.ID, err)
 				} else if res != nil {
 					bufferPostID = res.PostID
 					log.Printf("lazy job %s buffer tiktok notify-me id=%s", job.ID, bufferPostID)
@@ -208,6 +220,8 @@ func (d *Deps) runOnce(job Job) error {
 			j.IGContainer = igContainer
 			j.BufferPostID = bufferPostID
 			j.BufferError = bufferErr
+			j.BufferXPostID = bufferXPostID
+			j.BufferXError = bufferXErr
 			j.FinishedAt = time.Now().UTC()
 			if igSkipped {
 				j.Status = StatusSkippedIG
@@ -217,7 +231,8 @@ func (d *Deps) runOnce(job Job) error {
 				j.Error = ""
 			}
 		})
-		log.Printf("lazy job %s done threads=%d thumb=%v ig_skip=%v buffer=%v", job.ID, len(threadIDs), thumbURL != "", igSkipped, bufferPostID != "")
+		log.Printf("lazy job %s done threads=%d thumb=%v ig_skip=%v buffer_tt=%v buffer_x=%v",
+			job.ID, len(threadIDs), thumbURL != "", igSkipped, bufferPostID != "", bufferXPostID != "")
 		return nil
 	}
 	return lastErr
