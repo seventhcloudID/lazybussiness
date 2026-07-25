@@ -35,7 +35,7 @@
   <div id="lazy-warnings" class="lazy-warns mb-4 hidden"></div>
 
   <div class="th-panel mb-4">
-    <div class="th-panel-body grid grid-cols-1 md:grid-cols-4 gap-3 items-end">
+    <div class="th-panel-body grid grid-cols-1 md:grid-cols-5 gap-3 items-end">
       <div>
         <label class="th-label" for="enabled">Otomasi</label>
         <label class="lazy-toggle">
@@ -46,6 +46,13 @@
       <div>
         <label class="th-label" for="posts-per-day">Konten / hari (min 5)</label>
         <input id="posts-per-day" class="th-input" type="number" min="5" max="12" value="5">
+      </div>
+      <div>
+        <label class="th-label" for="content-category">Jenis konten</label>
+        <select id="content-category" class="th-input">
+          <option value="general">Umum</option>
+          <option value="youtube_to_utas">YouTube → utas</option>
+        </select>
       </div>
       <div>
         <label class="th-label" for="brand">Brand (@handle)</label>
@@ -158,6 +165,6 @@
 </main>
 <script src="/js/api.js?v=strand15"></script>
 <script src="/js/layout.js?v=strand1"></script>
-<script src="/js/pages/lazy.js?v=strand17"></script>
+<script src="/js/pages/lazy.js?v=strand22"></script>
 </body>
 </html>

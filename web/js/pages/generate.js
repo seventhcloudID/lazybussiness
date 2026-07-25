@@ -3,6 +3,10 @@ Threads.pageShell('generate');
 let lastDrafts = [];
 /** @type {Record<number, string>} */
 let draftThumbs = {};
+let lastYoutubeThumb = '';
+/** Instruksi terpisah per kategori (general vs youtube_to_utas). */
+let instrByCat = { general: '', youtube_to_utas: '' };
+let instrDirty = { general: false, youtube_to_utas: false };
 /** Preset sama Lazy Business — diisi dari /api/ai/thumbnail/defaults */
 let thumbPreset = {
   model: 'gpt-image-2',
@@ -11,6 +15,43 @@ let thumbPreset = {
   crop_4_3: true,
 };
 let thumbEnabled = false;
+
+function currentCategory() {
+  return document.getElementById('content-category')?.value === 'youtube_to_utas'
+    ? 'youtube_to_utas'
+    : 'general';
+}
+
+function updateInstrLabels(cat) {
+  const label = document.getElementById('instructions-label');
+  const btnTpl = document.getElementById('btn-fill-template');
+  const yt = cat === 'youtube_to_utas';
+  if (label) {
+    label.textContent = yt
+      ? 'Instruksi YouTube → utas (style & larangan)'
+      : 'Instruksi Umum (style & larangan)';
+  }
+  if (btnTpl) {
+    btnTpl.textContent = yt ? 'Isi template YouTube' : 'Isi template edukasi';
+  }
+}
+
+function showInstructionsFor(cat) {
+  const el = document.getElementById('instructions');
+  if (!el) return;
+  el.value = instrByCat[cat] || '';
+  if (instrDirty[cat]) el.dataset.dirty = '1';
+  else delete el.dataset.dirty;
+  updateInstrLabels(cat);
+}
+
+function stashCurrentInstructions() {
+  const el = document.getElementById('instructions');
+  if (!el) return;
+  const cat = currentCategory();
+  instrByCat[cat] = el.value;
+  if (el.dataset.dirty) instrDirty[cat] = true;
+}
 
 function showAlert(msg) {
   const el = document.getElementById('gen-alert');
@@ -32,7 +73,7 @@ function nichesFromMemory(mem) {
   return raw.split(/[\n,;|]+/).map(s => s.trim()).filter(Boolean);
 }
 
-function renderMemory(mem) {
+function renderMemory(mem, opts = {}) {
   const nicheEl = document.getElementById('niche');
   if (nicheEl && !nicheEl.dataset.dirty) {
     nicheEl.value = nichesFromMemory(mem).join('\n');
@@ -41,9 +82,40 @@ function renderMemory(mem) {
   if (brandEl && !brandEl.dataset.dirty) {
     brandEl.value = mem.brand || '';
   }
-  if (typeof mem.instructions === 'string' && !document.getElementById('instructions').dataset.dirty) {
-    document.getElementById('instructions').value = mem.instructions;
+  // Jangan overwrite cache lokal kalau field absen di response (hindari textarea "hilang").
+  if (!instrDirty.general && typeof mem.instructions === 'string') {
+    instrByCat.general = mem.instructions;
   }
+  if (!instrDirty.youtube_to_utas && typeof mem.instructions_youtube === 'string') {
+    instrByCat.youtube_to_utas = mem.instructions_youtube;
+  }
+  const catEl = document.getElementById('content-category');
+  if (catEl && !catEl.dataset.dirty && !opts.keepCategory) {
+    catEl.value = mem.content_category === 'youtube_to_utas' ? 'youtube_to_utas' : 'general';
+  }
+  if (catEl) catEl.dataset.prev = catEl.value;
+  showInstructionsFor(currentCategory());
+}
+
+function renderYoutubeSource(yt) {
+  const box = document.getElementById('youtube-source-box');
+  const el = document.getElementById('youtube-source');
+  if (!box || !el) return;
+  if (!yt?.video_id && !yt?.url) {
+    box.classList.add('hidden');
+    el.textContent = '';
+    return;
+  }
+  const title = yt.title || yt.video_id || 'Video';
+  const url = yt.url || ('https://www.youtube.com/watch?v=' + yt.video_id);
+  const bits = [
+    `<a href="${Threads.escapeHtml(url)}" target="_blank" rel="noopener" class="font-semibold text-ink underline">${Threads.escapeHtml(title)}</a>`,
+  ];
+  if (yt.channel) bits.push(`Channel: ${Threads.escapeHtml(yt.channel)}`);
+  if (yt.window) bits.push(`Window: ${Threads.escapeHtml(yt.window)}`);
+  if (yt.why_hot) bits.push(Threads.escapeHtml(yt.why_hot));
+  el.innerHTML = bits.join('<br>');
+  box.classList.remove('hidden');
 }
 
 const EDUKASI_TEMPLATE = `FORMAT
@@ -94,6 +166,29 @@ LARANGAN
 - Jangan lewat 500 karakter per bagian.
 - Jangan filler: kalau tidak berpotensi viral di niche, jangan dikeluarkan.`;
 
+const YOUTUBE_TEMPLATE = `MODE: YouTube → utas
+- Bahan utama = 1 video yang lagi rame (sudah dipilih sistem). Jangan ganti topik bebas.
+- Bukan ringkasan/transcript. Ambil angle: kenapa video itu relevan ke niche + apa yang orang miss.
+- Sebut sumber (judul/channel) natural di 1 bagian saja — jangan spam link.
+- Jangan mengarang fakta di luar digest/judul video.
+
+FORMAT
+- Output: utas berantai 4–6 bagian.
+- Tiap bagian maksimal 500 karakter. 2–3 kalimat, pisah enter.
+- Bagian 1 = HOOK dari insight video (bukan "ada video menarik").
+- Tengah = daging: mekanisme / kontradiksi / dampak ke niche.
+- Akhir = penutup tajam atau pertanyaan terbuka (bukan jualan, bukan "subscribe").
+
+ANGLE
+- "Yang video ini tunjukin vs yang orang kira"
+- "Kenapa ini penting buat niche kamu sekarang"
+- "Detail kecil di video yang orang skip tapi ngegas"
+
+ANTI
+- Jangan review YouTuber / spoiler panjang / list tips dari video.
+- Jangan dogeng AI. Bahasa Indonesia natural.
+- Tanpa bullet, numbering, emoji berlebihan, hashtag.`;
+
 function draftFullText(d) {
   if (Array.isArray(d?.parts) && d.parts.length) {
     return d.parts
@@ -141,9 +236,11 @@ function renderDrafts(result) {
   } else {
     box.classList.add('hidden');
   }
+  renderYoutubeSource(result.youtube);
 
   lastDrafts = result.drafts || [];
   draftThumbs = {};
+  lastYoutubeThumb = result.youtube?.thumb_url || '';
   const root = document.getElementById('drafts');
   if (!lastDrafts.length) {
     root.innerHTML = '<div class="th-panel"><div class="th-empty py-10"><p class="text-sm text-muted">Belum ada draf.</p></div></div>';
@@ -277,8 +374,20 @@ async function generateThumbnailForDraft(i, { quiet = false } = {}) {
 }
 
 async function autoThumbAllDrafts() {
-  if (!thumbEnabled || !document.getElementById('auto-thumb')?.checked) return;
+  if (!document.getElementById('auto-thumb')?.checked) return;
   if (!lastDrafts.length) return;
+
+  // YouTube → utas: pakai thumb video asli (sudah di-mirror server).
+  if (lastYoutubeThumb) {
+    for (let i = 0; i < lastDrafts.length; i++) {
+      draftThumbs[i] = lastYoutubeThumb;
+      showThumbOnDraft(i, lastYoutubeThumb);
+    }
+    Threads.toast(`Thumbnail YouTube siap (${lastDrafts.length} draf)`, true);
+    return;
+  }
+
+  if (!thumbEnabled) return;
   const n = lastDrafts.length;
   let ok = 0;
   let lastErr = '';
@@ -304,10 +413,6 @@ async function loadMemory() {
   return mem;
 }
 
-document.getElementById('instructions').addEventListener('input', () => {
-  document.getElementById('instructions').dataset.dirty = '1';
-});
-
 document.getElementById('niche').addEventListener('input', () => {
   document.getElementById('niche').dataset.dirty = '1';
 });
@@ -320,7 +425,7 @@ document.getElementById('btn-save-brand').onclick = async () => {
   const brand = document.getElementById('brand').value.trim();
   try {
     const data = await Threads.api('/api/ai/brand', {
-      method: 'PUT',
+      method: 'POST',
       body: JSON.stringify({ brand }),
     });
     delete document.getElementById('brand').dataset.dirty;
@@ -338,7 +443,7 @@ document.getElementById('btn-save-niche').onclick = async () => {
     .filter(Boolean);
   try {
     const data = await Threads.api('/api/ai/niche', {
-      method: 'PUT',
+      method: 'POST',
       body: JSON.stringify({ niches, niche: niches.join('\n') }),
     });
     delete document.getElementById('niche').dataset.dirty;
@@ -349,25 +454,78 @@ document.getElementById('btn-save-niche').onclick = async () => {
   }
 };
 
+document.getElementById('instructions')?.addEventListener('input', () => {
+  const cat = currentCategory();
+  const el = document.getElementById('instructions');
+  instrByCat[cat] = el.value;
+  instrDirty[cat] = true;
+  el.dataset.dirty = '1';
+});
+
 document.getElementById('btn-save-instructions').onclick = async () => {
+  const cat = currentCategory();
   const instructions = document.getElementById('instructions').value;
+  instrByCat[cat] = instructions;
   try {
-    const data = await Threads.api('/api/ai/instructions', {
-      method: 'PUT',
-      body: JSON.stringify({ instructions }),
+    // Pastikan kategori ikut tersimpan dulu supaya field youtube tidak salah slot.
+    await Threads.api('/api/ai/category', {
+      method: 'POST',
+      body: JSON.stringify({ category: cat }),
     });
+    const data = await Threads.api('/api/ai/instructions', {
+      method: 'POST',
+      body: JSON.stringify({ instructions, category: cat }),
+    });
+    instrDirty[cat] = false;
     delete document.getElementById('instructions').dataset.dirty;
-    document.getElementById('instructions-status').textContent = 'Tersimpan';
-    renderMemory(data.memory);
-    Threads.toast('Instruksi disimpan', true);
+    // Pakai teks yang baru disimpan; jangan biarkan response kosong men-wipe UI.
+    if (cat === 'youtube_to_utas') {
+      instrByCat.youtube_to_utas = instructions;
+      if (data.memory) data.memory.instructions_youtube = instructions;
+    } else {
+      instrByCat.general = instructions;
+      if (data.memory) data.memory.instructions = instructions;
+    }
+    document.getElementById('instructions-status').textContent =
+      cat === 'youtube_to_utas' ? 'Tersimpan (YouTube → utas)' : 'Tersimpan (Umum)';
+    renderMemory(data.memory || {}, { keepCategory: true });
+    showInstructionsFor(cat);
+    Threads.toast(cat === 'youtube_to_utas' ? 'Instruksi YouTube disimpan' : 'Instruksi Umum disimpan', true);
   } catch (e) {
     Threads.toast(e.message, false);
   }
 };
 
-document.getElementById('btn-fill-template').onclick = () => {
+document.getElementById('content-category')?.addEventListener('change', async (ev) => {
+  const prev = ev.target.dataset.prev || 'general';
   const el = document.getElementById('instructions');
-  el.value = EDUKASI_TEMPLATE;
+  if (el) {
+    instrByCat[prev] = el.value;
+    if (el.dataset.dirty) instrDirty[prev] = true;
+  }
+  const cat = currentCategory();
+  ev.target.dataset.prev = cat;
+  ev.target.dataset.dirty = '1';
+  showInstructionsFor(cat);
+  document.getElementById('instructions-status').textContent =
+    cat === 'youtube_to_utas' ? 'Mode YouTube — instruksi terpisah' : 'Mode Umum — instruksi terpisah';
+  try {
+    await Threads.api('/api/ai/category', {
+      method: 'POST',
+      body: JSON.stringify({ category: cat }),
+    });
+    delete ev.target.dataset.dirty;
+  } catch (e) {
+    Threads.toast(e.message, false);
+  }
+});
+
+document.getElementById('btn-fill-template').onclick = () => {
+  const cat = currentCategory();
+  const el = document.getElementById('instructions');
+  el.value = cat === 'youtube_to_utas' ? YOUTUBE_TEMPLATE : EDUKASI_TEMPLATE;
+  instrByCat[cat] = el.value;
+  instrDirty[cat] = true;
   el.dataset.dirty = '1';
   document.getElementById('instructions-status').textContent = 'Template terisi — klik Simpan';
 };
@@ -380,28 +538,31 @@ document.getElementById('btn-generate').onclick = async () => {
   btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Generating…';
   showAlert('Generate draf…');
   try {
-    // autosave instructions / niche if dirty
-    if (document.getElementById('instructions').dataset.dirty) {
+    // autosave instructions / niche if dirty (per kategori)
+    stashCurrentInstructions();
+    for (const cat of ['general', 'youtube_to_utas']) {
+      if (!instrDirty[cat]) continue;
       await Threads.api('/api/ai/instructions', {
-        method: 'PUT',
-        body: JSON.stringify({ instructions: document.getElementById('instructions').value }),
+        method: 'POST',
+        body: JSON.stringify({ instructions: instrByCat[cat], category: cat }),
       });
-      delete document.getElementById('instructions').dataset.dirty;
+      instrDirty[cat] = false;
     }
+    delete document.getElementById('instructions')?.dataset.dirty;
     if (document.getElementById('niche').dataset.dirty) {
       const niches = document.getElementById('niche').value
         .split(/[\n,;|]+/)
         .map(s => s.trim())
         .filter(Boolean);
       await Threads.api('/api/ai/niche', {
-        method: 'PUT',
+        method: 'POST',
         body: JSON.stringify({ niches, niche: niches.join('\n') }),
       });
       delete document.getElementById('niche').dataset.dirty;
     }
     if (document.getElementById('brand')?.dataset.dirty) {
       await Threads.api('/api/ai/brand', {
-        method: 'PUT',
+        method: 'POST',
         body: JSON.stringify({ brand: document.getElementById('brand').value.trim() }),
       });
       delete document.getElementById('brand').dataset.dirty;
@@ -409,16 +570,26 @@ document.getElementById('btn-generate').onclick = async () => {
     if (!document.getElementById('niche').value.trim()) {
       Threads.toast('Isi niche dulu biar AI tidak menebak dari data', false);
     }
+    const cat = document.getElementById('content-category')?.value || 'general';
+    await Threads.api('/api/ai/category', {
+      method: 'POST',
+      body: JSON.stringify({ category: cat }),
+    });
+    delete document.getElementById('content-category')?.dataset.dirty;
+    showAlert(cat === 'youtube_to_utas'
+      ? 'Cari video YouTube yang rame + generate utas…'
+      : 'Generate draf…');
     const result = await Threads.api('/api/ai/generate', {
       method: 'POST',
       body: JSON.stringify({
         topic: document.getElementById('topic').value.trim(),
         count: 2,
+        category: cat,
       }),
     });
     showAlert('');
     renderDrafts(result);
-    Threads.toast('Draf siap', true);
+    Threads.toast(cat === 'youtube_to_utas' ? 'Draf dari YouTube siap' : 'Draf siap', true);
     await autoThumbAllDrafts();
   } catch (e) {
     showAlert(e.message);

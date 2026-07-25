@@ -83,6 +83,9 @@ function showJobDetail(job) {
       thumbImg.removeAttribute('src');
     }
   }
+  if (job.category === 'youtube_to_utas' && job.youtube_title) {
+    bits.push('YouTube: ' + job.youtube_title + (job.youtube_url ? ' · ' + job.youtube_url : ''));
+  }
   if (job.buffer_x_post_id) bits.push('Buffer X (shareNow): ' + job.buffer_x_post_id);
   if (job.buffer_x_error) bits.push('Buffer X: ' + job.buffer_x_error);
   if (job.buffer_post_id) bits.push('Buffer TikTok (Notify Me): ' + job.buffer_post_id);
@@ -196,6 +199,10 @@ function renderStatus(st) {
   document.getElementById('posts-per-day').value = cfg.posts_per_day || 5;
   if (cfg.topic_hint != null && document.getElementById('topic').dataset.dirty !== '1') {
     document.getElementById('topic').value = cfg.topic_hint || '';
+  }
+  const catEl = document.getElementById('content-category');
+  if (catEl && catEl.dataset.dirty !== '1') {
+    catEl.value = st.content_category === 'youtube_to_utas' ? 'youtube_to_utas' : 'general';
   }
 
   document.getElementById('stat-today').textContent = st.today || '—';
@@ -349,6 +356,10 @@ document.getElementById('lazy-next').onclick = () => {
   renderCarouselPreview();
 };
 
+document.getElementById('content-category')?.addEventListener('change', () => {
+  document.getElementById('content-category').dataset.dirty = '1';
+});
+
 document.getElementById('btn-save').onclick = async () => {
   showAlert('');
   const posts = Math.max(5, Math.min(12, Number(document.getElementById('posts-per-day').value) || 5));
@@ -358,6 +369,12 @@ document.getElementById('btn-save').onclick = async () => {
     if (brand) {
       await Threads.api('/api/ai/brand', { method: 'PUT', body: JSON.stringify({ brand }) });
     }
+    const cat = document.getElementById('content-category')?.value || 'general';
+    await Threads.api('/api/ai/category', {
+      method: 'POST',
+      body: JSON.stringify({ category: cat }),
+    });
+    delete document.getElementById('content-category')?.dataset.dirty;
     await Threads.api('/api/lazy/config', {
       method: 'PUT',
       body: JSON.stringify({

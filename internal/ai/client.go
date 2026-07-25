@@ -265,8 +265,7 @@ Aturan ketat:
 }
 
 func (c *Client) chatGemini(system, user string) (string, *TokenUsage, error) {
-	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent", c.baseURL, url.PathEscape(c.model))
-	reqBody := map[string]any{
+	return c.chatGeminiRequest(map[string]any{
 		"systemInstruction": map[string]any{
 			"parts": []map[string]string{{"text": system}},
 		},
@@ -281,7 +280,59 @@ func (c *Client) chatGemini(system, user string) (string, *TokenUsage, error) {
 			"maxOutputTokens":  8192,
 			"responseMimeType": "application/json",
 		},
-	}
+	})
+}
+
+// chatGeminiSearch enables Google Search grounding (no responseMimeType — extract JSON from text).
+func (c *Client) chatGeminiSearch(system, user string) (string, *TokenUsage, error) {
+	return c.chatGeminiRequest(map[string]any{
+		"systemInstruction": map[string]any{
+			"parts": []map[string]string{{"text": system}},
+		},
+		"contents": []map[string]any{
+			{
+				"role":  "user",
+				"parts": []map[string]string{{"text": user}},
+			},
+		},
+		"tools": []map[string]any{
+			{"google_search": map[string]any{}},
+		},
+		"generationConfig": map[string]any{
+			"temperature":     0.3,
+			"maxOutputTokens": 4096,
+		},
+	})
+}
+
+// chatGeminiYouTube sends a public YouTube URL as file_data for video understanding.
+func (c *Client) chatGeminiYouTube(system, user, watchURL string) (string, *TokenUsage, error) {
+	return c.chatGeminiRequest(map[string]any{
+		"systemInstruction": map[string]any{
+			"parts": []map[string]string{{"text": system}},
+		},
+		"contents": []map[string]any{
+			{
+				"role": "user",
+				"parts": []map[string]any{
+					{
+						"fileData": map[string]any{
+							"fileUri": watchURL,
+						},
+					},
+					{"text": user},
+				},
+			},
+		},
+		"generationConfig": map[string]any{
+			"temperature":     0.35,
+			"maxOutputTokens": 4096,
+		},
+	})
+}
+
+func (c *Client) chatGeminiRequest(reqBody map[string]any) (string, *TokenUsage, error) {
+	endpoint := fmt.Sprintf("%s/v1beta/models/%s:generateContent", c.baseURL, url.PathEscape(c.model))
 	rawReq, _ := json.Marshal(reqBody)
 
 	var lastErr error

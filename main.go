@@ -307,22 +307,38 @@ func main() {
 		writeJSON(w, http.StatusOK, aiMemory.Get())
 	})
 
-	mux.HandleFunc("PUT /api/ai/instructions", func(w http.ResponseWriter, r *http.Request) {
+	saveAIInstructions := func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Instructions string `json:"instructions"`
+			Category     string `json:"category"` // general | youtube_to_utas; default dari memory
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
 			return
 		}
-		if err := aiMemory.SetInstructions(body.Instructions); err != nil {
+		cat := ai.NormalizeCategory(body.Category)
+		if strings.TrimSpace(body.Category) == "" {
+			cat = ai.NormalizeCategory(aiMemory.Get().ContentCategory)
+		}
+		if err := aiMemory.SetInstructionsForCategory(cat, body.Instructions); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "memory": aiMemory.Get()})
-	})
+		mem := aiMemory.Get()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":       true,
+			"category": cat,
+			"memory":   mem,
+			"saved": map[string]string{
+				"category":     cat,
+				"instructions": ai.InstructionsForCategory(mem, cat),
+			},
+		})
+	}
+	mux.HandleFunc("PUT /api/ai/instructions", saveAIInstructions)
+	mux.HandleFunc("POST /api/ai/instructions", saveAIInstructions)
 
-	mux.HandleFunc("PUT /api/ai/niche", func(w http.ResponseWriter, r *http.Request) {
+	saveAINiche := func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Niche  string   `json:"niche"`
 			Niches []string `json:"niches"`
@@ -342,9 +358,11 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "memory": aiMemory.Get()})
-	})
+	}
+	mux.HandleFunc("PUT /api/ai/niche", saveAINiche)
+	mux.HandleFunc("POST /api/ai/niche", saveAINiche)
 
-	mux.HandleFunc("PUT /api/ai/brand", func(w http.ResponseWriter, r *http.Request) {
+	saveAIBrand := func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Brand string `json:"brand"`
 		}
@@ -357,7 +375,37 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "memory": aiMemory.Get()})
+	}
+	mux.HandleFunc("PUT /api/ai/brand", saveAIBrand)
+	mux.HandleFunc("POST /api/ai/brand", saveAIBrand)
+
+	mux.HandleFunc("GET /api/ai/category", func(w http.ResponseWriter, r *http.Request) {
+		mem := aiMemory.Get()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"category": mem.ContentCategory,
+			"options": []map[string]string{
+				{"id": ai.CategoryGeneral, "label": "Umum"},
+				{"id": ai.CategoryYoutubeToUtas, "label": "YouTube → utas"},
+			},
+		})
 	})
+	saveAICategory := func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Category string `json:"category"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		if err := aiMemory.SetContentCategory(body.Category); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		mem := aiMemory.Get()
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "category": mem.ContentCategory, "memory": mem})
+	}
+	mux.HandleFunc("PUT /api/ai/category", saveAICategory)
+	mux.HandleFunc("POST /api/ai/category", saveAICategory)
 
 	mux.HandleFunc("POST /api/ai/memory/refresh", func(w http.ResponseWriter, r *http.Request) {
 		if !client.Connected() {
@@ -464,6 +512,9 @@ func main() {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		mem := aiMemory.Get()
+		if strings.TrimSpace(req.Category) == "" {
+			req.Category = mem.ContentCategory
+		}
 		result, err := aiClient.GenerateContent(nil, mem, req)
 		if err != nil {
 			var qe *ai.QuotaError
@@ -493,6 +544,12 @@ func main() {
 			Drafts:        result.Drafts,
 			Consideration: result.Consideration,
 		})
+		// Mirror YouTube thumb for UI / Threads attach
+		if result.Category == ai.CategoryYoutubeToUtas && result.YouTube != nil && result.YouTube.VideoID != "" {
+			if thumb, err := ai.MirrorYouTubeThumbnail(result.YouTube.VideoID, publicBase); err == nil {
+				result.YouTube.ThumbURL = thumb
+			}
+		}
 		writeJSON(w, http.StatusOK, result)
 	})
 

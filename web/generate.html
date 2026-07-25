@@ -36,8 +36,16 @@
     <div class="th-panel">
       <div class="th-panel-head">Instruksi AI</div>
       <div class="th-panel-body">
-        <label class="th-label">Instruksi tetap (style & larangan)</label>
-        <textarea id="instructions" class="th-textarea" rows="12" placeholder="Isi aturan tetap kamu di sini…"></textarea>
+        <div class="mb-4">
+          <label class="th-label" for="content-category">Jenis konten</label>
+          <select id="content-category" class="th-input">
+            <option value="general">Umum</option>
+            <option value="youtube_to_utas">YouTube → utas</option>
+          </select>
+          <p class="text-[11px] text-muted m-0 mt-1.5">Tiap jenis punya instruksi sendiri. YouTube → utas: cari video niche yang rame, tulis utas, thumb = thumb video.</p>
+        </div>
+        <label class="th-label" id="instructions-label" for="instructions">Instruksi Umum (style & larangan)</label>
+        <textarea id="instructions" class="th-textarea" rows="12" placeholder="Isi aturan tetap untuk jenis konten ini…"></textarea>
         <div class="flex flex-wrap gap-2 mt-3">
           <button id="btn-save-instructions" class="th-btn th-btn-soft" type="button">Simpan instruksi</button>
           <button id="btn-fill-template" class="th-btn th-btn-ghost" type="button">Isi template edukasi</button>
@@ -68,6 +76,13 @@
     </div>
   </div>
 
+  <div id="youtube-source-box" class="th-panel mb-5 hidden">
+    <div class="th-panel-head">Sumber YouTube</div>
+    <div class="th-panel-body text-sm">
+      <p id="youtube-source" class="m-0 leading-relaxed"></p>
+    </div>
+  </div>
+
   <div id="consideration-box" class="th-panel mb-5 hidden">
     <div class="th-panel-head">Pertimbangan generate</div>
     <div class="th-panel-body">
@@ -79,6 +94,6 @@
 </main>
 <script src="/js/api.js?v=strand15"></script>
 <script src="/js/layout.js?v=strand13"></script>
-<script src="/js/pages/generate.js?v=strand13"></script>
+<script src="/js/pages/generate.js?v=strand22"></script>
 </body>
 </html>

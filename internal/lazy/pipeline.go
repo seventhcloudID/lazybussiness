@@ -77,9 +77,11 @@ func (d *Deps) runOnce(job Job) error {
 	for attempt := 1; attempt <= 2; attempt++ {
 		lastErr = nil
 		thumbURL = ""
+		cat := ai.NormalizeCategory(mem.ContentCategory)
 		gen, err := d.AI.GenerateContent(nil, mem, ai.GenerateRequest{
-			Topic: cfg.TopicHint,
-			Count: 1,
+			Topic:    cfg.TopicHint,
+			Count:    1,
+			Category: cat,
 		})
 		if err != nil {
 			lastErr = err
@@ -115,12 +117,28 @@ func (d *Deps) runOnce(job Job) error {
 			}
 		}
 
-		// Thumbnail ChatGPT dari hook (bagian 1) — khusus utas Threads, bukan slide IG.
-		thumbURL, err = d.generateThreadsThumb(job, parts[0])
-		if err != nil {
-			log.Printf("lazy job %s thumb: %v (lanjut publish TEXT)", job.ID, err)
-			thumbURL = ""
+		// Thumbnail: YouTube asli untuk kategori youtube_to_utas; selain itu ChatGPT.
+		if cat == ai.CategoryYoutubeToUtas && gen.YouTube != nil && gen.YouTube.VideoID != "" {
+			thumbURL, err = ai.MirrorYouTubeThumbnail(gen.YouTube.VideoID, d.Public)
+			if err != nil {
+				log.Printf("lazy job %s yt-thumb: %v (lanjut TEXT)", job.ID, err)
+				thumbURL = ""
+			}
+		} else {
+			thumbURL, err = d.generateThreadsThumb(job, parts[0])
+			if err != nil {
+				log.Printf("lazy job %s thumb: %v (lanjut publish TEXT)", job.ID, err)
+				thumbURL = ""
+			}
 		}
+		_ = d.Store.UpdateJob(job.ID, func(j *Job) {
+			j.Category = cat
+			if gen.YouTube != nil {
+				j.YouTubeID = gen.YouTube.VideoID
+				j.YouTubeTitle = gen.YouTube.Title
+				j.YouTubeURL = gen.YouTube.URL
+			}
+		})
 
 		threadIDs, err = d.publishThreads(parts, thumbURL)
 		if err != nil {
@@ -222,6 +240,12 @@ func (d *Deps) runOnce(job Job) error {
 			j.BufferError = bufferErr
 			j.BufferXPostID = bufferXPostID
 			j.BufferXError = bufferXErr
+			j.Category = cat
+			if gen.YouTube != nil {
+				j.YouTubeID = gen.YouTube.VideoID
+				j.YouTubeTitle = gen.YouTube.Title
+				j.YouTubeURL = gen.YouTube.URL
+			}
 			j.FinishedAt = time.Now().UTC()
 			if igSkipped {
 				j.Status = StatusSkippedIG

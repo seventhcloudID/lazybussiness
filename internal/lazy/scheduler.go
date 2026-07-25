@@ -269,6 +269,7 @@ type Status struct {
 	AIOK            bool           `json:"ai_ok"`
 	ThumbOK         bool           `json:"thumb_ok"`
 	BufferOK        bool           `json:"buffer_ok"`
+	ContentCategory string         `json:"content_category,omitempty"`
 	Warnings        []string       `json:"warnings"`
 }
 
@@ -293,7 +294,10 @@ func (s *Scheduler) Status() Status {
 		InstagramOK:   s.deps.IG != nil && s.deps.IG.Connected(),
 		AIOK:          s.deps.AI != nil && s.deps.AI.Enabled(),
 		ThumbOK:       s.deps.Thumb != nil && s.deps.Thumb.Enabled(),
-		BufferOK:      s.deps.Buffer != nil && s.deps.Buffer.Enabled(),
+		BufferOK: s.deps.Buffer != nil && s.deps.Buffer.Enabled(),
+	}
+	if s.deps.Memory != nil {
+		st.ContentCategory = s.deps.Memory.Get().ContentCategory
 	}
 	var warns []string
 	if !st.AIOK {

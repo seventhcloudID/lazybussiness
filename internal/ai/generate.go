@@ -9,9 +9,11 @@ import (
 )
 
 type GenerateRequest struct {
-	Topic        string `json:"topic"`
-	Instructions string `json:"instructions"` // override one-shot; else use memory
-	Count        int    `json:"count"`
+	Topic        string         `json:"topic"`
+	Instructions string         `json:"instructions"` // override one-shot; else use memory
+	Count        int            `json:"count"`
+	Category     string         `json:"category,omitempty"` // general | youtube_to_utas
+	YouTube      *YouTubeSource `json:"youtube,omitempty"`  // optional pre-picked source
 }
 
 type GenerateResult struct {
@@ -23,6 +25,8 @@ type GenerateResult struct {
 	Provider      string           `json:"provider"`
 	Usage         *TokenUsage      `json:"usage,omitempty"`
 	Quota         *QuotaStatus     `json:"quota,omitempty"`
+	Category      string           `json:"category,omitempty"`
+	YouTube       *YouTubeSource   `json:"youtube,omitempty"`
 }
 
 func (c *Client) GenerateContent(_ map[string]any, mem Memory, req GenerateRequest) (*GenerateResult, error) {
@@ -41,10 +45,53 @@ func (c *Client) GenerateContent(_ map[string]any, mem Memory, req GenerateReque
 		req.Count = 4
 	}
 
+	cat := NormalizeCategory(req.Category)
+	if strings.TrimSpace(req.Category) == "" {
+		cat = NormalizeCategory(mem.ContentCategory)
+	}
+
+	var yt *YouTubeSource
+	if cat == CategoryYoutubeToUtas {
+		yt = req.YouTube
+		if yt == nil || ParseYouTubeVideoID(yt.VideoID) == "" {
+			found, err := c.FindTrendingYouTube(mem)
+			if err != nil {
+				return nil, err
+			}
+			yt = found
+		} else {
+			yt.VideoID = ParseYouTubeVideoID(yt.VideoID)
+			if yt.VideoID == "" {
+				yt.VideoID = ParseYouTubeVideoID(yt.URL)
+			}
+			yt.URL = YouTubeWatchURL(yt.VideoID)
+		}
+		if strings.TrimSpace(yt.Digest) == "" {
+			if dig, err := c.SummarizeYouTubeVideo(yt.URL); err == nil {
+				yt.Digest = dig
+			}
+		}
+	}
+
+	out, err := c.generateUtasDrafts(mem, req, cat, yt)
+	if err != nil {
+		return nil, err
+	}
+	out.Category = cat
+	out.YouTube = yt
+	return out, nil
+}
+
+func (c *Client) generateUtasDrafts(mem Memory, req GenerateRequest, cat string, yt *YouTubeSource) (*GenerateResult, error) {
 	instructions := strings.TrimSpace(req.Instructions)
 	if instructions == "" {
-		instructions = strings.TrimSpace(mem.Instructions)
+		instructions = InstructionsForCategory(mem, cat)
 	}
+	defaultInstr := DefaultGenerateInstructions
+	if cat == CategoryYoutubeToUtas {
+		defaultInstr = DefaultYoutubeGenerateInstructions
+	}
+	instructions = emptyFallback(instructions, defaultInstr)
 
 	niches := NicheList(mem)
 	nicheLine := strings.Join(niches, "\n")
@@ -52,7 +99,7 @@ func (c *Client) GenerateContent(_ map[string]any, mem Memory, req GenerateReque
 		nicheLine = "(belum diisi user — minta topik umum sesuai instruksi, JANGAN menebak niche)"
 	}
 
-	payload, err := json.MarshalIndent(map[string]any{
+	payloadMap := map[string]any{
 		"user_niches":         niches,
 		"user_instructions":   instructions,
 		"topic_hint":          strings.TrimSpace(req.Topic),
@@ -60,104 +107,30 @@ func (c *Client) GenerateContent(_ map[string]any, mem Memory, req GenerateReque
 		"draft_count":         req.Count,
 		"recent_drafts_avoid": recentDraftHints(mem.History, 6),
 		"user_feedback":       trimFeedback(mem.Feedback, 8),
-	}, "", "  ")
+		"content_category":    cat,
+	}
+	if cat == CategoryYoutubeToUtas && yt != nil {
+		payloadMap["youtube_source"] = map[string]any{
+			"video_id": yt.VideoID,
+			"url":      yt.URL,
+			"title":    yt.Title,
+			"channel":  yt.Channel,
+			"why_hot":  yt.WhyHot,
+			"window":   yt.Window,
+			"digest":   yt.Digest,
+		}
+	}
+
+	payload, err := json.MarshalIndent(payloadMap, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 
-	system := fmt.Sprintf(`Kamu adalah penulis utas Threads yang nulis konten BERPOTENSI VIRAL — bukan filler, bukan "asal ada draf".
-Utas = rantai post pendek yang nyambung (bukan 1 caption panjang).
-
-Prioritas (urut):
-1) Berpotensi viral di niche (stop scroll, bikin reply/share, orang ngerasa "ini harus dikasih tau").
-2) Bunyi RIL, bukan dogeng/AI cringe.
-3) Spesifik & bisa dibela — bukan generic edukasi.
-
-Filter WAJIB sebelum menulis: kalau angle-nya bisa diganti niche lain tanpa berubah artinya → BUANG, cari angle yang lebih tajam.
-Kalau hook-nya cuma "penjelasan topik" tanpa tensi/kontradiksi/kejutan → BUANG.
-
-NICHE AKUN (dari user — boleh LEBIH DARI SATU; tiap draf pilih 1 niche atau gabungan yang masuk akal, jangan campur acak):
-"""
-%s
-"""
-
-Instruksi user (WAJIB dipatuhi jika ada):
-"""
-%s
-"""
-
-Jawab HANYA JSON valid:
-{
-  "consideration": "2-4 kalimat: kenapa angle ini punya peluang viral + niche mana yang dipakai + apa yang dihindari biar tidak ngulang",
-  "daily_focus": {
-    "date": "YYYY-MM-DD",
-    "focus": "",
-    "avoid_today": ["topik/angle yang dihindari biar tidak mengulang"],
-    "notes": "catatan singkat"
-  },
-  "drafts": [{
-    "title": "judul internal singkat",
-    "hook": "ringkas hook bagian 1",
-    "parts": [
-      "teks bagian 1 (starter/hook)",
-      "teks bagian 2",
-      "teks bagian 3",
-      "teks bagian 4"
-    ],
-    "draft": "seluruh utas digabung, dipisah baris kosong antar bagian (untuk salin cepat)",
-    "angle": "sudut pandang yang bikin beda dari konten edukasi biasa",
-    "format": "THREAD",
-    "why": "kenapa berpotensi viral + niche mana yang dipakai",
-    "based_on": "niche + instruksi + topik",
-    "risk": "risiko terdengar dogeng/dirujak + cara dihindari"
-  }]
-}
-
-Aturan ketat:
-- Hasilkan tepat %d opsi utas (drafts) — tiap opsi HARUS beda angle viral, bukan parafrase.
-- Kalau user punya beberapa niche: usahakan opsi drafts mencakup niche berbeda (jangan semua ke satu niche saja), kecuali topic_hint mengunci satu arah.
-- Tiap draft WAJIB "parts" = array 4–6 string TERPISAH (satu elemen = satu post di utas).
-  JANGAN satukan semua bagian jadi satu paragraf / satu string.
-  Field "draft" = join parts dengan "\\n\\n" (baris kosong antar bagian).
-- BATAS KERAS: tiap elemen parts maksimal 500 karakter (batas Threads). Kalau lebih, pecah jadi bagian baru — jangan potong di tengah kata kalau bisa.
-- Tiap bagian 2–3 kalimat saja (cukup). Pisah kalimat dengan baris baru (\\n) biar enak dibaca di timeline — jangan satu blok padat.
-  Contoh bentuk satu parts[i]:
-  "Kalimat hook.\\n\\nKalimat dua.\\n\\nKalimat tiga."
-- JANGAN pakai "pelajaran dari data post". Tidak ada do_more/repurpose dari performa akun.
-- JANGAN mengulang topik/angle di recent_drafts_avoid. Ambil sudut baru dalam niche.
-- Hormati user_feedback jelek (hindari pola yang di-thumbs-down).
-- NICHE hanya dari user_niches (boleh multi). daily_focus.focus biarkan string kosong.
-
-POTENSI VIRAL (wajib — jangan asal bikin):
-- Pilih angle yang punya SATU dari ini (lebih bagus kalau kombinasi):
-  (a) kontradiksi / "yang dikira X padahal Y"
-  (b) mekanisme tersembunyi yang orang belum sadar dampaknya
-  (c) contoh konkret yang bikin orang bilang "anjir bener"
-  (d) pertanyaan yang memaksa orang reply (bukan CTA lemah)
-  (e) insight yang enak di-share ke chat / di-quote
-- Hindari konten "aman tapi sepi": definisi, tips generik, ringkasan Wikipedia, ceramah netral.
-- Tiap utas harus punya "poin yang bisa diingat" setelah 3 detik — kalau lupa, rewrite.
-- Bikin orang merasa dapat info berharga / berbahaya / nyeleneh tapi masuk akal — bukan ceramah.
-
-HOOK & ENERGI:
-- Bagian 1 HARUS hook yang nahan scroll di kalimat pertama. Bukan soft open.
-  Bagus: kontradiksi, klaim tajam + bukti singkat, "yang orang kira X padahal Y", kejadian konkret, angka/mekanisme yang aneh.
-  Jelek: definisi, latar belakang, "ada yang perlu diketahui", "banyak orang…", ringkasan ensiklopedia, nada laporan.
-- Kalimat aktif. Subjek jelas melakukan sesuatu. Hindari pasif bertele ("dapat dikatakan", "perlu dipahami", "hal ini menunjukkan").
-- Tension dulu, penjelasan belakangan. Hook bikin orang penasaran; bagian 2+ baru daging.
-- Nada: tajam + spesifik, bukan tenang-pasif. Boleh sedikit panik/kesal/sinyal bahaya — asal bukan drama palsu.
-- Tes hook: kalau dibaca sendirian di timeline, orang berhenti. Kalau tidak, tulis ulang bagian 1.
-
-ANTI-DOGENG (wajib, tapi JANGAN bikin teks jadi lembek):
-- Jangan klikbait kosong, jangan moralizing, jangan "sebenarnya kalian harus tahu".
-- Jangan frasa AI: "mari kita bahas", "penting untuk diketahui", "di era digital", "banyak yang belum sadar", "thread ini akan membuka mata".
-- Jangan overclaim tanpa dasar; kalau spekulasi, bilang sebagai dugaan/observasi.
-- Jangan sok kasar palsu, jangan edgy murahan.
-- Prefer detail konkret (mekanisme, contoh, kontradiksi) daripada opini generic.
-- Default (kecuali instruksi user bilang lain): tanpa bullet/nummering, tanpa "lu/gue", tanpa list tips.
-- Bahasa Indonesia natural.`, nicheLine, emptyFallback(instructions, DefaultGenerateInstructions), req.Count)
-
+	system := buildGenerateSystemPrompt(cat, nicheLine, instructions, req.Count)
 	user := "Generate utas Threads yang BERPOTENSI VIRAL (bukan filler). Niche + instruksi user; jangan mengulang draf lama:\n\n" + string(payload)
+	if cat == CategoryYoutubeToUtas {
+		user = "Generate utas Threads dari video YouTube di youtube_source (bukan topik bebas). Ikuti instruksi YouTube → utas:\n\n" + string(payload)
+	}
 
 	var content string
 	var usage *TokenUsage
@@ -388,6 +361,128 @@ func splitByLimit(s string, max int) []string {
 	}
 	return out
 }
+
+func buildGenerateSystemPrompt(cat, nicheLine, instructions string, count int) string {
+	sharedRules := fmt.Sprintf(`Jawab HANYA JSON valid:
+{
+  "consideration": "2-4 kalimat: kenapa angle ini punya peluang viral + niche mana yang dipakai + apa yang dihindari biar tidak ngulang",
+  "daily_focus": {
+    "date": "YYYY-MM-DD",
+    "focus": "",
+    "avoid_today": ["topik/angle yang dihindari biar tidak mengulang"],
+    "notes": "catatan singkat"
+  },
+  "drafts": [{
+    "title": "judul internal singkat",
+    "hook": "ringkas hook bagian 1",
+    "parts": [
+      "teks bagian 1 (starter/hook)",
+      "teks bagian 2",
+      "teks bagian 3",
+      "teks bagian 4"
+    ],
+    "draft": "seluruh utas digabung, dipisah baris kosong antar bagian (untuk salin cepat)",
+    "angle": "sudut pandang yang bikin beda dari konten edukasi biasa",
+    "format": "THREAD",
+    "why": "kenapa berpotensi viral + niche mana yang dipakai",
+    "based_on": "niche + instruksi + topik/sumber",
+    "risk": "risiko terdengar dogeng/dirujak + cara dihindari"
+  }]
+}
+
+Aturan ketat:
+- Hasilkan tepat %d opsi utas (drafts) — tiap opsi HARUS beda angle viral, bukan parafrase.
+- Tiap draft WAJIB "parts" = array 4–6 string TERPISAH (satu elemen = satu post di utas).
+  JANGAN satukan semua bagian jadi satu paragraf / satu string.
+  Field "draft" = join parts dengan "\\n\\n" (baris kosong antar bagian).
+- BATAS KERAS: tiap elemen parts maksimal 500 karakter (batas Threads).
+- Tiap bagian 2–3 kalimat saja. Pisah kalimat dengan baris baru (\\n).
+- JANGAN mengulang topik/angle di recent_drafts_avoid.
+- Hormati user_feedback jelek.
+- NICHE hanya dari user_niches. daily_focus.focus biarkan string kosong.
+- Bahasa Indonesia natural. Default: tanpa bullet/nummering, tanpa "lu/gue", tanpa list tips.
+- Anti-dogeng: jangan frasa AI ("mari kita bahas", "di era digital", "banyak yang belum sadar").`, count)
+
+	if cat == CategoryYoutubeToUtas {
+		return fmt.Sprintf(`Kamu penulis utas Threads dari video YouTube yang SEDANG RAME.
+Bukan invent topik bebas. Bukan transcript dump. Bukan "review video" kaku.
+
+Mode: YouTube → utas
+1) Ambil SATU video di youtube_source sebagai bahan wajib.
+2) Cari angle viral di niche akun — insight / kontradiksi / mekanisme yang orang belum sadar.
+3) Voice akun tetap (instruksi + niche), bukan voice channel YouTube.
+
+SUMBER:
+- Materi HARUS berangkat dari title/channel/digest/why_hot video itu.
+- Jangan mengarang klaim di luar digest/judul; spekulasi = observasi/dugaan.
+- Sebut sumber natural di maksimal 1 bagian (judul atau channel) — jangan spam link tiap bagian.
+- Opsi drafts = angle berbeda dari VIDEO YANG SAMA, bukan video berbeda.
+
+NICHE AKUN:
+"""
+%s
+"""
+
+Instruksi user untuk mode YouTube → utas (WAJIB):
+"""
+%s
+"""
+
+%s
+
+HOOK & ENERGI: bagian 1 nahan scroll; tension dulu, penjelasan belakangan; spesifik & bisa dibela.`, nicheLine, instructions, sharedRules)
+	}
+
+	return fmt.Sprintf(`Kamu adalah penulis utas Threads yang nulis konten BERPOTENSI VIRAL — bukan filler, bukan "asal ada draf".
+Utas = rantai post pendek yang nyambung (bukan 1 caption panjang).
+
+Prioritas (urut):
+1) Berpotensi viral di niche (stop scroll, bikin reply/share).
+2) Bunyi RIL, bukan dogeng/AI cringe.
+3) Spesifik & bisa dibela — bukan generic edukasi.
+
+Filter WAJIB: kalau angle bisa diganti niche lain tanpa berubah artinya → BUANG.
+Kalau hook cuma "penjelasan topik" tanpa tensi → BUANG.
+
+NICHE AKUN (boleh multi; tiap draf pilih 1 niche/gabungan masuk akal):
+"""
+%s
+"""
+
+Instruksi user mode Umum (WAJIB dipatuhi jika ada):
+"""
+%s
+"""
+
+%s
+
+POTENSI VIRAL: kontradiksi, mekanisme tersembunyi, contoh konkret, pertanyaan yang memaksa reply, insight enak di-share.
+HOOK: kalimat pertama nahan scroll. Tension dulu, penjelasan belakangan.`, nicheLine, instructions, sharedRules)
+}
+
+// DefaultYoutubeGenerateInstructions baseline khusus mode YouTube → utas.
+const DefaultYoutubeGenerateInstructions = `MODE: YouTube → utas
+- Bahan utama = 1 video yang lagi rame (sudah dipilih sistem). Jangan ganti topik bebas.
+- Bukan ringkasan/transcript. Ambil angle: kenapa video itu relevan ke niche + apa yang orang miss.
+- Sebut sumber (judul/channel) natural di 1 bagian saja — jangan spam link.
+- Jangan mengarang fakta di luar digest/judul video.
+
+FORMAT
+- Output: utas berantai 4–6 bagian.
+- Tiap bagian maksimal 500 karakter. 2–3 kalimat, pisah enter.
+- Bagian 1 = HOOK dari insight video (bukan "ada video menarik").
+- Tengah = daging: mekanisme / kontradiksi / dampak ke niche.
+- Akhir = penutup tajam atau pertanyaan terbuka (bukan jualan, bukan "subscribe").
+
+ANGLE
+- "Yang video ini tunjukin vs yang orang kira"
+- "Kenapa ini penting buat niche kamu sekarang"
+- "Detail kecil di video yang orang skip tapi ngegas"
+
+ANTI
+- Jangan review YouTuber / spoiler panjang / list tips dari video.
+- Jangan dogeng AI. Bahasa Indonesia natural.
+- Tanpa bullet, numbering, emoji berlebihan, hashtag.`
 
 // DefaultGenerateInstructions is a solid baseline for edukasi + utas RAW anti-dogeng.
 const DefaultGenerateInstructions = `FORMAT

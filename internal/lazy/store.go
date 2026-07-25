@@ -39,6 +39,10 @@ type Job struct {
 	BufferError   string   `json:"buffer_error,omitempty"`    // TikTok
 	BufferXPostID string   `json:"buffer_x_post_id,omitempty"` // X/Twitter thread
 	BufferXError  string   `json:"buffer_x_error,omitempty"`
+	Category      string   `json:"category,omitempty"`
+	YouTubeID     string   `json:"youtube_id,omitempty"`
+	YouTubeTitle  string   `json:"youtube_title,omitempty"`
+	YouTubeURL    string   `json:"youtube_url,omitempty"`
 	Error         string   `json:"error,omitempty"`
 	StartedAt   time.Time `json:"started_at,omitempty"`
 	FinishedAt  time.Time `json:"finished_at,omitempty"`
