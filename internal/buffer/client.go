@@ -43,6 +43,9 @@ type CreatePhotoResult struct {
 // NewFromEnv builds a client when BUFFER_API_KEY is set.
 func NewFromEnv() *Client {
 	key := strings.TrimSpace(os.Getenv("BUFFER_API_KEY"))
+	key = strings.TrimPrefix(key, "Bearer ")
+	key = strings.TrimPrefix(key, "bearer ")
+	key = strings.TrimSpace(key)
 	if key == "" {
 		return nil
 	}
@@ -55,6 +58,18 @@ func NewFromEnv() *Client {
 		channelID: strings.TrimSpace(os.Getenv("BUFFER_TIKTOK_CHANNEL_ID")),
 		hc:        &http.Client{Timeout: 90 * time.Second},
 	}
+}
+
+// KeyHint returns last 4 chars for debug (never the full secret).
+func (c *Client) KeyHint() string {
+	if !c.Enabled() {
+		return ""
+	}
+	k := c.apiKey
+	if len(k) <= 4 {
+		return "****"
+	}
+	return "…" + k[len(k)-4:]
 }
 
 func (c *Client) Enabled() bool {
@@ -98,7 +113,15 @@ func (c *Client) gql(query string, variables map[string]any, out any) error {
 		return fmt.Errorf("buffer response: %s", truncate(string(raw), 200))
 	}
 	if len(envelope.Errors) > 0 {
-		return fmt.Errorf("buffer: %s", envelope.Errors[0].Message)
+		msg := envelope.Errors[0].Message
+		low := strings.ToLower(msg)
+		if strings.Contains(low, "not authorized") ||
+			strings.Contains(low, "unauthorized") ||
+			strings.Contains(low, "access token") ||
+			strings.Contains(low, "invalid") && strings.Contains(low, "token") {
+			return fmt.Errorf("buffer: access token tidak valid — buat API key baru di publish.buffer.com/settings/api, paste ke BUFFER_API_KEY di .env VPS, lalu systemctl restart lazybussiness")
+		}
+		return fmt.Errorf("buffer: %s", msg)
 	}
 	if out == nil {
 		return nil

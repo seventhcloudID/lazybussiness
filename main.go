@@ -1112,10 +1112,13 @@ func main() {
 			"enabled": ok,
 		}
 		if ok {
+			out["key_hint"] = buffClient.KeyHint()
 			if ch, err := buffClient.TikTokChannelID(); err == nil {
 				out["tiktok_channel_id"] = ch
+				out["token_ok"] = true
 			} else {
 				out["tiktok_error"] = err.Error()
+				out["token_ok"] = false
 			}
 		}
 		writeJSON(w, http.StatusOK, out)
@@ -1431,10 +1434,8 @@ func loadDotEnv(path string) {
 		if k == "" || v == "" {
 			continue
 		}
-		// Override jika belum ada ATAU nilai di environment kosong
-		// (sering terjadi: systemd EnvironmentFile set KEY= kosong / gagal parse).
-		if cur, exists := os.LookupEnv(k); !exists || strings.TrimSpace(cur) == "" {
-			_ = os.Setenv(k, v)
-		}
+		// File .env menang (dotenv): timpa nilai lama dari systemd EnvironmentFile
+		// yang sering kosong, terpotong, atau stale — termasuk BUFFER_API_KEY.
+		_ = os.Setenv(k, v)
 	}
 }
