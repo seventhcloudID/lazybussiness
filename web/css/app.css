@@ -216,6 +216,44 @@ main.main {
 }
 .th-panel-body { padding: 16px 18px; }
 
+.th-profile {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1.15rem;
+  align-items: center;
+  padding: 1.25rem 1.35rem;
+}
+
+.th-panel > .th-profile {
+  padding: 1.25rem 1.35rem;
+}
+
+.th-panel-body > .th-profile {
+  padding: 0;
+}
+
+.th-avatar {
+  width: 72px;
+  height: 72px;
+  border-radius: 12px;
+  background: var(--bg-alt);
+  color: var(--ink);
+  display: grid;
+  place-items: center;
+  font-size: 1.5rem;
+  font-weight: 700;
+  overflow: hidden;
+  border: 1px solid var(--border);
+  flex-shrink: 0;
+}
+
+.th-avatar img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
 .th-metrics {
   display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0;
   margin-bottom: 18px; background: var(--card); border: 1px solid var(--border);

@@ -35,7 +35,7 @@ func NewFromEnv() *Client {
 	if provider == "deepseek" {
 		modelDefault = "deepseek-v4-flash"
 	}
-	keys := collectAPIKeys()
+	keys := mergeAPIKeys(collectAPIKeysFromEnv(), LoadStoredAPIKeys())
 	c := &Client{
 		provider: provider,
 		baseURL:  base,
@@ -45,28 +45,6 @@ func NewFromEnv() *Client {
 		quota:    newQuotaTrackerFromEnv(len(keys)),
 	}
 	return c
-}
-
-func collectAPIKeys() []string {
-	seen := map[string]bool{}
-	var out []string
-	add := func(raw string) {
-		for _, p := range strings.Split(raw, ",") {
-			p = strings.TrimSpace(p)
-			if p == "" || seen[p] {
-				continue
-			}
-			seen[p] = true
-			out = append(out, p)
-		}
-	}
-	add(os.Getenv("AI_API_KEY"))
-	add(os.Getenv("AI_API_KEYS"))
-	// AI_API_KEY_2, AI_API_KEY_3, …
-	for i := 2; i <= 8; i++ {
-		add(os.Getenv(fmt.Sprintf("AI_API_KEY_%d", i)))
-	}
-	return out
 }
 
 func (c *Client) Enabled() bool {

@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Gemini API — Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=strand12">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main>
+  <header class="th-page-head">
+    <div>
+      <p class="th-eyebrow">Sistem</p>
+      <h1 class="th-title">Gemini API Key</h1>
+      <p class="th-lead">Isi key di sini biar tidak perlu edit <code class="th-code">.env</code>. Disimpan di server (<code class="th-code">.data/ai_keys.json</code>).</p>
+    </div>
+    <div class="th-toolbar">
+      <a href="/kuota.html" class="th-btn th-btn-ghost"><i class="bi bi-speedometer2"></i> Kuota</a>
+    </div>
+  </header>
+
+  <div id="keys-alert" class="th-alert hidden"></div>
+
+  <div class="grid grid-cols-1 lg:grid-cols-12 gap-4 mb-5">
+    <section class="th-panel lg:col-span-7">
+      <div class="th-panel-head">API key</div>
+      <div class="th-panel-body space-y-3">
+        <div>
+          <label class="th-label" for="keys-input">Key Gemini (satu per baris)</label>
+          <textarea id="keys-input" class="th-textarea font-mono text-sm" rows="6" placeholder="Tempel AI Studio / Gemini API key…&#10;Boleh lebih dari satu — rotasi otomatis kalau limit"></textarea>
+        </div>
+        <p class="text-[11px] text-muted m-0">Simpan = ganti semua key yang tersimpan dari UI. Key di <code class="th-code">.env</code> tidak dihapus.</p>
+        <div class="flex flex-wrap gap-2">
+          <button type="button" id="btn-save" class="th-btn th-btn-primary">
+            <i class="bi bi-check-lg"></i> Simpan key
+          </button>
+          <button type="button" id="btn-clear" class="th-btn th-btn-ghost text-danger">
+            <i class="bi bi-trash"></i> Hapus key UI
+          </button>
+          <button type="button" id="btn-refresh" class="th-btn th-btn-soft">
+            <i class="bi bi-arrow-clockwise"></i> Refresh status
+          </button>
+        </div>
+      </div>
+    </section>
+
+    <section class="th-panel lg:col-span-5">
+      <div class="th-panel-head">Status</div>
+      <div class="th-panel-body space-y-3 text-sm">
+        <div class="flex justify-between gap-2">
+          <span class="text-muted">Provider</span>
+          <strong id="st-provider">—</strong>
+        </div>
+        <div class="flex justify-between gap-2">
+          <span class="text-muted">Model</span>
+          <strong id="st-model" class="font-mono text-xs">—</strong>
+        </div>
+        <div class="flex justify-between gap-2">
+          <span class="text-muted">Total key aktif</span>
+          <strong id="st-total">0</strong>
+        </div>
+        <div class="flex justify-between gap-2">
+          <span class="text-muted">Dari UI</span>
+          <span id="st-store">0</span>
+        </div>
+        <div class="flex justify-between gap-2">
+          <span class="text-muted">Dari .env</span>
+          <span id="st-env">0</span>
+        </div>
+        <div id="st-enabled" class="th-chip">…</div>
+        <p id="st-note" class="text-[11px] text-muted m-0"></p>
+        <div>
+          <div class="text-[11px] uppercase tracking-wider text-muted font-semibold mb-1.5">Key tersimpan (masked)</div>
+          <ul id="st-masked" class="text-xs font-mono space-y-1 text-muted m-0 pl-4 list-disc"></ul>
+        </div>
+      </div>
+    </section>
+  </div>
+</main>
+<script src="/js/api.js?v=strand1"></script>
+<script src="/js/layout.js?v=strand12"></script>
+<script src="/js/pages/ai-keys.js?v=strand12"></script>
+</body>
+</html>

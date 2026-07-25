@@ -224,6 +224,7 @@ func main() {
 			"enabled":  aiClient.Enabled(),
 			"provider": aiClient.Provider(),
 			"model":    aiClient.Model(),
+			"keys":     aiClient.KeysStatus(),
 			"thumbnail": map[string]any{
 				"enabled":  thumbClient.Enabled(),
 				"provider": "openai",
@@ -234,6 +235,55 @@ func main() {
 			out["quota"] = aiClient.Quota()
 		}
 		writeJSON(w, http.StatusOK, out)
+	})
+
+	// Gemini / AI API keys — simpan di .data/ai_keys.json (bukan edit .env).
+	mux.HandleFunc("GET /api/ai/keys", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, aiClient.KeysStatus())
+	})
+
+	mux.HandleFunc("PUT /api/ai/keys", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Keys     []string `json:"keys"`
+			KeysText string   `json:"keys_text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		keys := body.Keys
+		if len(keys) == 0 && strings.TrimSpace(body.KeysText) != "" {
+			for _, line := range strings.Split(body.KeysText, "\n") {
+				line = strings.TrimSpace(line)
+				if line == "" || strings.HasPrefix(line, "#") {
+					continue
+				}
+				keys = append(keys, line)
+			}
+		}
+		if len(keys) == 0 {
+			writeErr(w, http.StatusBadRequest, "isi minimal 1 API key")
+			return
+		}
+		if err := aiClient.ApplyStoredAPIKeys(keys); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":   true,
+			"keys": aiClient.KeysStatus(),
+		})
+	})
+
+	mux.HandleFunc("DELETE /api/ai/keys", func(w http.ResponseWriter, r *http.Request) {
+		if err := aiClient.ClearAndReloadStored(); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":   true,
+			"keys": aiClient.KeysStatus(),
+		})
 	})
 
 	mux.HandleFunc("GET /api/ai/quota", func(w http.ResponseWriter, r *http.Request) {

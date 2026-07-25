@@ -10,7 +10,7 @@ Threads.pageShell('profil');
     document.getElementById('profile-id').textContent = me?.id || '—';
     const av = document.getElementById('profile-avatar');
     if (me?.threads_profile_picture_url) {
-      av.innerHTML = '<img src="' + me.threads_profile_picture_url + '" alt="" class="w-full h-full object-cover">';
+      av.innerHTML = '<img src="' + me.threads_profile_picture_url + '" alt="">';
     } else {
       av.textContent = me?.username ? me.username[0].toUpperCase() : '@';
     }

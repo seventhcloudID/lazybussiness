@@ -22,7 +22,7 @@ Threads.ensureAssets = function () {
   const css = document.createElement('link');
   css.id = 'app-css';
   css.rel = 'stylesheet';
-  css.href = '/css/app.css?v=strand10';
+  css.href = '/css/app.css?v=strand12';
   document.head.appendChild(css);
 };
 
@@ -92,6 +92,7 @@ Threads.mountSidebar = function (active) {
     `)}
     ${group('Settings', `
       ${link('token', '/token.html', 'bi-key', 'Threads Token')}
+      ${link('ai-keys', '/ai-keys.html', 'bi-robot', 'Gemini API')}
       <button type="button" id="btn-logout" class="sb-item sb-logout">
         <span class="sb-icon"><i class="bi bi-box-arrow-right"></i></span>
         <span>Logout</span>

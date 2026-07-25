@@ -73,6 +73,21 @@ func newQuotaTrackerFromEnv(keyCount int) *quotaTracker {
 	return t
 }
 
+// setKeyCount menyesuaikan limit kuota lokal saat jumlah API key berubah (UI).
+func (t *quotaTracker) setKeyCount(keyCount int) {
+	if t == nil {
+		return
+	}
+	if keyCount < 1 {
+		keyCount = 1
+	}
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.rpmLimit = envInt("AI_QUOTA_RPM", defaultRPM) * keyCount
+	t.rpdLimit = envInt("AI_QUOTA_RPD", defaultRPD) * keyCount
+	t.tpmLimit = envInt("AI_QUOTA_TPM", defaultTPM) * keyCount
+}
+
 func envInt(k string, def int) int {
 	v := os.Getenv(k)
 	if v == "" {
