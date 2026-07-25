@@ -64,6 +64,7 @@ func (s *Scheduler) tick() {
 	cfg := s.deps.Store.GetConfig()
 	loc := s.deps.Store.Location()
 	now := time.Now().In(loc)
+	today := now.Format("2006-01-02")
 	keepFrom := now.AddDate(0, 0, -14).Format("2006-01-02")
 	_ = s.deps.Store.PruneOldJobs(keepFrom)
 
@@ -74,14 +75,36 @@ func (s *Scheduler) tick() {
 	}
 
 	if !cfg.Enabled {
+		// jarang log biar tidak spam
+		if now.Minute()%15 == 0 {
+			log.Printf("lazy tick: otomasi OFF")
+		}
 		s.mu.Lock()
 		s.busy = false
 		s.mu.Unlock()
 		return
 	}
 
+	pending := 0
+	var nextAt time.Time
+	for _, j := range s.deps.Store.JobsForDate(today) {
+		if j.Status == StatusPending {
+			pending++
+			if nextAt.IsZero() || j.ScheduledAt.Before(nextAt) {
+				nextAt = j.ScheduledAt
+			}
+		}
+	}
+
 	due := s.deps.Store.DueJobs(now)
 	if len(due) == 0 {
+		if now.Minute()%5 == 0 {
+			nextStr := "-"
+			if !nextAt.IsZero() {
+				nextStr = nextAt.In(loc).Format("15:04")
+			}
+			log.Printf("lazy tick: ON pending=%d due=0 next=%s", pending, nextStr)
+		}
 		s.mu.Lock()
 		s.busy = false
 		s.mu.Unlock()
@@ -89,10 +112,9 @@ func (s *Scheduler) tick() {
 	}
 
 	job := due[0]
-	log.Printf("lazy menjalankan job %s scheduled=%s", job.ID, job.ScheduledAt.In(loc).Format(time.RFC3339))
+	log.Printf("lazy menjalankan job %s scheduled=%s (pending=%d due=%d)",
+		job.ID, job.ScheduledAt.In(loc).Format(time.RFC3339), pending, len(due))
 
-	// Jalan di background supaya panic/recover tidak mengunci scheduler selamanya,
-	// dan tick berikutnya menunggu sampai selesai (busy flag).
 	go func(j Job) {
 		defer func() {
 			if rec := recover(); rec != nil {
