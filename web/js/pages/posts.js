@@ -130,9 +130,22 @@ document.getElementById('posts-list').addEventListener('click', async e => {
     }
     if (del) {
       if (!confirm('Hapus post ini?')) return;
-      await Threads.api('/api/media/' + del.dataset.delete, { method: 'DELETE' });
-      Threads.toast('Post dihapus', true);
-      await loadPosts();
+      try {
+        await Threads.api('/api/media/' + del.dataset.delete, { method: 'DELETE' });
+        Threads.toast('Post dihapus', true);
+        await loadPosts();
+      } catch (err) {
+        const msg = err.message || String(err);
+        if (/permission|threads_delete|#10|#200/i.test(msg)) {
+          Threads.toast(
+            'Hapus gagal: token belum punya scope threads_delete. Aktifkan di Meta App → generate ulang token → hubungkan di halaman Token.',
+            false,
+          );
+        } else {
+          Threads.toast(msg, false);
+        }
+      }
+      return;
     }
     if (insights) {
       const data = await Threads.api('/api/media/' + insights.dataset.insights + '/insights');

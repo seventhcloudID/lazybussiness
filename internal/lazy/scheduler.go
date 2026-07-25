@@ -268,6 +268,7 @@ type Status struct {
 	InstagramOK     bool           `json:"instagram_ok"`
 	AIOK            bool           `json:"ai_ok"`
 	ThumbOK         bool           `json:"thumb_ok"`
+	BufferOK        bool           `json:"buffer_ok"`
 	Warnings        []string       `json:"warnings"`
 }
 
@@ -292,6 +293,7 @@ func (s *Scheduler) Status() Status {
 		InstagramOK:   s.deps.IG != nil && s.deps.IG.Connected(),
 		AIOK:          s.deps.AI != nil && s.deps.AI.Enabled(),
 		ThumbOK:       s.deps.Thumb != nil && s.deps.Thumb.Enabled(),
+		BufferOK:      s.deps.Buffer != nil && s.deps.Buffer.Enabled(),
 	}
 	var warns []string
 	if !st.AIOK {
@@ -306,8 +308,11 @@ func (s *Scheduler) Status() Status {
 	if !st.ThumbOK {
 		warns = append(warns, "OPENAI_API_KEY belum — thumbnail utas Threads di-skip")
 	}
+	if !st.BufferOK {
+		warns = append(warns, "BUFFER_API_KEY belum — antrian TikTok Buffer di-skip")
+	}
 	if !st.PublicOK {
-		warns = append(warns, "PUBLIC_BASE_URL belum valid — IG + attach thumbnail Threads butuh URL publik HTTPS")
+		warns = append(warns, "PUBLIC_BASE_URL belum valid — IG + Buffer TikTok butuh URL publik HTTPS")
 	}
 	if cfg.Enabled && !st.ThreadsOK {
 		warns = append(warns, "Otomasi ON tapi Threads offline")

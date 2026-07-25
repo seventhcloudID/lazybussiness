@@ -35,6 +35,8 @@ type Job struct {
 	ThumbURL    string    `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
 	ImageURLs   []string  `json:"image_urls,omitempty"`
 	IGContainer string    `json:"ig_container,omitempty"`
+	BufferPostID string   `json:"buffer_post_id,omitempty"`
+	BufferError  string   `json:"buffer_error,omitempty"`
 	Error       string    `json:"error,omitempty"`
 	StartedAt   time.Time `json:"started_at,omitempty"`
 	FinishedAt  time.Time `json:"finished_at,omitempty"`

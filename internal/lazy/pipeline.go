@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"threads-dashboard/internal/ai"
+	buff "threads-dashboard/internal/buffer"
 	"threads-dashboard/internal/instagram"
 	"threads-dashboard/internal/threads"
 )
@@ -21,6 +22,7 @@ type Deps struct {
 	IG      *instagram.Client
 	AI      *ai.Client
 	Thumb   *ai.ThumbnailClient
+	Buffer  *buff.Client
 	Memory  *ai.MemoryStore
 	Public  string // PUBLIC_BASE_URL, no trailing slash
 }
@@ -67,6 +69,8 @@ func (d *Deps) runOnce(job Job) error {
 	var thumbURL string
 	var imageURLs []string
 	var igContainer string
+	var bufferPostID string
+	bufferErr := ""
 	igSkipped := false
 	igErr := ""
 
@@ -133,27 +137,63 @@ func (d *Deps) runOnce(job Job) error {
 			j.ThumbURL = thumbURL
 		})
 
-		// IG path
-		if d.IG == nil || !d.IG.Connected() {
-			igSkipped = true
-			igErr = "token Instagram belum terhubung"
-		} else if !d.publicOK() {
-			igSkipped = true
-			igErr = "PUBLIC_BASE_URL belum di-set (butuh URL publik HTTPS)"
-		} else {
+		needSlides := d.publicOK() && (
+			(d.IG != nil && d.IG.Connected()) ||
+				(d.Buffer != nil && d.Buffer.Enabled()))
+
+		if needSlides {
 			imageURLs, err = d.renderAndURLs(job, mem.Brand, parts)
 			if err != nil {
 				igSkipped = true
 				igErr = "render: " + err.Error()
+				imageURLs = nil
+			}
+		}
+
+		// IG path
+		if d.IG == nil || !d.IG.Connected() {
+			if !igSkipped {
+				igSkipped = true
+				igErr = "token Instagram belum terhubung"
+			}
+		} else if !d.publicOK() {
+			igSkipped = true
+			igErr = "PUBLIC_BASE_URL belum di-set (butuh URL publik HTTPS)"
+		} else if len(imageURLs) < 2 {
+			igSkipped = true
+			if igErr == "" {
+				igErr = "slide carousel belum siap"
+			}
+		} else {
+			out, err := d.IG.PublishCarousel(imageURLs, caption)
+			if err != nil {
+				igSkipped = true
+				igErr = "ig: " + err.Error()
+			} else if out != nil {
+				if c, ok := out["container"].(string); ok {
+					igContainer = c
+				}
+			}
+		}
+
+		// Buffer TikTok — Notify Me (antrian; user post manual di HP)
+		if d.Buffer != nil && d.Buffer.Enabled() {
+			if !d.publicOK() {
+				bufferErr = "PUBLIC_BASE_URL belum valid"
+			} else if len(imageURLs) < 1 {
+				bufferErr = "slide carousel belum siap"
 			} else {
-				out, err := d.IG.PublishCarousel(imageURLs, caption)
+				cap := caption
+				if strings.TrimSpace(cap) == "" && len(parts) > 0 {
+					cap = parts[0]
+				}
+				res, err := d.Buffer.QueueTikTokPhotos(cap, title, imageURLs)
 				if err != nil {
-					igSkipped = true
-					igErr = "ig: " + err.Error()
-				} else if out != nil {
-					if c, ok := out["container"].(string); ok {
-						igContainer = c
-					}
+					bufferErr = err.Error()
+					log.Printf("lazy job %s buffer: %v", job.ID, err)
+				} else if res != nil {
+					bufferPostID = res.PostID
+					log.Printf("lazy job %s buffer tiktok notify-me id=%s", job.ID, bufferPostID)
 				}
 			}
 		}
@@ -166,6 +206,8 @@ func (d *Deps) runOnce(job Job) error {
 			j.ThumbURL = thumbURL
 			j.ImageURLs = imageURLs
 			j.IGContainer = igContainer
+			j.BufferPostID = bufferPostID
+			j.BufferError = bufferErr
 			j.FinishedAt = time.Now().UTC()
 			if igSkipped {
 				j.Status = StatusSkippedIG
@@ -175,7 +217,7 @@ func (d *Deps) runOnce(job Job) error {
 				j.Error = ""
 			}
 		})
-		log.Printf("lazy job %s done threads=%d thumb=%v ig_skip=%v", job.ID, len(threadIDs), thumbURL != "", igSkipped)
+		log.Printf("lazy job %s done threads=%d thumb=%v ig_skip=%v buffer=%v", job.ID, len(threadIDs), thumbURL != "", igSkipped, bufferPostID != "")
 		return nil
 	}
 	return lastErr

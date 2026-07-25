@@ -25,21 +25,34 @@ Threads.api = async function (path, opts = {}) {
 Threads.apiErrorMessage = function (res, data, text) {
   const status = res?.status || 0;
   const raw = typeof text === 'string' ? text : '';
-  if (status === 504 || /504\s*Gateway|Gateway Time-out/i.test(raw)) {
-    return 'Timeout (504): generate terlalu lama untuk Nginx. Naikkan proxy_read_timeout ke 300s+ di site config, lalu reload Nginx.';
-  }
-  if (status === 502 || /502\s*Bad Gateway/i.test(raw)) {
-    return 'Bad Gateway (502): backend tidak merespons. Cek systemctl status lazybussiness.';
-  }
-  if (raw && /^\s*</.test(raw)) {
-    return `Server error HTTP ${status || '?'} (respons HTML). Cek Nginx/timeout atau log service.`;
-  }
-  const msg =
+  // App Go sering pakai HTTP 502 untuk gagal upstream (AI/Meta) + JSON {"error":"..."}.
+  // Ambil pesan itu dulu — jangan samakan dengan Nginx Bad Gateway.
+  const appMsg =
     data?.error?.error_user_msg ||
     data?.error?.error_user_title ||
     data?.error?.message ||
-    data?.error ||
+    (typeof data?.error === 'string' ? data.error : null) ||
     data?.message ||
+    null;
+  if (appMsg && typeof appMsg === 'string' && appMsg.trim()) {
+    return appMsg.trim();
+  }
+  const looksHtml = raw && /^\s*</.test(raw);
+  if (status === 504 || (looksHtml && /504\s*Gateway|Gateway Time-out/i.test(raw))) {
+    return 'Timeout (504): generate terlalu lama untuk Nginx. Naikkan proxy_read_timeout ke 300s+ di site config, lalu reload Nginx.';
+  }
+  if (status === 502 || (looksHtml && /502\s*Bad Gateway/i.test(raw))) {
+    const host = (typeof location !== 'undefined' && location.hostname) || '';
+    const local = host === 'localhost' || host === '127.0.0.1' || host === '[::1]';
+    if (local) {
+      return 'Bad Gateway (502): proses Go tidak merespons. Restart `go run .` / threads.exe, buka http://localhost:8080.';
+    }
+    return 'Bad Gateway (502): backend tidak merespons. Di VPS: systemctl status lazybussiness.';
+  }
+  if (looksHtml) {
+    return `Server error HTTP ${status || '?'} (respons HTML). Cek Nginx/timeout atau log service.`;
+  }
+  const msg =
     (raw && raw.length < 280 ? raw : '') ||
     res?.statusText ||
     'request gagal';

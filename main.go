@@ -16,6 +16,7 @@ import (
 
 	"threads-dashboard/internal/ai"
 	"threads-dashboard/internal/auth"
+	"threads-dashboard/internal/buffer"
 	"threads-dashboard/internal/instagram"
 	"threads-dashboard/internal/lazy"
 	"threads-dashboard/internal/threads"
@@ -65,12 +66,20 @@ func main() {
 			_, _ = lazyStore.SetConfig(cfg)
 		}
 	}
+	buffClient := buffer.NewFromEnv()
+	if buffClient != nil && buffClient.Enabled() {
+		log.Println("Buffer TikTok Notify Me aktif (BUFFER_API_KEY)")
+	} else {
+		log.Println("Buffer nonaktif — set BUFFER_API_KEY di .env untuk antri carousel TikTok")
+	}
+
 	lazyDeps := &lazy.Deps{
 		Store:   lazyStore,
 		Threads: client,
 		IG:      ig,
 		AI:      aiClient,
 		Thumb:   thumbClient,
+		Buffer:  buffClient,
 		Memory:  aiMemory,
 		Public:  publicBase,
 	}
@@ -1096,6 +1105,205 @@ func main() {
 		writeJSON(w, http.StatusOK, lazySched.Status())
 	})
 
+	mux.HandleFunc("GET /api/buffer/status", func(w http.ResponseWriter, r *http.Request) {
+		ok := buffClient != nil && buffClient.Enabled()
+		out := map[string]any{
+			"ok":      ok,
+			"enabled": ok,
+		}
+		if ok {
+			if ch, err := buffClient.TikTokChannelID(); err == nil {
+				out["tiktok_channel_id"] = ch
+			} else {
+				out["tiktok_error"] = err.Error()
+			}
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+
+	// Manual: kirim image URLs + caption ke Buffer TikTok (Notify Me).
+	mux.HandleFunc("POST /api/buffer/tiktok", func(w http.ResponseWriter, r *http.Request) {
+		if buffClient == nil || !buffClient.Enabled() {
+			writeErr(w, http.StatusServiceUnavailable, "BUFFER_API_KEY belum di-set")
+			return
+		}
+		if publicBase == "" {
+			writeErr(w, http.StatusBadRequest, "PUBLIC_BASE_URL wajib (gambar di-mirror ke URL publik)")
+			return
+		}
+		var body struct {
+			ImageURLs []string `json:"image_urls"`
+			Caption   string   `json:"caption"`
+			Title     string   `json:"title"`
+			Mirror    *bool    `json:"mirror"` // default true
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		urls := body.ImageURLs
+		doMirror := body.Mirror == nil || *body.Mirror
+		if doMirror {
+			key := time.Now().Format("2006-01-02") + "/buf-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
+			mirrored, err := buffer.MirrorPublicURLs(lazyStore.MediaDir(), publicBase, key, urls)
+			if err != nil {
+				writeErr(w, http.StatusBadGateway, err.Error())
+				return
+			}
+			urls = mirrored
+		}
+		res, err := buffClient.QueueTikTokPhotos(body.Caption, body.Title, urls)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":         true,
+			"buffer":     res,
+			"image_urls": urls,
+			"note":       "TikTok Notify Me — selesai post dari notifikasi Buffer di HP",
+		})
+	})
+
+	// Manual: carousel editor (teks slide) → render PNG → Buffer TikTok Notify Me.
+	mux.HandleFunc("POST /api/buffer/from-carousel", func(w http.ResponseWriter, r *http.Request) {
+		if buffClient == nil || !buffClient.Enabled() {
+			writeErr(w, http.StatusServiceUnavailable, "BUFFER_API_KEY belum di-set")
+			return
+		}
+		if publicBase == "" {
+			writeErr(w, http.StatusBadRequest, "PUBLIC_BASE_URL wajib")
+			return
+		}
+		var body struct {
+			ImageURLs []string `json:"image_urls"`
+			Parts     []string `json:"parts"`
+			Brand     string   `json:"brand"`
+			Caption   string   `json:"caption"`
+			Title     string   `json:"title"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		urls := make([]string, 0, len(body.ImageURLs))
+		for _, u := range body.ImageURLs {
+			u = strings.TrimSpace(u)
+			if u != "" {
+				urls = append(urls, u)
+			}
+		}
+		if len(body.Parts) >= 1 && (len(urls) < 1 || len(urls) < len(body.Parts)) {
+			brand := strings.TrimSpace(body.Brand)
+			if brand == "" {
+				brand = aiMemory.Get().Brand
+			}
+			key := time.Now().Format("2006-01-02") + "/buf-car-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
+			rendered, err := lazy.RenderPartsPublic(lazyStore.MediaDir(), publicBase, brand, key, body.Parts)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			urls = rendered
+		} else if len(urls) >= 1 {
+			key := time.Now().Format("2006-01-02") + "/buf-car-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
+			mirrored, err := buffer.MirrorPublicURLs(lazyStore.MediaDir(), publicBase, key, urls)
+			if err != nil {
+				writeErr(w, http.StatusBadGateway, "mirror: "+err.Error())
+				return
+			}
+			urls = mirrored
+		}
+		if len(urls) < 1 {
+			writeErr(w, http.StatusBadRequest, "butuh minimal 1 slide (teks atau image_urls)")
+			return
+		}
+		if len(urls) > 10 {
+			urls = urls[:10]
+		}
+		caption := strings.TrimSpace(body.Caption)
+		title := strings.TrimSpace(body.Title)
+		if title == "" {
+			title = firstLine(caption, 80)
+		}
+		res, err := buffClient.QueueTikTokPhotos(caption, title, urls)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":         true,
+			"slides":     len(urls),
+			"buffer":     res,
+			"image_urls": urls,
+			"note":       "TikTok Notify Me — selesai post dari notifikasi Buffer di HP",
+		})
+	})
+
+	// Manual: import post IG (IMAGE/CAROUSEL) → Buffer TikTok Notify Me.
+	mux.HandleFunc("POST /api/buffer/from-ig", func(w http.ResponseWriter, r *http.Request) {
+		if buffClient == nil || !buffClient.Enabled() {
+			writeErr(w, http.StatusServiceUnavailable, "BUFFER_API_KEY belum di-set")
+			return
+		}
+		if !ig.Connected() {
+			writeErr(w, http.StatusUnauthorized, "hubungkan token Instagram dulu")
+			return
+		}
+		if publicBase == "" {
+			writeErr(w, http.StatusBadRequest, "PUBLIC_BASE_URL wajib")
+			return
+		}
+		var body struct {
+			MediaID string `json:"media_id"`
+			Caption string `json:"caption"` // override opsional
+			Title   string `json:"title"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		media, err := ig.GetMediaByID(body.MediaID)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		srcURLs, err := instagram.ImageURLsFromMedia(media)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		caption := strings.TrimSpace(body.Caption)
+		if caption == "" {
+			caption = strings.TrimSpace(media.Caption)
+		}
+		title := strings.TrimSpace(body.Title)
+		if title == "" {
+			title = firstLine(caption, 80)
+		}
+		key := "ig-import/" + media.ID
+		mirrored, err := buffer.MirrorPublicURLs(lazyStore.MediaDir(), publicBase, key, srcURLs)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, "mirror: "+err.Error())
+			return
+		}
+		res, err := buffClient.QueueTikTokPhotos(caption, title, mirrored)
+		if err != nil {
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":          true,
+			"ig_media_id": media.ID,
+			"media_type":  media.MediaType,
+			"slides":      len(mirrored),
+			"buffer":      res,
+			"image_urls":  mirrored,
+			"caption":     caption,
+			"note":        "TikTok Notify Me — selesai post dari notifikasi Buffer di HP",
+		})
+	})
+
 	mux.Handle("GET /media/lazy/", http.StripPrefix("/media/lazy/", http.FileServer(http.Dir(lazyStore.MediaDir()))))
 	_ = os.MkdirAll(ai.DefaultThumbMediaDir(), 0o755)
 	mux.Handle("GET /media/thumbs/", http.StripPrefix("/media/thumbs/", http.FileServer(http.Dir(ai.DefaultThumbMediaDir()))))
@@ -1161,6 +1369,21 @@ func withCORS(next http.Handler) http.Handler {
 		}
 		next.ServeHTTP(w, r)
 	})
+}
+
+func firstLine(s string, max int) string {
+	s = strings.TrimSpace(s)
+	if s == "" {
+		return ""
+	}
+	if i := strings.IndexAny(s, "\r\n"); i >= 0 {
+		s = strings.TrimSpace(s[:i])
+	}
+	r := []rune(s)
+	if max > 0 && len(r) > max {
+		return string(r[:max])
+	}
+	return s
 }
 
 func env(k, def string) string {

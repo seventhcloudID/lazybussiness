@@ -389,6 +389,41 @@ document.getElementById('btn-publish').onclick = async () => {
   }
 };
 
+document.getElementById('btn-buffer-tiktok').onclick = async () => {
+  showAlert('');
+  readEditorToSlide();
+  const parts = partsFromSlides();
+  const imageUrls = slides.map(s => (s.image_url || '').trim()).filter(Boolean);
+  if (parts.length < 1 && imageUrls.length < 1) {
+    return Threads.toast('Isi minimal 1 slide dulu', false);
+  }
+  const btn = document.getElementById('btn-buffer-tiktok');
+  const status = document.getElementById('publish-status');
+  btn.disabled = true;
+  status.textContent = 'Render / mirror → antri Buffer TikTok (Notify Me)…';
+  try {
+    const data = await Threads.api('/api/buffer/from-carousel', {
+      method: 'POST',
+      body: JSON.stringify({
+        parts,
+        brand: document.getElementById('brand')?.value.trim() || '',
+        caption: document.getElementById('caption').value.trim(),
+        image_urls: imageUrls,
+      }),
+    });
+    status.textContent =
+      `Buffer TikTok Notify Me · ${data.slides || '?'} slide` +
+      (data.buffer?.post_id ? ` · ${data.buffer.post_id}` : '');
+    Threads.toast('Masuk antrian Buffer — selesai di HP', true);
+  } catch (e) {
+    status.textContent = 'Buffer error: ' + e.message;
+    showAlert(e.message);
+    Threads.toast(e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+};
+
 document.addEventListener('keydown', e => {
   if (e.target.matches('input, textarea, select')) return;
   if (e.key === 'ArrowLeft') selectSlide((previewIdx - 1 + slides.length) % slides.length);

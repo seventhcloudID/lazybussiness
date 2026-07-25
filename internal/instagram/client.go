@@ -186,6 +186,88 @@ func (c *Client) GetMedia(limit string) (json.RawMessage, error) {
 	}, nil)
 }
 
+// MediaDetail is a single IG media node (feed / carousel parent).
+type MediaDetail struct {
+	ID           string `json:"id"`
+	Caption      string `json:"caption"`
+	MediaType    string `json:"media_type"`
+	MediaURL     string `json:"media_url"`
+	ThumbnailURL string `json:"thumbnail_url"`
+	Permalink    string `json:"permalink"`
+	Timestamp    string `json:"timestamp"`
+	Children     *struct {
+		Data []MediaDetail `json:"data"`
+	} `json:"children"`
+}
+
+func (c *Client) GetMediaByID(id string) (*MediaDetail, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("media_id wajib")
+	}
+	raw, err := c.Do(http.MethodGet, "/"+id, url.Values{
+		"fields": {"id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}"},
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	var m MediaDetail
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil, err
+	}
+	if m.ID == "" {
+		return nil, fmt.Errorf("media tidak ditemukan")
+	}
+	return &m, nil
+}
+
+// ImageURLsFromMedia collects photo URLs for Buffer (IMAGE / CAROUSEL album children).
+// VIDEO / REELS → error (Buffer TikTok path kita = photo carousel).
+func ImageURLsFromMedia(m *MediaDetail) ([]string, error) {
+	if m == nil {
+		return nil, fmt.Errorf("media kosong")
+	}
+	t := strings.ToUpper(strings.TrimSpace(m.MediaType))
+	switch t {
+	case "IMAGE":
+		u := strings.TrimSpace(m.MediaURL)
+		if u == "" {
+			u = strings.TrimSpace(m.ThumbnailURL)
+		}
+		if u == "" {
+			return nil, fmt.Errorf("media tidak punya URL gambar")
+		}
+		return []string{u}, nil
+	case "CAROUSEL_ALBUM":
+		if m.Children == nil || len(m.Children.Data) == 0 {
+			return nil, fmt.Errorf("carousel tanpa children")
+		}
+		out := make([]string, 0, len(m.Children.Data))
+		for _, ch := range m.Children.Data {
+			ct := strings.ToUpper(strings.TrimSpace(ch.MediaType))
+			if ct != "" && ct != "IMAGE" {
+				continue // skip video slides in mixed carousel
+			}
+			u := strings.TrimSpace(ch.MediaURL)
+			if u == "" {
+				u = strings.TrimSpace(ch.ThumbnailURL)
+			}
+			if u != "" {
+				out = append(out, u)
+			}
+			if len(out) >= 10 {
+				break
+			}
+		}
+		if len(out) == 0 {
+			return nil, fmt.Errorf("carousel tidak punya slide foto")
+		}
+		return out, nil
+	default:
+		return nil, fmt.Errorf("hanya IMAGE atau CAROUSEL yang bisa dikirim ke Buffer TikTok (bukan %s)", t)
+	}
+}
+
 // RefreshToken memperpanjang long-lived Instagram user token (~60 hari).
 func (c *Client) RefreshToken() (json.RawMessage, error) {
 	token := c.Token()
