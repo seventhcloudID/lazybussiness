@@ -2557,11 +2557,12 @@ main.main {
 }
 .lazy-job {
   display: grid;
-  grid-template-columns: 4.25rem 1fr;
-  gap: 0.85rem;
+  grid-template-columns: 3.4rem 12px minmax(0, 1fr);
+  column-gap: 0.65rem;
+  align-items: start;
   width: 100%;
   text-align: left;
-  padding: 0.7rem 0.65rem;
+  padding: 0.65rem 0.7rem;
   border: 0;
   border-radius: var(--radius-sm);
   background: transparent;
@@ -2574,43 +2575,53 @@ main.main {
 }
 .lazy-job.is-done { opacity: 0.72; }
 .lazy-job-time {
-  position: relative;
-  padding-top: 0.1rem;
+  padding-top: 0.05rem;
   text-align: right;
 }
 .lazy-job-time strong {
   display: block;
-  font-size: 0.95rem;
+  font-size: 0.9rem;
   font-weight: 800;
   font-variant-numeric: tabular-nums;
   letter-spacing: -0.02em;
+  line-height: 1.2;
+  color: var(--ink);
+}
+.lazy-job-track {
+  position: relative;
+  width: 12px;
+  align-self: stretch;
+  min-height: 1.5rem;
 }
 .lazy-job-rail {
   position: absolute;
-  top: 1.55rem;
-  bottom: -0.7rem;
-  right: 0.55rem;
+  top: 1.15rem;
+  bottom: -0.65rem;
+  left: 50%;
   width: 2px;
+  margin-left: -1px;
   background: var(--border);
 }
 .lazy-job:last-child .lazy-job-rail { display: none; }
 .lazy-job-dot {
   position: absolute;
-  top: 0.45rem;
-  right: 0.35rem;
+  top: 0.28rem;
+  left: 50%;
   width: 10px;
   height: 10px;
+  margin-left: -5px;
   border-radius: 999px;
   background: #fff;
   border: 2px solid var(--border-strong);
   z-index: 1;
+  box-sizing: border-box;
 }
 .lazy-job.is-pend .lazy-job-dot { border-color: #2563eb; background: #dbeafe; }
 .lazy-job.is-run .lazy-job-dot { border-color: #d97706; background: #fde68a; }
 .lazy-job.is-done .lazy-job-dot,
 .lazy-job.is-ok .lazy-job-dot { border-color: #059669; background: #a7f3d0; }
 .lazy-job.is-bad .lazy-job-dot { border-color: #dc2626; background: #fecaca; }
-.lazy-job-body { min-width: 0; padding-top: 0.05rem; }
+.lazy-job-body { min-width: 0; padding-top: 0.02rem; }
 .lazy-job-main {
   display: flex;
   flex-wrap: wrap;

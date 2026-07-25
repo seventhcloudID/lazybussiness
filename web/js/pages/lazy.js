@@ -60,10 +60,10 @@ function jobRowHTML(j, compact) {
   const title = j.title || (compact ? 'Slot terjadwal' : j.id);
   return `
     <button type="button" class="lazy-job is-${cls || 'pend'}${st === 'done' || st === 'skipped_ig' ? ' is-done' : ''}" data-job="${Threads.escapeHtml(j.id)}">
-      <div class="lazy-job-time">
-        <span class="lazy-job-dot" aria-hidden="true"></span>
-        <span class="lazy-job-rail" aria-hidden="true"></span>
-        <strong>${fmtTime(j.scheduled_at)}</strong>
+      <div class="lazy-job-time"><strong>${fmtTime(j.scheduled_at)}</strong></div>
+      <div class="lazy-job-track" aria-hidden="true">
+        <span class="lazy-job-dot"></span>
+        <span class="lazy-job-rail"></span>
       </div>
       <div class="lazy-job-body">
         <div class="lazy-job-main">
