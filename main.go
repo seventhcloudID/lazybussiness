@@ -1136,22 +1136,31 @@ func loadDotEnv(path string) {
 	}
 	defer f.Close()
 	sc := bufio.NewScanner(f)
+	// Baris .env bisa sangat panjang (API key); naikkan buffer default Scanner.
+	buf := make([]byte, 0, 64*1024)
+	sc.Buffer(buf, 1024*1024)
 	for sc.Scan() {
 		line := strings.TrimSpace(sc.Text())
-		if line == "" || strings.HasPrefix(line, "#") {
+		if line == "" || strings.HasPrefix(line, "#") || strings.HasPrefix(line, ";") {
 			continue
 		}
+		// Dukung "export KEY=val" ala shell.
+		line = strings.TrimSpace(strings.TrimPrefix(line, "export "))
 		k, v, ok := strings.Cut(line, "=")
 		if !ok {
 			continue
 		}
 		k = strings.TrimSpace(k)
+		// Strip BOM / karakter aneh di nama key.
+		k = strings.TrimPrefix(k, "\ufeff")
 		v = strings.TrimSpace(v)
 		v = strings.Trim(v, `"'`)
-		if k == "" {
+		if k == "" || v == "" {
 			continue
 		}
-		if _, exists := os.LookupEnv(k); !exists {
+		// Override jika belum ada ATAU nilai di environment kosong
+		// (sering terjadi: systemd EnvironmentFile set KEY= kosong / gagal parse).
+		if cur, exists := os.LookupEnv(k); !exists || strings.TrimSpace(cur) == "" {
 			_ = os.Setenv(k, v)
 		}
 	}
