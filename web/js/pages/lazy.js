@@ -7,6 +7,13 @@ let detailJob = null;
 let previewIdx = 0;
 let previewBlobUrl = '';
 let renderSeq = 0;
+let activeTemplate = 'noir';
+const TEMPLATE_NAMES = {
+  noir: 'Noir', ink: 'Ink', ocean: 'Ocean', ember: 'Ember', paper: 'Kertas',
+  bloom: 'Bloom', lilac: 'Lilac', peach: 'Peach', bold: 'Bold', frame: 'Frame',
+  meadow: 'Meadow', midnight: 'Midnight', coral: 'Coral', mint: 'Mint', cherry: 'Cherry',
+  sand: 'Sand', neon: 'Neon', slate: 'Slate', honey: 'Honey', mono: 'Mono',
+};
 
 function showAlert(msg) {
   const el = document.getElementById('lazy-alert');
@@ -215,6 +222,7 @@ async function renderPng(text, brand, index, total) {
       body: JSON.stringify({
         text: text || '…',
         brand,
+        template: activeTemplate,
         index: Number(index) || 0,
         total: Number(total) || 0,
       }),
@@ -251,6 +259,11 @@ function renderStatus(st) {
   const thumbOn = cfg.thumbnail_enabled !== false;
   document.getElementById('thumb-enabled').checked = thumbOn;
   document.getElementById('thumb-label').textContent = thumbOn ? 'ON' : 'OFF';
+  if (cfg.carousel_template) {
+    activeTemplate = cfg.carousel_template;
+    const nameEl = document.getElementById('tpl-current-name');
+    if (nameEl) nameEl.textContent = TEMPLATE_NAMES[activeTemplate] || activeTemplate;
+  }
   document.getElementById('posts-per-day').value = cfg.posts_per_day || 5;
   if (cfg.topic_hint != null && document.getElementById('topic').dataset.dirty !== '1') {
     document.getElementById('topic').value = cfg.topic_hint || '';
@@ -455,6 +468,7 @@ document.getElementById('btn-save').onclick = async () => {
         posts_per_day: posts,
         topic_hint: document.getElementById('topic').value.trim(),
         thumbnail_enabled: document.getElementById('thumb-enabled').checked,
+        carousel_template: activeTemplate,
       }),
     });
     delete document.getElementById('topic').dataset.dirty;
@@ -509,6 +523,12 @@ document.getElementById('btn-replan').onclick = async () => {
 };
 
 (async () => {
+  try {
+    const tpl = await Threads.api('/api/ig/carousel/templates');
+    activeTemplate = tpl.active || 'noir';
+    const nameEl = document.getElementById('tpl-current-name');
+    if (nameEl) nameEl.textContent = TEMPLATE_NAMES[activeTemplate] || activeTemplate;
+  } catch {}
   try {
     const mem = await Threads.api('/api/ai/memory');
     if (mem?.brand) document.getElementById('brand').value = mem.brand;

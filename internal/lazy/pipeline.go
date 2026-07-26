@@ -69,7 +69,7 @@ func (d *Deps) runOnce(job Job) error {
 	var threadIDs []string
 	var thumbURL string
 	var imageURLs []string
-	var igContainer string
+	var igContainer, igMediaID string
 	var bufferPostID, bufferXPostID string
 	bufferErr, bufferXErr := "", ""
 	igSkipped := false
@@ -177,6 +177,7 @@ func (d *Deps) runOnce(job Job) error {
 				if c, ok := out["container"].(string); ok {
 					igContainer = c
 				}
+				igMediaID = extractPublishedID(out["published"])
 			}
 		}
 
@@ -222,6 +223,7 @@ func (d *Deps) runOnce(job Job) error {
 			j.ThumbURL = thumbURL
 			j.ImageURLs = imageURLs
 			j.IGContainer = igContainer
+			j.IGMediaID = igMediaID
 			j.BufferPostID = bufferPostID
 			j.BufferError = bufferErr
 			j.BufferXPostID = bufferXPostID
@@ -385,11 +387,12 @@ func isMediaNotFound(err error) bool {
 }
 
 func (d *Deps) renderAndURLs(job Job, brand string, parts []string) ([]string, error) {
-	return RenderPartsPublic(d.Store.MediaDir(), d.Public, brand, job.Date+"/"+job.ID, parts)
+	tpl := d.Store.GetConfig().CarouselTemplate
+	return RenderPartsPublic(d.Store.MediaDir(), d.Public, brand, job.Date+"/"+job.ID, parts, tpl)
 }
 
 // RenderPartsPublic menulis PNG per slide dan mengembalikan URL publik.
-func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []string) ([]string, error) {
+func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []string, template string) ([]string, error) {
 	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
 	if base == "" || !(strings.HasPrefix(base, "https://") || strings.HasPrefix(base, "http://")) {
 		return nil, fmt.Errorf("PUBLIC_BASE_URL belum di-set (butuh URL publik HTTPS)")
@@ -420,10 +423,36 @@ func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []strin
 	for i, p := range cleaned {
 		name := fmt.Sprintf("%02d.png", i+1)
 		path := filepath.Join(dir, name)
-		if err := RenderSlidePNG(path, brand, p, i+1, total); err != nil {
+		if err := RenderSlidePNG(path, brand, p, i+1, total, template); err != nil {
 			return nil, err
 		}
 		urls = append(urls, fmt.Sprintf("%s/media/lazy/%s/%s", base, strings.ReplaceAll(subdir, "\\", "/"), name))
 	}
 	return urls, nil
+}
+
+func extractPublishedID(v any) string {
+	switch t := v.(type) {
+	case string:
+		return strings.TrimSpace(t)
+	case json.RawMessage:
+		var p struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(t, &p) == nil {
+			return strings.TrimSpace(p.ID)
+		}
+	case map[string]any:
+		if id, ok := t["id"].(string); ok {
+			return strings.TrimSpace(id)
+		}
+	case []byte:
+		var p struct {
+			ID string `json:"id"`
+		}
+		if json.Unmarshal(t, &p) == nil {
+			return strings.TrimSpace(p.ID)
+		}
+	}
+	return ""
 }

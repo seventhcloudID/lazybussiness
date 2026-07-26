@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Template Carousel — Dashboard</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=strand55" id="app-css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body>
+<nav id="sidebar"></nav>
+<main class="tpl-page">
+  <header class="th-page-head">
+    <div>
+      <p class="th-eyebrow">Instagram</p>
+      <h1 class="th-title">Template Carousel</h1>
+      <p class="th-lead">Tes teks asli di preview PNG — sama seperti yang di-publish.</p>
+    </div>
+    <div class="th-toolbar">
+      <a href="/ig-carousel.html" class="th-btn th-btn-ghost"><i class="bi bi-collection-play"></i> Editor carousel</a>
+      <a href="/lazy.html" class="th-btn th-btn-soft"><i class="bi bi-lightning"></i> Lazy Business</a>
+    </div>
+  </header>
+
+  <div id="tpl-alert" class="th-alert hidden mb-4"></div>
+
+  <section class="tpl-lab th-panel mb-4">
+    <div class="th-panel-body tpl-lab-grid">
+      <div class="tpl-lab-form">
+        <div class="tpl-lab-head">
+          <div>
+            <p class="tpl-active-k">Tes preview</p>
+            <strong id="tpl-active-name">—</strong>
+            <p id="tpl-active-desc" class="tpl-active-desc">Pilih template di galeri bawah</p>
+          </div>
+          <div class="tpl-active-actions">
+            <span id="tpl-save-hint" class="text-xs text-muted">Klik kartu untuk memilih</span>
+            <button type="button" id="btn-apply" class="th-btn th-btn-primary" disabled>
+              <i class="bi bi-check2"></i> Terapkan
+            </button>
+          </div>
+        </div>
+
+        <div class="mb-3">
+          <label class="th-label" for="tpl-brand">Brand (@handle)</label>
+          <input id="tpl-brand" class="th-input" placeholder="brandmu" maxlength="40">
+        </div>
+
+        <div class="mb-2">
+          <div class="flex justify-between items-baseline gap-2 mb-1">
+            <label class="th-label m-0" for="tpl-text">Teks slide (tes)</label>
+            <span id="tpl-text-count" class="text-[11px] text-muted">0/500</span>
+          </div>
+          <textarea id="tpl-text" class="th-textarea" rows="8" maxlength="500" placeholder="Tulis teks utas di sini untuk lihat preview real…"></textarea>
+        </div>
+
+        <div class="tpl-presets">
+          <button type="button" class="th-btn th-btn-ghost text-xs" data-preset="2">Contoh 2 paragraf</button>
+          <button type="button" class="th-btn th-btn-ghost text-xs" data-preset="3">Contoh 3 paragraf</button>
+          <button type="button" class="th-btn th-btn-ghost text-xs" id="btn-refresh-all">
+            <i class="bi bi-arrow-clockwise"></i> Refresh semua
+          </button>
+        </div>
+        <p class="text-xs text-muted mt-2 mb-0">Preview besar = template terpilih. Kartu galeri ikut teks yang sama.</p>
+      </div>
+
+      <aside class="tpl-lab-preview">
+        <div class="tpl-hero-frame">
+          <img id="tpl-hero-img" class="tpl-hero-img" alt="Preview template terpilih">
+          <div id="tpl-hero-loading" class="tpl-hero-loading show">
+            <span class="igc-png-spinner"></span>
+            Merender…
+          </div>
+        </div>
+        <p class="tpl-hero-cap" id="tpl-hero-cap">PNG 1080×1350</p>
+      </aside>
+    </div>
+  </section>
+
+  <div id="tpl-gallery" class="tpl-gallery">
+    <p class="lazy-empty">Memuat preview template…</p>
+  </div>
+</main>
+<script src="/js/api.js?v=strand44"></script>
+<script src="/js/layout.js?v=strand50"></script>
+<script src="/js/pages/carousel-templates.js?v=strand55"></script>
+</body>
+</html>

@@ -23,7 +23,7 @@ Threads.ensureAssets = function () {
   const css = document.createElement('link');
   css.id = 'app-css';
   css.rel = 'stylesheet';
-  css.href = '/css/app.css?v=strand44';
+  css.href = '/css/app.css?v=strand56';
   document.head.appendChild(css);
 };
 
@@ -82,6 +82,7 @@ Threads.mountSidebar = function (active) {
       ${link('gemini-chat', '/gemini-chat.html', 'bi-chat-heart', 'Chat Gemini')}
       ${link('thumbnail', '/thumbnail.html', 'bi-image', 'Lab Thumbnail')}
       ${link('lazy', '/lazy.html', 'bi-lightning-charge', 'Lazy Business')}
+      ${link('lazy-track', '/lazy-track.html', 'bi-graph-up-arrow', 'Lazy Track')}
       ${link('posts', '/posts.html', 'bi-collection', 'Post Saya')}
       ${link('balasan', '/balasan.html', 'bi-chat-dots', 'Balasan')}
     `)}
@@ -94,6 +95,7 @@ Threads.mountSidebar = function (active) {
       ${link('ig-profil', '/ig-profil.html', 'bi-instagram', 'IG Profil')}
       ${link('ig-posts', '/ig-posts.html', 'bi-images', 'IG Posts')}
       ${link('ig-carousel', '/ig-carousel.html', 'bi-collection-play', 'IG Carousel')}
+      ${link('carousel-templates', '/carousel-templates.html', 'bi-palette2', 'Template Carousel')}
     `)}
     ${group('Settings', `
       ${link('akun', '/akun.html', 'bi-people', 'Akun & API')}

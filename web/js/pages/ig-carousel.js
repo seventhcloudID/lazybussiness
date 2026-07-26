@@ -8,6 +8,13 @@ let syncing = false;
 let previewBlobUrl = '';
 let renderTimer = null;
 let renderSeq = 0;
+let activeTemplate = 'noir';
+const TEMPLATE_NAMES = {
+  noir: 'Noir', ink: 'Ink', ocean: 'Ocean', ember: 'Ember', paper: 'Kertas',
+  bloom: 'Bloom', lilac: 'Lilac', peach: 'Peach', bold: 'Bold', frame: 'Frame',
+  meadow: 'Meadow', midnight: 'Midnight', coral: 'Coral', mint: 'Mint', cherry: 'Cherry',
+  sand: 'Sand', neon: 'Neon', slate: 'Slate', honey: 'Honey', mono: 'Mono',
+};
 
 function showAlert(msg) {
   const el = document.getElementById('ig-alert');
@@ -137,6 +144,7 @@ async function renderPngPreview(text, brand, index, total) {
       body: JSON.stringify({
         text: text || 'Isi slide (= bagian utas) muncul di sini.',
         brand,
+        template: activeTemplate,
         index: Number(index) || 0,
         total: Number(total) || 0,
       }),
@@ -430,7 +438,18 @@ document.addEventListener('keydown', e => {
   if (e.key === 'ArrowRight') selectSlide((previewIdx + 1) % slides.length);
 });
 
+function syncTemplateLabel() {
+  const nameEl = document.getElementById('tpl-current-name');
+  if (nameEl) nameEl.textContent = 'Template: ' + (TEMPLATE_NAMES[activeTemplate] || activeTemplate);
+}
+
 (async function init() {
+  try {
+    const tpl = await Threads.api('/api/ig/carousel/templates');
+    activeTemplate = tpl.active || 'noir';
+    syncTemplateLabel();
+  } catch {}
+
   try {
     const mem = await Threads.api('/api/ai/memory');
     if (mem?.brand) document.getElementById('brand').value = mem.brand;

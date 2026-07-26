@@ -17,11 +17,12 @@ const (
 )
 
 type Config struct {
-	Enabled            bool   `json:"enabled"`
-	PostsPerDay        int    `json:"posts_per_day"`
-	Timezone           string `json:"timezone"`
-	TopicHint          string `json:"topic_hint,omitempty"`
-	ThumbnailEnabled   bool   `json:"thumbnail_enabled"` // thumbnail utas Threads (OpenAI)
+	Enabled          bool   `json:"enabled"`
+	PostsPerDay      int    `json:"posts_per_day"`
+	Timezone         string `json:"timezone"`
+	TopicHint        string `json:"topic_hint,omitempty"`
+	ThumbnailEnabled bool   `json:"thumbnail_enabled"`           // thumbnail utas Threads (OpenAI)
+	CarouselTemplate string `json:"carousel_template,omitempty"` // noir|paper|ocean|ink|ember|meadow
 }
 
 type Job struct {
@@ -36,6 +37,7 @@ type Job struct {
 	ThumbURL    string    `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
 	ImageURLs   []string  `json:"image_urls,omitempty"`
 	IGContainer string    `json:"ig_container,omitempty"`
+	IGMediaID   string    `json:"ig_media_id,omitempty"` // published IG media id
 	BufferPostID  string   `json:"buffer_post_id,omitempty"`   // TikTok
 	BufferError   string   `json:"buffer_error,omitempty"`    // TikTok
 	BufferXPostID string   `json:"buffer_x_post_id,omitempty"` // X/Twitter thread
@@ -76,6 +78,7 @@ func NewStoreAt(configPath, jobsPath, mediaDir string) *Store {
 			PostsPerDay:      5,
 			Timezone:         "Asia/Jakarta",
 			ThumbnailEnabled: true,
+			CarouselTemplate: DefaultTemplate,
 		},
 	}
 	s.load()
@@ -100,6 +103,7 @@ func (s *Store) load() {
 			if _, ok := raw["thumbnail_enabled"]; !ok {
 				c.ThumbnailEnabled = true
 			}
+			c.CarouselTemplate = NormalizeTemplate(c.CarouselTemplate)
 			s.cfg = c
 		}
 	}
@@ -155,6 +159,7 @@ func (s *Store) SetConfig(c Config) (Config, error) {
 	if c.Timezone == "" {
 		c.Timezone = "Asia/Jakarta"
 	}
+	c.CarouselTemplate = NormalizeTemplate(c.CarouselTemplate)
 	s.cfg = c
 	return s.cfg, s.saveConfigLocked()
 }
@@ -290,7 +295,7 @@ func (s *Store) CountTodayByStatus(date string) map[string]int {
 	return m
 }
 
-// PruneOldJobs keeps recent history compact (last 14 days).
+// PruneOldJobs keeps recent history compact (caller chooses window, typically 30 days).
 func (s *Store) PruneOldJobs(keepFromDate string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()

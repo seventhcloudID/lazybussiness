@@ -74,7 +74,7 @@ func (s *Scheduler) tick() {
 	loc := s.deps.Store.Location()
 	now := time.Now().In(loc)
 	today := now.Format("2006-01-02")
-	keepFrom := now.AddDate(0, 0, -14).Format("2006-01-02")
+	keepFrom := now.AddDate(0, 0, -30).Format("2006-01-02")
 	_ = s.deps.Store.PruneOldJobs(keepFrom)
 
 	if cfg.Enabled {

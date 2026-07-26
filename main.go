@@ -1241,12 +1241,21 @@ func main() {
 		})
 	})
 
+	mux.HandleFunc("GET /api/ig/carousel/templates", func(w http.ResponseWriter, r *http.Request) {
+		cfg := lz().GetConfig()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"templates": lazy.ListCarouselTemplates(),
+			"active":    lazy.NormalizeTemplate(cfg.CarouselTemplate),
+		})
+	})
+
 	mux.HandleFunc("POST /api/ig/carousel/render", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Text  string `json:"text"`
-			Brand string `json:"brand"`
-			Index int    `json:"index"` // 0-based; opsional
-			Total int    `json:"total"` // opsional — tampilkan 01/06 + dots
+			Text     string `json:"text"`
+			Brand    string `json:"brand"`
+			Template string `json:"template"`
+			Index    int    `json:"index"` // 0-based; opsional
+			Total    int    `json:"total"` // opsional — tampilkan 01/06 + dots
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
@@ -1259,6 +1268,10 @@ func main() {
 		brand := strings.TrimSpace(body.Brand)
 		if brand == "" {
 			brand = mem().Get().Brand
+		}
+		tpl := strings.TrimSpace(body.Template)
+		if tpl == "" {
+			tpl = lz().GetConfig().CarouselTemplate
 		}
 		slideNum, slideTotal := body.Index+1, body.Total
 		if slideTotal < 0 {
@@ -1279,7 +1292,7 @@ func main() {
 			return
 		}
 		path := filepath.Join(dir, fmt.Sprintf("%d.png", time.Now().UnixNano()))
-		if err := lazy.RenderSlidePNG(path, brand, text, slideNum, slideTotal); err != nil {
+		if err := lazy.RenderSlidePNG(path, brand, text, slideNum, slideTotal, tpl); err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
@@ -1326,7 +1339,8 @@ func main() {
 				brand = mem().Get().Brand
 			}
 			key := time.Now().Format("2006-01-02") + "/manual-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
-			rendered, err := lazy.RenderPartsPublic(lz().MediaDir(), publicBase, brand, key, body.Parts)
+			tpl := lz().GetConfig().CarouselTemplate
+			rendered, err := lazy.RenderPartsPublic(lz().MediaDir(), publicBase, brand, key, body.Parts, tpl)
 			if err != nil {
 				writeErr(w, http.StatusBadRequest, err.Error())
 				return
@@ -1356,11 +1370,12 @@ func main() {
 	})
 	mux.HandleFunc("PUT /api/lazy/config", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Enabled          bool   `json:"enabled"`
-			PostsPerDay      int    `json:"posts_per_day"`
-			Timezone         string `json:"timezone"`
-			TopicHint        string `json:"topic_hint"`
-			ThumbnailEnabled *bool  `json:"thumbnail_enabled"`
+			Enabled          bool    `json:"enabled"`
+			PostsPerDay      int     `json:"posts_per_day"`
+			Timezone         string  `json:"timezone"`
+			TopicHint        string  `json:"topic_hint"`
+			ThumbnailEnabled *bool   `json:"thumbnail_enabled"`
+			CarouselTemplate *string `json:"carousel_template"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
@@ -1375,12 +1390,17 @@ func main() {
 		if body.ThumbnailEnabled != nil {
 			thumb = *body.ThumbnailEnabled
 		}
+		tpl := cur.CarouselTemplate
+		if body.CarouselTemplate != nil {
+			tpl = *body.CarouselTemplate
+		}
 		cfg, err := lz().SetConfig(lazy.Config{
 			Enabled:          body.Enabled,
 			PostsPerDay:      body.PostsPerDay,
 			Timezone:         tz,
 			TopicHint:        body.TopicHint,
 			ThumbnailEnabled: thumb,
+			CarouselTemplate: tpl,
 		})
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
@@ -1398,6 +1418,10 @@ func main() {
 	})
 	mux.HandleFunc("GET /api/lazy/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, lzs().Status())
+	})
+	mux.HandleFunc("GET /api/lazy/track", func(w http.ResponseWriter, r *http.Request) {
+		withMetrics := r.URL.Query().Get("metrics") != "0"
+		writeJSON(w, http.StatusOK, lazy.BuildTrackReport(lz(), th(), withMetrics))
 	})
 	mux.HandleFunc("GET /api/lazy/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -1587,7 +1611,8 @@ func main() {
 				brand = mem().Get().Brand
 			}
 			key := time.Now().Format("2006-01-02") + "/buf-car-" + fmt.Sprintf("%d", time.Now().Unix()%100000)
-			rendered, err := lazy.RenderPartsPublic(lz().MediaDir(), publicBase, brand, key, body.Parts)
+			tpl := lz().GetConfig().CarouselTemplate
+			rendered, err := lazy.RenderPartsPublic(lz().MediaDir(), publicBase, brand, key, body.Parts, tpl)
 			if err != nil {
 				writeErr(w, http.StatusBadRequest, err.Error())
 				return
