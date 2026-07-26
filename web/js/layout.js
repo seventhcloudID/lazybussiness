@@ -23,7 +23,7 @@ Threads.ensureAssets = function () {
   const css = document.createElement('link');
   css.id = 'app-css';
   css.rel = 'stylesheet';
-  css.href = '/css/app.css?v=strand56';
+  css.href = '/css/app.css?v=strand57';
   document.head.appendChild(css);
 };
 

@@ -5,22 +5,29 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lazy Track — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand56" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=strand57" id="app-css">
+<link rel="stylesheet" href="/css/overview.css?v=strand57">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
 <body>
 <nav id="sidebar"></nav>
-<main class="ltrk-page">
+<main>
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Automasi</p>
       <h1 class="th-title">Lazy Track</h1>
-      <p class="th-lead">Capaian post dari Lazy Business saja — 30 hari terakhir.</p>
+      <p class="th-lead">Capaian post dari Lazy Business — metrik Threads & sebaran channel.</p>
     </div>
-    <div class="th-toolbar">
-      <a href="/lazy.html" class="th-btn th-btn-ghost"><i class="bi bi-lightning"></i> Lazy Business</a>
-      <button type="button" id="btn-refresh" class="th-btn th-btn-soft">
+    <div class="ov-toolbar">
+      <div class="ov-seg" id="filter-seg" role="group" aria-label="Filter status">
+        <button type="button" class="ov-seg-btn is-on" data-filter="all">Semua</button>
+        <button type="button" class="ov-seg-btn" data-filter="done">Selesai</button>
+        <button type="button" class="ov-seg-btn" data-filter="skipped_ig">IG skip</button>
+        <button type="button" class="ov-seg-btn" data-filter="failed">Gagal</button>
+      </div>
+      <a class="th-btn th-btn-ghost text-xs" href="/lazy.html"><i class="bi bi-lightning"></i> Lazy</a>
+      <button type="button" id="btn-refresh" class="th-btn th-btn-primary text-xs">
         <i class="bi bi-arrow-clockwise"></i> Refresh
       </button>
     </div>
@@ -28,39 +35,77 @@
 
   <div id="ltrk-alert" class="th-alert hidden mb-4"></div>
 
-  <div class="ltrk-meta mb-3">
-    <span id="ltrk-range">Memuat…</span>
-    <div class="ltrk-filters" role="tablist">
-      <button type="button" class="ltrk-filter is-on" data-filter="all">Semua</button>
-      <button type="button" class="ltrk-filter" data-filter="done">Selesai</button>
-      <button type="button" class="ltrk-filter" data-filter="skipped_ig">IG skip</button>
-      <button type="button" class="ltrk-filter" data-filter="failed">Gagal</button>
-    </div>
+  <section class="ov-kpi-row" id="kpi-row" aria-busy="true"></section>
+
+  <div class="ov-grid">
+    <section class="th-panel">
+      <div class="th-panel-head flex flex-wrap items-center justify-between gap-2">
+        <span>Tren capaian Lazy</span>
+        <div class="ov-metric-toggle" id="metric-toggle">
+          <button type="button" class="ov-mt-btn is-on" data-metric="views"><span class="ov-mt-dot" style="background:#2563eb"></span>Views</button>
+          <button type="button" class="ov-mt-btn" data-metric="likes"><span class="ov-mt-dot"></span>Likes</button>
+          <button type="button" class="ov-mt-btn" data-metric="replies"><span class="ov-mt-dot" style="background:#059669"></span>Balasan</button>
+          <button type="button" class="ov-mt-btn" data-metric="engagement"><span class="ov-mt-dot" style="background:#d97706"></span>Engagement</button>
+        </div>
+      </div>
+      <div class="th-panel-body">
+        <p class="text-sm text-muted m-0 mb-1" id="chart-title">Per post Lazy (terbaru)</p>
+        <div class="ov-chart-wrap">
+          <svg class="ov-chart-svg" id="chart-svg" viewBox="0 0 880 320" preserveAspectRatio="none"></svg>
+          <div class="ov-chart-tip" id="chart-tip" hidden></div>
+        </div>
+        <div class="ov-chart-foot">
+          <span id="chart-sample">Sample post Lazy</span>
+          <div class="ov-chart-stats">
+            <span>Peak <strong class="mono" id="stat-peak">—</strong></span>
+            <span>Avg <strong class="mono" id="stat-avg">—</strong></span>
+            <span>Low <strong class="mono" id="stat-low">—</strong></span>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="th-panel">
+      <div class="th-panel-head">Snapshot channel</div>
+      <div class="th-panel-body">
+        <p class="text-xs text-muted m-0 mb-1">Periode</p>
+        <p class="text-xl font-semibold m-0 mono" id="pulse-range">—</p>
+        <p class="text-xs text-muted mt-1 mb-3" id="pulse-meta">Memuat…</p>
+        <div id="pace-list"></div>
+        <div class="ltrk-ch-bars mt-3" id="ch-bars"></div>
+        <a class="th-btn th-btn-soft text-xs mt-3" href="/lazy.html"><i class="bi bi-lightning"></i> Buka Lazy Business</a>
+      </div>
+    </section>
   </div>
 
-  <div class="ltrk-kpis mb-4" id="ltrk-kpis">
-    <div class="ltrk-kpi"><span class="ltrk-kpi-k">Post Lazy</span><strong id="k-total">—</strong></div>
-    <div class="ltrk-kpi"><span class="ltrk-kpi-k">Selesai</span><strong id="k-done">—</strong></div>
-    <div class="ltrk-kpi"><span class="ltrk-kpi-k">Views</span><strong id="k-views">—</strong></div>
-    <div class="ltrk-kpi"><span class="ltrk-kpi-k">Likes</span><strong id="k-likes">—</strong></div>
-    <div class="ltrk-kpi"><span class="ltrk-kpi-k">Engagement</span><strong id="k-eng">—</strong></div>
-    <div class="ltrk-kpi"><span class="ltrk-kpi-k">Channel</span><strong id="k-ch" class="ltrk-kpi-ch">—</strong></div>
-  </div>
-
-  <section class="th-panel">
-    <div class="th-panel-head">
-      <span>Hasil Lazy Business</span>
+  <section class="th-panel mb-4">
+    <div class="th-panel-head flex flex-wrap items-center justify-between gap-2">
+      <span>Hasil Lazy</span>
       <span id="ltrk-count" class="text-xs text-muted font-medium">0 post</span>
     </div>
-    <div class="th-panel-body p-0">
-      <div id="ltrk-list" class="ltrk-list">
-        <p class="lazy-empty">Memuat capaian…</p>
+    <div class="th-panel-body">
+      <div class="ov-table">
+        <div class="ov-thead">
+          <div class="ov-td" style="flex:1">Post</div>
+          <div class="ov-td" style="width:88px">Status</div>
+          <div class="ov-td" style="width:120px">Channel</div>
+          <div class="ov-td ov-td-num" style="width:72px">Views</div>
+          <div class="ov-td ov-td-num" style="width:64px">Likes</div>
+          <div class="ov-td ov-td-num" style="width:64px">Balasan</div>
+          <div class="ov-td ov-td-num" style="width:56px">ER</div>
+        </div>
+        <div id="posts-rows"></div>
       </div>
     </div>
   </section>
+
+  <div class="ov-foot">
+    <span>Hanya post dari Lazy Business · metrik Threads API</span>
+    <span><button type="button" class="link" id="btn-refresh-foot">Muat ulang</button></span>
+  </div>
 </main>
 <script src="/js/api.js?v=strand44"></script>
-<script src="/js/layout.js?v=strand56"></script>
-<script src="/js/pages/lazy-track.js?v=strand56"></script>
+<script src="/js/layout.js?v=strand57"></script>
+<script src="/js/pages/lazy-track.js?v=strand57"></script>
 </body>
 </html>
