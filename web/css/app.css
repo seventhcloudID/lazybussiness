@@ -2451,6 +2451,19 @@ main.main {
   background: var(--bg-alt);
   flex-shrink: 0;
 }
+.ltrk-ch-icons {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+}
+.ltrk-ch-ico {
+  font-size: 0.95rem;
+  color: var(--ink-2);
+  line-height: 1;
+}
+.ltrk-ch-ico.is-ig { color: #db2777; }
+.ltrk-ch-ico.is-x { color: #0f172a; }
+.ltrk-ch-ico.is-tt { color: #0d9488; }
 
 .tpl-link-row {
   display: flex;

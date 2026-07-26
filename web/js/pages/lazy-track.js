@@ -85,13 +85,14 @@ function relativeTime(iso) {
   return new Date(iso).toLocaleDateString('id-ID', { day: 'numeric', month: 'short' });
 }
 
-function channelMini(ch) {
+function channelIcons(ch) {
   const bits = [];
-  if (ch?.threads) bits.push('T');
-  if (ch?.ig) bits.push('IG');
-  if (ch?.x) bits.push('X');
-  if (ch?.tiktok) bits.push('TT');
-  return bits.length ? bits.join(' · ') : '—';
+  if (ch?.threads) bits.push('<i class="bi bi-at ltrk-ch-ico" title="Threads"></i>');
+  if (ch?.ig) bits.push('<i class="bi bi-instagram ltrk-ch-ico is-ig" title="Instagram"></i>');
+  if (ch?.x) bits.push('<i class="bi bi-twitter-x ltrk-ch-ico is-x" title="X"></i>');
+  if (ch?.tiktok) bits.push('<i class="bi bi-tiktok ltrk-ch-ico is-tt" title="TikTok"></i>');
+  if (!bits.length) return '<span class="text-muted">—</span>';
+  return `<span class="ltrk-ch-icons">${bits.join('')}</span>`;
 }
 
 function renderKPIs() {
@@ -269,7 +270,7 @@ function renderPosts() {
         </div>
       </div>
       <div class="ov-td" style="width:88px"><span class="lazy-badge ${cls}">${Threads.escapeHtml(label)}</span></div>
-      <div class="ov-td" style="width:120px"><span class="text-xs font-semibold text-ink-2">${channelMini(j.channels)}</span></div>
+      <div class="ov-td" style="width:120px">${channelIcons(j.channels)}</div>
       <div class="ov-td ov-td-num mono" style="width:72px">${fmt.num(pm.views)}</div>
       <div class="ov-td ov-td-num mono" style="width:64px">${fmt.num(pm.likes)}</div>
       <div class="ov-td ov-td-num mono" style="width:64px">${fmt.num(pm.replies)}</div>
