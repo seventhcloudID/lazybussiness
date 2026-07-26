@@ -63,7 +63,8 @@ function sparkPath(values, w = 132, h = 28, pad = 2) {
 }
 
 function filteredJobs() {
-  const jobs = report?.jobs || [];
+  // Backend sudah drop post dihapus; filter lagi di UI sebagai safety.
+  const jobs = (report?.jobs || []).filter(j => metricState(j) !== 'deleted');
   if (filter === 'all') return jobs;
   return jobs.filter(j => j.status === filter);
 }

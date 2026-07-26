@@ -112,9 +112,16 @@ func BuildTrackReport(store *Store, client *threads.Client, withMetrics bool) Tr
 		enrichTrackMetrics(client, items, 24)
 	}
 
+	// Tandai yang dihapus (0 views / insight gagal), lalu buang dari daftar tampilan.
+	visible := make([]TrackItem, 0, len(items))
 	sum := TrackSummary{}
 	for i := range items {
-		it := &items[i]
+		it := items[i]
+		if it.Metrics != nil && it.Metrics["views"] <= 0 {
+			it.Deleted = true
+			sum.Deleted++
+			continue // jangan tampilkan
+		}
 		sum.Total++
 		switch it.Status {
 		case StatusDone:
@@ -136,21 +143,15 @@ func BuildTrackReport(store *Store, client *threads.Client, withMetrics bool) Tr
 		if it.Channels.TikTok {
 			sum.TikTok++
 		}
-		if it.Metrics == nil {
-			continue
+		if it.Metrics != nil {
+			sum.Measured++
+			sum.Views += it.Metrics["views"]
+			sum.Likes += it.Metrics["likes"]
+			sum.Replies += it.Metrics["replies"]
+			sum.Reposts += it.Metrics["reposts"]
+			sum.Quotes += it.Metrics["quotes"]
 		}
-		// 0 views = konten sudah dihapus / tidak valid → jangan masuk agregat
-		if it.Metrics["views"] <= 0 {
-			it.Deleted = true
-			sum.Deleted++
-			continue
-		}
-		sum.Measured++
-		sum.Views += it.Metrics["views"]
-		sum.Likes += it.Metrics["likes"]
-		sum.Replies += it.Metrics["replies"]
-		sum.Reposts += it.Metrics["reposts"]
-		sum.Quotes += it.Metrics["quotes"]
+		visible = append(visible, it)
 	}
 	sum.Engagement = sum.Likes + sum.Replies + sum.Reposts + sum.Quotes
 
@@ -159,7 +160,7 @@ func BuildTrackReport(store *Store, client *threads.Client, withMetrics bool) Tr
 		To:       to,
 		Timezone: cfg.Timezone,
 		Summary:  sum,
-		Jobs:     items,
+		Jobs:     visible,
 	}
 }
 
