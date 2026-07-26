@@ -174,7 +174,7 @@ func enrichTrackMetrics(client *threads.Client, items []TrackItem, limit int) {
 			continue
 		}
 		queue = append(queue, job{idx: i, id: it.Channels.RootID})
-		if len(queue) >= limit {
+		if limit > 0 && len(queue) >= limit {
 			break
 		}
 	}
@@ -192,12 +192,15 @@ func enrichTrackMetrics(client *threads.Client, items []TrackItem, limit int) {
 			sem <- struct{}{}
 			defer func() { <-sem }()
 			raw, err := client.GetMediaInsights(q.id)
-			if err != nil {
-				return
+			m := map[string]float64{}
+			if err == nil {
+				m = parseInsightMetrics(raw)
 			}
-			m := parseInsightMetrics(raw)
-			if len(m) == 0 {
-				return
+			// Gagal fetch / kosong / 0 views → anggap konten hilang (dihapus)
+			if len(m) == 0 || m["views"] <= 0 {
+				m = map[string]float64{
+					"views": 0, "likes": 0, "replies": 0, "reposts": 0, "quotes": 0,
+				}
 			}
 			mu.Lock()
 			items[q.idx].Metrics = m

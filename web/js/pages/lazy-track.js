@@ -39,6 +39,14 @@ function jobMetrics(j) {
   return { views, likes, replies, reposts, quotes, engagement, er };
 }
 
+/** ok | deleted | unknown — 0 views = dihapus; tanpa metrics = belum diukur (jangan tampilkan 0). */
+function metricState(j) {
+  if (j?.deleted) return 'deleted';
+  if (!j?.metrics) return 'unknown';
+  if (Number(j.metrics.views || 0) <= 0) return 'deleted';
+  return 'ok';
+}
+
 function sparkPath(values, w = 132, h = 28, pad = 2) {
   if (!values || values.length < 2) return null;
   const min = Math.min(...values);
@@ -62,11 +70,7 @@ function filteredJobs() {
 
 /** Post dengan metrik valid (bukan 0 views / dihapus). */
 function measuredJobs() {
-  return filteredJobs().filter(j => {
-    if (j.deleted) return false;
-    if (!j.metrics) return false;
-    return Number(j.metrics.views || 0) > 0;
-  });
+  return filteredJobs().filter(j => metricState(j) === 'ok');
 }
 
 function seriesFor(key) {
@@ -263,11 +267,14 @@ function renderPosts() {
   }
   rows.innerHTML = jobs.map(j => {
     const pm = jobMetrics(j);
-    const deleted = !!j.deleted || (j.metrics && Number(j.metrics.views || 0) <= 0);
+    const state = metricState(j);
+    const deleted = state === 'deleted';
+    const showNums = state === 'ok';
     const [label, cls] = deleted ? ['Dihapus', 'warn'] : statusLabel(j.status);
     const text = String(j.snippet || j.title || j.id || '(tanpa teks)').replace(/\s+/g, ' ').trim();
     const erClass = pm.er >= 5 ? 'hi' : pm.er >= 3 ? 'md' : 'lo';
     const thumb = j.thumb_url || j.image_urls?.[0] || '';
+    const dash = '—';
     return `<div class="ov-tr${deleted ? ' ltrk-row-deleted' : ''}">
       <div class="ov-td" style="flex:1">
         <div class="ov-post-wrap">
@@ -276,16 +283,16 @@ function renderPosts() {
             : `<span class="ov-avatar">${Threads.escapeHtml((j.title || 'LB').slice(0, 2).toUpperCase())}</span>`}
           <div class="min-w-0">
             <div class="ov-post-text">${Threads.escapeHtml(text)}</div>
-            <div class="text-[11px] text-muted mt-0.5">${Threads.escapeHtml(j.date || '')} · ${relativeTime(j.finished_at || j.scheduled_at)}${deleted ? ' · 0 views' : ''}</div>
+            <div class="text-[11px] text-muted mt-0.5">${Threads.escapeHtml(j.date || '')} · ${relativeTime(j.finished_at || j.scheduled_at)}${deleted ? ' · dihapus' : ''}</div>
           </div>
         </div>
       </div>
       <div class="ov-td" style="width:88px"><span class="lazy-badge ${cls}">${Threads.escapeHtml(label)}</span></div>
       <div class="ov-td" style="width:120px">${channelIcons(j.channels)}</div>
-      <div class="ov-td ov-td-num mono" style="width:72px">${deleted ? '—' : fmt.num(pm.views)}</div>
-      <div class="ov-td ov-td-num mono" style="width:64px">${deleted ? '—' : fmt.num(pm.likes)}</div>
-      <div class="ov-td ov-td-num mono" style="width:64px">${deleted ? '—' : fmt.num(pm.replies)}</div>
-      <div class="ov-td ov-td-num" style="width:56px">${deleted ? '—' : `<span class="ov-er ${erClass}">${pm.er.toFixed(1)}%</span>`}</div>
+      <div class="ov-td ov-td-num mono" style="width:72px">${showNums ? fmt.num(pm.views) : dash}</div>
+      <div class="ov-td ov-td-num mono" style="width:64px">${showNums ? fmt.num(pm.likes) : dash}</div>
+      <div class="ov-td ov-td-num mono" style="width:64px">${showNums ? fmt.num(pm.replies) : dash}</div>
+      <div class="ov-td ov-td-num" style="width:56px">${showNums ? `<span class="ov-er ${erClass}">${pm.er.toFixed(1)}%</span>` : dash}</div>
     </div>`;
   }).join('');
 }
