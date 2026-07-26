@@ -2464,6 +2464,8 @@ main.main {
 .ltrk-ch-ico.is-ig { color: #db2777; }
 .ltrk-ch-ico.is-x { color: #0f172a; }
 .ltrk-ch-ico.is-tt { color: #0d9488; }
+.ltrk-row-deleted { opacity: 0.55; }
+.ltrk-row-deleted .ov-post-text { text-decoration: line-through; }
 
 .tpl-link-row {
   display: flex;

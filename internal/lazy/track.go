@@ -25,23 +25,26 @@ type TrackItem struct {
 	Snippet  string             `json:"snippet,omitempty"`
 	Channels TrackChannels      `json:"channels"`
 	Metrics  map[string]float64 `json:"metrics,omitempty"`
+	Deleted  bool               `json:"deleted,omitempty"` // views=0 → konten dihapus, tidak dihitung metrik
 }
 
 // TrackSummary agregat capaian tools.
 type TrackSummary struct {
-	Total     int     `json:"total"`
-	Done      int     `json:"done"`
-	Failed    int     `json:"failed"`
-	SkippedIG int     `json:"skipped_ig"`
-	Threads   int     `json:"threads"`
-	IG        int     `json:"ig"`
-	X         int     `json:"x"`
-	TikTok    int     `json:"tiktok"`
-	Views     float64 `json:"views"`
-	Likes     float64 `json:"likes"`
-	Replies   float64 `json:"replies"`
-	Reposts   float64 `json:"reposts"`
-	Quotes    float64 `json:"quotes"`
+	Total      int     `json:"total"`
+	Done       int     `json:"done"`
+	Failed     int     `json:"failed"`
+	SkippedIG  int     `json:"skipped_ig"`
+	Deleted    int     `json:"deleted"` // post 0 views (dihapus)
+	Measured   int     `json:"measured"` // post dengan metrik valid (>0 views)
+	Threads    int     `json:"threads"`
+	IG         int     `json:"ig"`
+	X          int     `json:"x"`
+	TikTok     int     `json:"tiktok"`
+	Views      float64 `json:"views"`
+	Likes      float64 `json:"likes"`
+	Replies    float64 `json:"replies"`
+	Reposts    float64 `json:"reposts"`
+	Quotes     float64 `json:"quotes"`
 	Engagement float64 `json:"engagement"`
 }
 
@@ -110,7 +113,8 @@ func BuildTrackReport(store *Store, client *threads.Client, withMetrics bool) Tr
 	}
 
 	sum := TrackSummary{}
-	for _, it := range items {
+	for i := range items {
+		it := &items[i]
 		sum.Total++
 		switch it.Status {
 		case StatusDone:
@@ -132,13 +136,21 @@ func BuildTrackReport(store *Store, client *threads.Client, withMetrics bool) Tr
 		if it.Channels.TikTok {
 			sum.TikTok++
 		}
-		if it.Metrics != nil {
-			sum.Views += it.Metrics["views"]
-			sum.Likes += it.Metrics["likes"]
-			sum.Replies += it.Metrics["replies"]
-			sum.Reposts += it.Metrics["reposts"]
-			sum.Quotes += it.Metrics["quotes"]
+		if it.Metrics == nil {
+			continue
 		}
+		// 0 views = konten sudah dihapus / tidak valid → jangan masuk agregat
+		if it.Metrics["views"] <= 0 {
+			it.Deleted = true
+			sum.Deleted++
+			continue
+		}
+		sum.Measured++
+		sum.Views += it.Metrics["views"]
+		sum.Likes += it.Metrics["likes"]
+		sum.Replies += it.Metrics["replies"]
+		sum.Reposts += it.Metrics["reposts"]
+		sum.Quotes += it.Metrics["quotes"]
 	}
 	sum.Engagement = sum.Likes + sum.Replies + sum.Reposts + sum.Quotes
 

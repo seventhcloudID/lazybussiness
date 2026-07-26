@@ -60,9 +60,18 @@ function filteredJobs() {
   return jobs.filter(j => j.status === filter);
 }
 
+/** Post dengan metrik valid (bukan 0 views / dihapus). */
+function measuredJobs() {
+  return filteredJobs().filter(j => {
+    if (j.deleted) return false;
+    if (!j.metrics) return false;
+    return Number(j.metrics.views || 0) > 0;
+  });
+}
+
 function seriesFor(key) {
-  // oldest → newest for spark/chart
-  return [...filteredJobs()].reverse().map(j => jobMetrics(j)[key] || 0);
+  // oldest → newest for spark/chart — skip post 0 views (dihapus)
+  return [...measuredJobs()].reverse().map(j => jobMetrics(j)[key] || 0);
 }
 
 function statusLabel(st) {
@@ -97,23 +106,24 @@ function channelIcons(ch) {
 
 function renderKPIs() {
   const s = report?.summary || {};
-  const jobs = filteredJobs();
-  const n = jobs.length;
+  const measured = measuredJobs();
+  const n = measured.length || s.measured || 0;
   const views = seriesFor('views');
   const likes = seriesFor('likes');
   const replies = seriesFor('replies');
   const eng = seriesFor('engagement');
   const erSeries = seriesFor('er');
-  const avgViews = n ? views.reduce((a, b) => a + b, 0) / n : 0;
+  const avgViews = n ? (views.reduce((a, b) => a + b, 0) / Math.max(views.length, 1)) : 0;
   const er = (s.views || 0) > 0 ? ((s.engagement || 0) / s.views) * 100 : 0;
   const success = (s.total || 0) > 0 ? ((s.done || 0) / s.total) * 100 : 0;
+  const deletedNote = (s.deleted || 0) > 0 ? ` · ${s.deleted} dihapus` : '';
 
   const kpis = [
-    { k: 'Post Lazy', v: fmt.full(s.total || 0), sub: `${s.done || 0} selesai`, spark: views, lead: true },
-    { k: 'Views', v: fmt.full(s.views || 0), sub: `avg ${fmt.num(avgViews)} / post`, spark: views },
+    { k: 'Post Lazy', v: fmt.full(s.total || 0), sub: `${s.done || 0} selesai${deletedNote}`, spark: views, lead: true },
+    { k: 'Views', v: fmt.full(s.views || 0), sub: `avg ${fmt.num(avgViews)} / post aktif`, spark: views },
     { k: 'Likes', v: fmt.full(s.likes || 0), sub: `${fmt.num(s.replies || 0)} balasan`, spark: likes },
-    { k: 'Engagement', v: fmt.full(s.engagement || 0), sub: 'likes+balasan+repost+kutip', spark: eng },
-    { k: 'ER Lazy', v: er.toFixed(2) + '%', sub: 'dari views Threads', spark: erSeries },
+    { k: 'Engagement', v: fmt.full(s.engagement || 0), sub: 'exclude post 0 views', spark: eng },
+    { k: 'ER Lazy', v: er.toFixed(2) + '%', sub: 'dari views Threads aktif', spark: erSeries },
     { k: 'Success rate', v: success.toFixed(0) + '%', sub: `${s.failed || 0} gagal · ${s.skipped_ig || 0} IG skip`, spark: eng },
   ];
 
@@ -134,7 +144,7 @@ function renderKPIs() {
 }
 
 function renderChart() {
-  const jobsAsc = [...filteredJobs()].reverse();
+  const jobsAsc = [...measuredJobs()].reverse();
   const series = jobsAsc.map(j => jobMetrics(j)[metric] || 0);
   const svg = document.getElementById('chart-svg');
   const tip = document.getElementById('chart-tip');
@@ -253,11 +263,12 @@ function renderPosts() {
   }
   rows.innerHTML = jobs.map(j => {
     const pm = jobMetrics(j);
-    const [label, cls] = statusLabel(j.status);
+    const deleted = !!j.deleted || (j.metrics && Number(j.metrics.views || 0) <= 0);
+    const [label, cls] = deleted ? ['Dihapus', 'warn'] : statusLabel(j.status);
     const text = String(j.snippet || j.title || j.id || '(tanpa teks)').replace(/\s+/g, ' ').trim();
     const erClass = pm.er >= 5 ? 'hi' : pm.er >= 3 ? 'md' : 'lo';
     const thumb = j.thumb_url || j.image_urls?.[0] || '';
-    return `<div class="ov-tr">
+    return `<div class="ov-tr${deleted ? ' ltrk-row-deleted' : ''}">
       <div class="ov-td" style="flex:1">
         <div class="ov-post-wrap">
           ${thumb
@@ -265,16 +276,16 @@ function renderPosts() {
             : `<span class="ov-avatar">${Threads.escapeHtml((j.title || 'LB').slice(0, 2).toUpperCase())}</span>`}
           <div class="min-w-0">
             <div class="ov-post-text">${Threads.escapeHtml(text)}</div>
-            <div class="text-[11px] text-muted mt-0.5">${Threads.escapeHtml(j.date || '')} · ${relativeTime(j.finished_at || j.scheduled_at)}</div>
+            <div class="text-[11px] text-muted mt-0.5">${Threads.escapeHtml(j.date || '')} · ${relativeTime(j.finished_at || j.scheduled_at)}${deleted ? ' · 0 views' : ''}</div>
           </div>
         </div>
       </div>
       <div class="ov-td" style="width:88px"><span class="lazy-badge ${cls}">${Threads.escapeHtml(label)}</span></div>
       <div class="ov-td" style="width:120px">${channelIcons(j.channels)}</div>
-      <div class="ov-td ov-td-num mono" style="width:72px">${fmt.num(pm.views)}</div>
-      <div class="ov-td ov-td-num mono" style="width:64px">${fmt.num(pm.likes)}</div>
-      <div class="ov-td ov-td-num mono" style="width:64px">${fmt.num(pm.replies)}</div>
-      <div class="ov-td ov-td-num" style="width:56px"><span class="ov-er ${erClass}">${pm.er.toFixed(1)}%</span></div>
+      <div class="ov-td ov-td-num mono" style="width:72px">${deleted ? '—' : fmt.num(pm.views)}</div>
+      <div class="ov-td ov-td-num mono" style="width:64px">${deleted ? '—' : fmt.num(pm.likes)}</div>
+      <div class="ov-td ov-td-num mono" style="width:64px">${deleted ? '—' : fmt.num(pm.replies)}</div>
+      <div class="ov-td ov-td-num" style="width:56px">${deleted ? '—' : `<span class="ov-er ${erClass}">${pm.er.toFixed(1)}%</span>`}</div>
     </div>`;
   }).join('');
 }
