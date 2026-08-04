@@ -393,8 +393,9 @@ function consumeOAuthFlash() {
   const provider = q.get('provider') || 'oauth';
   const msg = q.get('msg') || '';
   if (st === 'ok') {
-    showAlert(`${provider} terhubung via login Meta.`, true);
-    Threads.toast(`${provider} terhubung`, true);
+    const okMsg = msg || `${provider} terhubung via login Meta.`;
+    showAlert(okMsg, true);
+    Threads.toast(msg ? 'Terhubung (cek catatan)' : `${provider} terhubung`, true);
   } else {
     showAlert(msg || `${provider} gagal dihubungkan.`, false);
     Threads.toast(msg || 'OAuth gagal', false);

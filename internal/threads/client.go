@@ -2,6 +2,7 @@ package threads
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -131,13 +132,25 @@ func (c *Client) setUserID(id string) {
 	c.userID = id
 }
 
+// SetUserID menyimpan Threads user id dari OAuth.
+func (c *Client) SetUserID(id string) {
+	c.setUserID(strings.TrimSpace(id))
+}
+
 type APIError struct {
 	Status int
 	Body   json.RawMessage
 }
 
 func (e *APIError) Error() string {
-	return fmt.Sprintf("threads api: status %d: %s", e.Status, string(e.Body))
+	body := strings.TrimSpace(string(e.Body))
+	if e.Status == 500 && (body == "" || body == "{}" || body == "null") {
+		return "threads api: Meta mengembalikan 500 kosong — biasanya token kedaluwarsa/invalid, akun belum Threads Tester (+ accept invite), atau gangguan sementara di Meta. Coba Login dengan Threads ulang atau tempel long-lived token baru."
+	}
+	if body == "" {
+		return fmt.Sprintf("threads api: status %d (body kosong dari Meta)", e.Status)
+	}
+	return fmt.Sprintf("threads api: status %d: %s", e.Status, body)
 }
 
 func (c *Client) Do(method, path string, query url.Values, form url.Values) (json.RawMessage, error) {
@@ -303,28 +316,64 @@ func cloneValues(in url.Values) url.Values {
 	return out
 }
 
-func (c *Client) GetMe() (json.RawMessage, error) {
-	raw, err := c.Do(http.MethodGet, "/me", url.Values{
+func (c *Client) applyMe(raw json.RawMessage) {
+	var me struct {
+		ID       string `json:"id"`
+		Username string `json:"username"`
+	}
+	if json.Unmarshal(raw, &me) != nil {
+		return
+	}
+	c.mu.Lock()
+	if me.ID != "" {
+		c.userID = me.ID
+	}
+	if me.Username != "" {
+		c.username = me.Username
+	}
+	c.mu.Unlock()
+}
+
+func (c *Client) GetUser(id string) (json.RawMessage, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("user id kosong")
+	}
+	raw, err := c.Do(http.MethodGet, "/"+id, url.Values{
 		"fields": {"id,username,name,threads_profile_picture_url,threads_biography"},
 	}, nil)
 	if err != nil {
 		return nil, err
 	}
-	var me struct {
-		ID       string `json:"id"`
-		Username string `json:"username"`
-	}
-	if json.Unmarshal(raw, &me) == nil {
-		c.mu.Lock()
-		if me.ID != "" {
-			c.userID = me.ID
-		}
-		if me.Username != "" {
-			c.username = me.Username
-		}
-		c.mu.Unlock()
-	}
+	c.applyMe(raw)
 	return raw, nil
+}
+
+func (c *Client) GetMe() (json.RawMessage, error) {
+	if id := strings.TrimSpace(c.UserID()); id != "" {
+		if raw, err := c.GetUser(id); err == nil {
+			return raw, nil
+		}
+	}
+	fieldSets := []string{
+		"id,username",
+		"id,username,name,threads_profile_picture_url,threads_biography",
+	}
+	var last error
+	for _, fields := range fieldSets {
+		raw, err := c.Do(http.MethodGet, "/me", url.Values{"fields": {fields}}, nil)
+		if err == nil {
+			c.applyMe(raw)
+			return raw, nil
+		}
+		last = err
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && apiErr.Status == 500 {
+			continue
+		}
+		return nil, err
+	}
+	return nil, last
 }
 
 // SnapshotForAI mengemas profil + metrik post untuk dianalisis model AI.

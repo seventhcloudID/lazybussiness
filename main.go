@@ -2234,14 +2234,32 @@ func writeAPIErr(w http.ResponseWriter, err error) {
 	var apiErr *threads.APIError
 	if errors.As(err, &apiErr) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(apiErr.Status)
+		status := apiErr.Status
+		if status < 400 {
+			status = http.StatusBadGateway
+		}
+		body := strings.TrimSpace(string(apiErr.Body))
+		if body == "" || body == "{}" || body == "null" {
+			writeJSON(w, status, map[string]any{"error": apiErr.Error()})
+			return
+		}
+		w.WriteHeader(status)
 		_, _ = w.Write(apiErr.Body)
 		return
 	}
 	var igErr *instagram.APIError
 	if errors.As(err, &igErr) {
 		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(igErr.Status)
+		status := igErr.Status
+		if status < 400 {
+			status = http.StatusBadGateway
+		}
+		body := strings.TrimSpace(string(igErr.Body))
+		if body == "" || body == "{}" || body == "null" {
+			writeJSON(w, status, map[string]any{"error": igErr.Error()})
+			return
+		}
+		w.WriteHeader(status)
 		_, _ = w.Write(igErr.Body)
 		return
 	}
@@ -2295,10 +2313,22 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, oa *oauth.Confi
 	switch provider {
 	case "threads":
 		ws.Threads.SetToken(tok.AccessToken)
+		if uid := strings.TrimSpace(tok.UserID); uid != "" && uid != "<nil>" {
+			ws.Threads.SetUserID(uid)
+		}
 		me, merr := ws.Threads.GetMe()
+		if merr != nil && strings.TrimSpace(tok.UserID) != "" && strings.TrimSpace(tok.UserID) != "<nil>" {
+			me, merr = ws.Threads.GetUser(tok.UserID)
+		}
 		if merr != nil {
-			ws.Threads.ClearToken()
-			oauthRedirect(w, r, provider, "err", merr.Error())
+			// Token dari OAuth tetap disimpan — Meta kadang 500 kosong sementara di /me.
+			log.Printf("threads oauth: GetMe gagal setelah token tersimpan: %v", merr)
+			_ = accounts.UpdateMeta(ws.Meta.ID, func(m *account.Meta) {
+				if uid := strings.TrimSpace(tok.UserID); uid != "" && uid != "<nil>" && m.ThreadsUsername == "" {
+					m.ThreadsUsername = uid
+				}
+			})
+			oauthRedirect(w, r, provider, "ok", "token tersimpan; profil Threads belum terbaca ("+merr.Error()+")")
 			return
 		}
 		var profile struct {
