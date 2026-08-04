@@ -1,11 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Akun — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand44" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -15,8 +15,9 @@
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Sistem</p>
-      <h1 class="th-title" id="akun-title">Workspace</h1>
-      <p class="th-lead" id="akun-lead">Kelola akun Threads/IG dan ganti workspace aktif.</p>
+      <h1 class="th-title" id="akun-title">Akun brand</h1>
+      <p class="th-lead" id="akun-lead">Kelola akun Threads/IG dalam workspace ini.</p>
+      <p class="text-xs text-muted m-0 mt-1" id="org-breadcrumb">Tenant · Workspace</p>
     </div>
     <div class="flex flex-wrap gap-2 items-center" id="akun-head-actions">
       <button type="button" id="btn-add" class="th-btn th-btn-primary"><i class="bi bi-plus-lg"></i> Tambah akun</button>
@@ -26,10 +27,10 @@
 
   <div class="akun-tabs" role="tablist" aria-label="Bagian akun">
     <button type="button" class="akun-tab is-active" role="tab" id="tab-workspace" data-tab="workspace" aria-selected="true" aria-controls="panel-workspace">
-      <i class="bi bi-people"></i> Workspace
+      <i class="bi bi-people"></i> Akun brand
     </button>
     <button type="button" class="akun-tab" role="tab" id="tab-keys" data-tab="keys" aria-selected="false" aria-controls="panel-keys">
-      <i class="bi bi-key"></i> API keys
+      <i class="bi bi-key"></i> API keys workspace
     </button>
   </div>
 
@@ -40,7 +41,7 @@
   </section>
 
   <section id="panel-keys" class="akun-panel hidden" role="tabpanel" aria-labelledby="tab-keys" hidden>
-    <p class="text-sm text-muted mb-4">Key di bawah ini global — dipakai semua workspace. Buffer key ada di tab Workspace → Kelola (per akun).</p>
+    <p class="text-sm text-muted mb-4">Gemini &amp; OpenAI milik <strong>workspace</strong> ini — dipakai semua akun brand di dalamnya. Buffer key per akun (tab Akun brand → Kelola).</p>
 
     <section class="th-panel mb-4" id="gemini-panel">
       <div class="th-panel-head"><span>Gemini</span></div>
@@ -57,8 +58,8 @@
     </section>
   </section>
 </main>
-<script src="/js/api.js?v=strand44"></script>
-<script src="/js/layout.js?v=strand44"></script>
-<script src="/js/pages/akun.js?v=strand44"></script>
+<script src="/js/api.js?v=mn70"></script>
+<script src="/js/layout.js?v=mn73"></script>
+<script src="/js/pages/akun.js?v=mn74"></script>
 </body>
 </html>

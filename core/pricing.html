@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Pricing — Core</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=strand67" id="app-css">
+<link rel="stylesheet" href="/core/css/core.css?v=strand67">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body class="core-body">
+<div class="core-shell">
+  <aside class="core-sidebar" id="core-sidebar"></aside>
+
+  <div class="core-content">
+    <div class="core-mobilebar">
+      <button type="button" class="core-burger" id="core-burger" aria-label="Menu">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="core-mark">Core</div>
+      <span></span>
+    </div>
+
+    <main class="core-main">
+      <header class="core-page-head">
+        <div>
+          <h1 class="core-page-title">Pricing</h1>
+          <p class="core-page-lead">Satu paket produk — dipakai sebagai acuan settlement tenant.</p>
+        </div>
+        <button type="button" id="btn-save" class="th-btn th-btn-primary"><i class="bi bi-check2"></i> Simpan</button>
+      </header>
+
+      <div id="pricing-alert" class="th-alert hidden mb-3"></div>
+
+      <section class="core-section">
+        <div class="core-toolbar">
+          <h2 class="core-section-title">Paket</h2>
+          <span class="mono text-xs text-muted" id="pricing-updated">—</span>
+        </div>
+        <div class="core-pricing-body">
+          <div class="core-pricing-grid">
+            <div>
+              <label class="th-label" for="p-name">Nama paket</label>
+              <input id="p-name" class="th-input" value="Bulanan">
+            </div>
+            <div>
+              <label class="th-label" for="p-amount">Harga (IDR / bulan)</label>
+              <input id="p-amount" class="th-input mono" type="number" min="0" step="1000" value="145000">
+            </div>
+          </div>
+
+          <div class="core-price-preview" id="price-preview">
+            <span class="core-price-label">Bulanan</span>
+            <div class="core-price-row">
+              <span class="core-price-currency">Rp</span>
+              <span class="core-price-amount" id="price-amount-view">145.000</span>
+              <span class="core-price-per">/bulan</span>
+            </div>
+          </div>
+
+          <div class="mt-4">
+            <label class="th-label" for="p-features">Fitur (satu baris per item)</label>
+            <textarea id="p-features" class="th-input mono" rows="6"></textarea>
+          </div>
+          <div class="mt-3">
+            <label class="th-label" for="p-notes">Catatan</label>
+            <input id="p-notes" class="th-input" placeholder="Satu paket. Provisioned by admin.">
+          </div>
+        </div>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="/js/api.js?v=strand67"></script>
+<script src="/core/js/shell.js?v=strand67"></script>
+<script src="/core/js/pricing.js?v=strand67"></script>
+</body>
+</html>

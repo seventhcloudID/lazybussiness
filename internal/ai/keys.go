@@ -9,8 +9,6 @@ import (
 	"sync"
 )
 
-const aiKeysPath = ".data/ai_keys.json"
-
 type storedKeysFile struct {
 	Keys []string `json:"keys"`
 }
@@ -19,11 +17,11 @@ var (
 	keysFileMu sync.Mutex
 )
 
-// LoadStoredAPIKeys membaca key Gemini dari .data/ai_keys.json (disimpan lewat UI).
+// LoadStoredAPIKeys membaca key Gemini dari store workspace (UI).
 func LoadStoredAPIKeys() []string {
 	keysFileMu.Lock()
 	defer keysFileMu.Unlock()
-	raw, err := os.ReadFile(aiKeysPath)
+	raw, err := os.ReadFile(geminiKeysFile())
 	if err != nil {
 		return nil
 	}
@@ -34,11 +32,12 @@ func LoadStoredAPIKeys() []string {
 	return normalizeKeys(f.Keys)
 }
 
-// SaveStoredAPIKeys menulis key ke .data/ai_keys.json (mode 0600).
+// SaveStoredAPIKeys menulis key ke store workspace (mode 0600).
 func SaveStoredAPIKeys(keys []string) error {
 	keysFileMu.Lock()
 	defer keysFileMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(aiKeysPath), 0o755); err != nil {
+	path := geminiKeysFile()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	clean := normalizeKeys(keys)
@@ -46,18 +45,18 @@ func SaveStoredAPIKeys(keys []string) error {
 	if err != nil {
 		return err
 	}
-	tmp := aiKeysPath + ".tmp"
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, aiKeysPath)
+	return os.Rename(tmp, path)
 }
 
 // ClearStoredAPIKeys menghapus file key UI.
 func ClearStoredAPIKeys() error {
 	keysFileMu.Lock()
 	defer keysFileMu.Unlock()
-	err := os.Remove(aiKeysPath)
+	err := os.Remove(geminiKeysFile())
 	if err != nil && !os.IsNotExist(err) {
 		return err
 	}
@@ -132,13 +131,13 @@ func (c *Client) KeysStatus() KeysStatus {
 		Total:     c.KeyCount(),
 		FromEnv:   len(envKeys),
 		FromStore: len(storeKeys),
-		Note:      "Key dari UI disimpan di .data/ai_keys.json. Key di .env tetap dipakai kalau ada.",
+		Note:      "Key Gemini milik workspace ini (BYOK). Key di .env digabung kalau ada.",
 	}
 	for _, k := range storeKeys {
 		st.StoredMasked = append(st.StoredMasked, MaskAPIKey(k))
 	}
 	if st.Total == 0 {
-		st.Note = "Belum ada API key — isi di halaman ini atau set AI_API_KEY di .env"
+		st.Note = "Belum ada API key workspace — isi di halaman ini atau set AI_API_KEY di .env"
 	}
 	return st
 }

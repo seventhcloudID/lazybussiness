@@ -33,6 +33,9 @@ type Client struct {
 
 	repliesCacheMu sync.Mutex
 	repliesCache   map[string]cachedJSON
+
+	insightsCacheMu sync.Mutex
+	insightsCache   map[string]cachedJSON
 }
 
 type cachedJSON struct {
@@ -46,9 +49,10 @@ func New() *Client {
 
 func NewWithTokenPath(tokenPath string) *Client {
 	c := &Client{
-		http:         &http.Client{Timeout: 30 * time.Second},
-		tokenPath:    tokenPath,
-		repliesCache: map[string]cachedJSON{},
+		http:          &http.Client{Timeout: 30 * time.Second},
+		tokenPath:     tokenPath,
+		repliesCache:  map[string]cachedJSON{},
+		insightsCache: map[string]cachedJSON{},
 	}
 	c.loadTokenFile()
 	return c
@@ -396,12 +400,33 @@ func (c *Client) GetThreads(since, until string) (json.RawMessage, error) {
 }
 
 func (c *Client) GetInsights(since, until string) (json.RawMessage, error) {
-	return c.GetInsightsOpts(since, until, false)
+	return c.GetInsightsOpts(since, until, false, -1)
 }
 
-// GetInsightsOpts: aggregate=false → cepat (followers saja untuk ringkasan).
-// aggregate=true → engagement akun + breakdown post terbaru untuk halaman Insight.
-func (c *Client) GetInsightsOpts(since, until string, aggregate bool) (json.RawMessage, error) {
+// GetInsightsOpts: aggregate=false → cepat (followers saja).
+// aggregate=true → engagement akun + breakdown post.
+// postLimit: <0 default 40; 0 skip breakdown post; >0 batasi jumlah post.
+func (c *Client) GetInsightsOpts(since, until string, aggregate bool, postLimit int) (json.RawMessage, error) {
+	cacheKey := fmt.Sprintf("%t|%d|%s|%s", aggregate, postLimit, since, until)
+	c.insightsCacheMu.Lock()
+	if ent, ok := c.insightsCache[cacheKey]; ok && time.Since(ent.at) < 90*time.Second {
+		raw := ent.raw
+		c.insightsCacheMu.Unlock()
+		return raw, nil
+	}
+	c.insightsCacheMu.Unlock()
+
+	raw, err := c.fetchInsightsOpts(since, until, aggregate, postLimit)
+	if err != nil {
+		return nil, err
+	}
+	c.insightsCacheMu.Lock()
+	c.insightsCache[cacheKey] = cachedJSON{raw: raw, at: time.Now()}
+	c.insightsCacheMu.Unlock()
+	return raw, nil
+}
+
+func (c *Client) fetchInsightsOpts(since, until string, aggregate bool, postLimit int) (json.RawMessage, error) {
 	type metricItem struct {
 		Name       string `json:"name"`
 		Period     string `json:"period,omitempty"`
@@ -472,39 +497,43 @@ func (c *Client) GetInsightsOpts(since, until string, aggregate bool) (json.RawM
 			}
 		}
 
-		// Breakdown post mengikuti rentang since/until (bukan selalu 12 post terbaru).
-		postLimit := 40
-		detail, err := c.collectPostInsights(postLimit, since, until)
-		if err == nil {
-			posts = detail.Posts
-			totals = detail.Totals
-			hasEngagement := false
-			for _, it := range items {
-				if it.Name != "followers_count" {
-					hasEngagement = true
-					break
+		// Breakdown post mengikuti rentang since/until.
+		if postLimit < 0 {
+			postLimit = 40
+		}
+		if postLimit > 0 {
+			detail, err := c.collectPostInsights(postLimit, since, until)
+			if err == nil {
+				posts = detail.Posts
+				totals = detail.Totals
+				hasEngagement := false
+				for _, it := range items {
+					if it.Name != "followers_count" {
+						hasEngagement = true
+						break
+					}
 				}
-			}
-			if !hasEngagement {
-				source = "posts_aggregate"
-				accountErr = "Insight engagement level-akun dari Meta tidak tersedia; menampilkan agregasi dari post terbaru."
-				for _, name := range []string{"views", "likes", "replies", "reposts", "quotes"} {
-					items = append(items, metricItem{
-						Name:   name,
-						Period: "lifetime",
-						Title:  metricTitle(name),
-						Values: []struct {
-							Value any `json:"value"`
-						}{{Value: totals[name]}},
-					})
+				if !hasEngagement {
+					source = "posts_aggregate"
+					accountErr = "Insight engagement level-akun dari Meta tidak tersedia; menampilkan agregasi dari post terbaru."
+					for _, name := range []string{"views", "likes", "replies", "reposts", "quotes"} {
+						items = append(items, metricItem{
+							Name:   name,
+							Period: "lifetime",
+							Title:  metricTitle(name),
+							Values: []struct {
+								Value any `json:"value"`
+							}{{Value: totals[name]}},
+						})
+					}
+				} else if source == "none" {
+					source = "account"
 				}
-			} else if source == "none" {
-				source = "account"
+			} else if source == "account" {
+				// tetap OK tanpa posts
+			} else if accountErr == "" {
+				accountErr = err.Error()
 			}
-		} else if source == "account" {
-			// tetap OK tanpa posts
-		} else if accountErr == "" {
-			accountErr = err.Error()
 		}
 	}
 
@@ -721,7 +750,7 @@ func (c *Client) collectPostInsights(limit int, since, until string) (postInsigh
 
 	var mu sync.Mutex
 	var wg sync.WaitGroup
-	sem := make(chan struct{}, 4)
+	sem := make(chan struct{}, 8)
 	rows := make([]postInsightRow, 0, len(jobs))
 
 	for _, j := range jobs {
@@ -937,6 +966,10 @@ func (c *Client) InvalidateReplyCaches() {
 	c.repliesCacheMu.Lock()
 	c.repliesCache = map[string]cachedJSON{}
 	c.repliesCacheMu.Unlock()
+
+	c.insightsCacheMu.Lock()
+	c.insightsCache = map[string]cachedJSON{}
+	c.insightsCacheMu.Unlock()
 }
 
 func (c *Client) InvalidateMediaReplies(mediaID string) {

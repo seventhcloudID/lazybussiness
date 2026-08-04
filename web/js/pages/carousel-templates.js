@@ -126,7 +126,7 @@ async function fetchSlidePng(templateId, text, brandName) {
     }),
   });
   if (res.status === 401) {
-    location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+    location.replace('/app/login.html?next=' + encodeURIComponent(location.pathname));
     return null;
   }
   if (!res.ok) throw new Error(await res.text());

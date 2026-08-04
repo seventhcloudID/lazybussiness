@@ -8,8 +8,6 @@ import (
 	"sync"
 )
 
-const openAIKeysPath = ".data/openai_keys.json"
-
 type storedOpenAIKeysFile struct {
 	Keys []string `json:"keys"`
 }
@@ -19,7 +17,7 @@ var openAIKeysMu sync.Mutex
 func loadStoredOpenAIKeys() []string {
 	openAIKeysMu.Lock()
 	defer openAIKeysMu.Unlock()
-	raw, err := os.ReadFile(openAIKeysPath)
+	raw, err := os.ReadFile(openAIKeysFile())
 	if err != nil {
 		return nil
 	}
@@ -33,12 +31,13 @@ func loadStoredOpenAIKeys() []string {
 func saveStoredOpenAIKeys(keys []string) error {
 	openAIKeysMu.Lock()
 	defer openAIKeysMu.Unlock()
-	if err := os.MkdirAll(filepath.Dir(openAIKeysPath), 0o700); err != nil {
+	path := openAIKeysFile()
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
 		return err
 	}
 	clean := normalizeKeys(keys)
 	if len(clean) == 0 {
-		err := os.Remove(openAIKeysPath)
+		err := os.Remove(path)
 		if err != nil && !os.IsNotExist(err) {
 			return err
 		}
@@ -48,11 +47,11 @@ func saveStoredOpenAIKeys(keys []string) error {
 	if err != nil {
 		return err
 	}
-	tmp := openAIKeysPath + ".tmp"
+	tmp := path + ".tmp"
 	if err := os.WriteFile(tmp, payload, 0o600); err != nil {
 		return err
 	}
-	return os.Rename(tmp, openAIKeysPath)
+	return os.Rename(tmp, path)
 }
 
 func clearStoredOpenAIKeys() error {

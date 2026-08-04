@@ -11,7 +11,8 @@ Threads.api = async function (path, opts = {}) {
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (res.status === 401 && data?.code === 'unauthorized') {
     if (!location.pathname.endsWith('/login.html')) {
-      location.replace('/login.html?next=' + encodeURIComponent(location.pathname + location.search));
+      const portal = location.pathname.startsWith('/core') ? '/core/login.html' : '/app/login.html';
+      location.replace(portal + '?next=' + encodeURIComponent(location.pathname + location.search));
     }
     throw new Error('login required');
   }
@@ -155,6 +156,7 @@ Threads.confirm = function (message, opts = {}) {
         const t = e.target;
         if (t && t.matches && t.matches('[data-dialog-cancel]')) return;
         if (t && t.matches && t.matches('button') && !t.matches('[data-dialog-ok]')) return;
+        if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT')) return;
         e.preventDefault();
         finish(true);
       }
@@ -165,6 +167,78 @@ Threads.confirm = function (message, opts = {}) {
     root.querySelector('[data-dialog-ok]')?.addEventListener('click', () => finish(true));
     document.addEventListener('keydown', onKey);
     root.querySelector('[data-dialog-ok]')?.focus();
+  });
+};
+
+/**
+ * Dialog dengan body HTML + collect(root) sebelum close.
+ * Returns Promise<any|null> — null kalau batal.
+ */
+Threads.formDialog = function (opts = {}) {
+  const title = opts.title || 'Form';
+  const okLabel = opts.okLabel || 'Simpan';
+  const cancelLabel = opts.cancelLabel || 'Batal';
+  const bodyHtml = opts.bodyHtml || '';
+  const danger = !!opts.danger;
+  return new Promise((resolve) => {
+    Threads._closeDialog();
+
+    const root = document.createElement('div');
+    root.id = 'th-dialog-root';
+    root.className = 'th-dialog-root';
+    root.setAttribute('role', 'presentation');
+    root.innerHTML = `
+      <div class="th-dialog-backdrop" data-dialog-cancel></div>
+      <div class="th-dialog" role="dialog" aria-modal="true" aria-labelledby="th-dialog-title">
+        <h2 class="th-dialog-title" id="th-dialog-title">${Threads.escapeHtml(title)}</h2>
+        <div class="th-dialog-body">${bodyHtml}</div>
+        <div class="th-dialog-actions">
+          <button type="button" class="th-btn th-btn-ghost" data-dialog-cancel>${Threads.escapeHtml(cancelLabel)}</button>
+          <button type="button" class="th-btn ${danger ? 'th-btn-danger' : 'th-btn-primary'}" data-dialog-ok>${Threads.escapeHtml(okLabel)}</button>
+        </div>
+      </div>
+    `;
+    document.body.appendChild(root);
+    document.body.classList.add('th-dialog-open');
+
+    let settled = false;
+    const finish = (ok) => {
+      if (settled) return;
+      settled = true;
+      let payload = null;
+      if (ok) {
+        try {
+          payload = typeof opts.collect === 'function' ? opts.collect(root) : true;
+        } catch (err) {
+          settled = false;
+          Threads.toast?.(err.message || 'Form tidak valid', false);
+          return;
+        }
+      }
+      Threads._dismissDialog = null;
+      document.removeEventListener('keydown', onKey);
+      document.body.classList.remove('th-dialog-open');
+      root.remove();
+      resolve(ok ? payload : null);
+    };
+    Threads._dismissDialog = () => finish(false);
+
+    const onKey = (e) => {
+      if (e.key === 'Escape') finish(false);
+      if (e.key === 'Enter') {
+        const t = e.target;
+        if (t && (t.tagName === 'TEXTAREA' || t.tagName === 'SELECT' || t.tagName === 'BUTTON')) return;
+        e.preventDefault();
+        finish(true);
+      }
+    };
+    root.querySelectorAll('[data-dialog-cancel]').forEach((el) => {
+      el.addEventListener('click', () => finish(false));
+    });
+    root.querySelector('[data-dialog-ok]')?.addEventListener('click', () => finish(true));
+    document.addEventListener('keydown', onKey);
+    const first = root.querySelector('input, select, textarea');
+    (first || root.querySelector('[data-dialog-ok]'))?.focus();
   });
 };
 

@@ -17,13 +17,50 @@ function publishedId(data) {
   return data?.published?.id || '';
 }
 
+let previewHandle = 'kamu';
+let previewInitials = 'TH';
+
 function syncMeta() {
   const n = parts.length;
   document.getElementById('parts-meta').textContent =
-    n === 1 ? '1 bagian (post tunggal)' : `${n} bagian (utas berantai)`;
+    n === 1 ? '1 bagian' : `${n} bagian utas`;
   document.getElementById('btn-publish').innerHTML = n > 1
     ? `<i class="bi bi-send"></i> Publikasikan utas (${n})`
     : `<i class="bi bi-send"></i> Publikasikan`;
+}
+
+function renderPreview() {
+  const root = document.getElementById('compose-preview');
+  if (!root) return;
+  const filled = parts.some((p) => String(p || '').trim());
+  if (!filled) {
+    root.innerHTML = `<p class="buat-preview-empty">Mulai tulis di bagian 1 — preview muncul di sini.</p>`;
+    return;
+  }
+  const mediaURL = document.getElementById('compose-media-url')?.value?.trim() || '';
+  const mtype = mediaType();
+  let mediaHtml = '';
+  if (mediaURL && (mtype === 'IMAGE' || document.getElementById('mt-img')?.checked)) {
+    let src = mediaURL;
+    try {
+      const u = new URL(mediaURL, location.origin);
+      src = u.origin === location.origin ? u.pathname : mediaURL;
+    } catch {}
+    mediaHtml = `<div class="buat-pv-media"><img src="${Threads.escapeHtml(src)}" alt=""></div>`;
+  }
+  root.innerHTML = parts.map((text, i) => {
+    const body = String(text || '').trim();
+    const show = body || i === 0;
+    if (!show) return '';
+    return `<article class="buat-pv-item">
+      <div class="buat-pv-avatar">${Threads.escapeHtml(previewInitials)}</div>
+      <div class="buat-pv-body">
+        <p class="buat-pv-handle">${Threads.escapeHtml(previewHandle)}</p>
+        <p class="buat-pv-text ${body ? '' : 'is-placeholder'}">${Threads.escapeHtml(body || 'Hook masih kosong…')}</p>
+        ${i === 0 ? mediaHtml : ''}
+      </div>
+    </article>`;
+  }).join('');
 }
 
 function renderParts() {
@@ -32,18 +69,19 @@ function renderParts() {
     const n = charLen(text);
     const over = n > MAX_CHARS;
     return `
-      <div class="compose-part" data-i="${i}">
+      <div class="compose-part ${i === 0 ? 'is-hook' : ''}" data-i="${i}">
         <div class="compose-part-head">
           <span class="compose-part-n">${i + 1}</span>
-          <span class="compose-part-label">${i === 0 ? 'Hook / starter' : `Lanjutan ${i + 1}`}</span>
+          <span class="compose-part-label">${i === 0 ? 'Hook' : `Bagian ${i + 1}`}</span>
           <span class="compose-part-count ${over ? 'over' : ''}">${n}/${MAX_CHARS}</span>
           ${parts.length > 1 ? `<button type="button" class="th-btn th-btn-ghost !py-0.5 !px-2 text-xs" data-remove="${i}" title="Hapus"><i class="bi bi-x-lg"></i></button>` : ''}
         </div>
-        <textarea class="th-textarea compose-part-text" rows="${i === 0 ? 4 : 3}" maxlength="${MAX_CHARS}"
-          placeholder="${i === 0 ? 'Bagian 1 — hook…' : `Bagian ${i + 1}…`}">${Threads.escapeHtml(text)}</textarea>
+        <textarea class="th-textarea compose-part-text" rows="${i === 0 ? 5 : 3}" maxlength="${MAX_CHARS}"
+          placeholder="${i === 0 ? 'Tulis hook yang menarik…' : `Lanjutkan cerita di bagian ${i + 1}…`}">${Threads.escapeHtml(text)}</textarea>
       </div>`;
   }).join('');
   syncMeta();
+  renderPreview();
 }
 
 function readPartsFromDOM() {
@@ -70,6 +108,7 @@ document.getElementById('compose-parts').addEventListener('input', e => {
   const count = wrap.querySelector('.compose-part-count');
   count.textContent = `${n}/${MAX_CHARS}`;
   count.classList.toggle('over', n > MAX_CHARS);
+  renderPreview();
 });
 
 document.getElementById('compose-parts').addEventListener('click', e => {
@@ -212,6 +251,7 @@ function setComposeImageURL(url) {
     }
     box.hidden = false;
   }
+  renderPreview();
 }
 
 document.getElementById('btn-gen-thumb').onclick = async () => {
@@ -245,7 +285,26 @@ document.getElementById('compose-media-url').addEventListener('input', () => {
     const box = document.getElementById('compose-thumb-box');
     if (box) box.hidden = true;
   }
+  renderPreview();
 });
+
+document.querySelectorAll('input[name="mtype"]').forEach((el) => {
+  el.addEventListener('change', () => renderPreview());
+});
+
+(async function loadAccountChip() {
+  try {
+    const st = await Threads.api('/api/status');
+    const name = st.account_name || st.threads_username || '';
+    if (name) {
+      previewHandle = '@' + String(name).replace(/^@/, '');
+      previewInitials = previewHandle.replace(/^@/, '').slice(0, 2).toUpperCase();
+      const el = document.getElementById('preview-account');
+      if (el) el.textContent = previewHandle;
+      renderPreview();
+    }
+  } catch {}
+})();
 
 (function loadAIDraft() {
   try {

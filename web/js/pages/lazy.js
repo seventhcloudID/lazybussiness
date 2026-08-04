@@ -229,7 +229,7 @@ async function renderPng(text, brand, index, total) {
     });
     if (seq !== renderSeq) return;
     if (res.status === 401) {
-      location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+      location.replace('/app/login.html?next=' + encodeURIComponent(location.pathname));
       return;
     }
     if (!res.ok) throw new Error(await res.text());

@@ -41,7 +41,7 @@ function emptyState(msg, sub) {
       <div class="th-empty-icon"><i class="bi bi-collection"></i></div>
       <p class="font-semibold text-ink mb-1">${Threads.escapeHtml(msg)}</p>
       <p class="text-sm text-muted mb-5">${Threads.escapeHtml(sub || '')}</p>
-      <a href="/buat.html" class="th-btn th-btn-primary">Buat post pertama</a>
+      <a href="/app/buat.html" class="th-btn th-btn-primary">Buat post pertama</a>
     </div>
   </div>`;
 }
@@ -96,7 +96,7 @@ function renderPosts(data) {
       ${media}
       <div class="mt-3 pt-3 border-t border-line flex items-center gap-0.5">
         <button data-insights="${Threads.escapeHtml(p.id)}" class="action-btn" title="Metrik"><i class="bi bi-bar-chart"></i></button>
-        <a href="/balasan.html?media_id=${encodeURIComponent(p.id || '')}" class="action-btn" title="Balasan"><i class="bi bi-chat"></i></a>
+        <a href="/app/balasan.html?media_id=${encodeURIComponent(p.id || '')}" class="action-btn" title="Balasan"><i class="bi bi-chat"></i></a>
         ${permalink}
         <button data-copy="${Threads.escapeHtml(p.id)}" class="action-btn" title="Salin ID"><i class="bi bi-copy"></i></button>
         <button data-delete="${Threads.escapeHtml(p.id)}" class="action-btn danger ml-auto" title="Hapus"><i class="bi bi-trash3"></i></button>

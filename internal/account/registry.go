@@ -19,8 +19,7 @@ import (
 )
 
 const (
-	rootDataDir   = ".data"
-	accountsFile  = "accounts.json"
+	accountsFile   = "accounts.json"
 	accountsSubdir = "accounts"
 )
 
@@ -69,8 +68,19 @@ type Registry struct {
 	shared     Shared
 }
 
+// Open opens brand accounts under the default legacy path (.data).
+// Prefer OpenAt with an org workspace directory.
 func Open(shared Shared) (*Registry, error) {
-	root := rootDataDir
+	return OpenAt(".data", shared)
+}
+
+// OpenAt opens brand-account registry rooted at workspaceDir
+// (contains accounts.json + accounts/).
+func OpenAt(workspaceDir string, shared Shared) (*Registry, error) {
+	root := strings.TrimSpace(workspaceDir)
+	if root == "" {
+		root = ".data"
+	}
 	r := &Registry{
 		root:       root,
 		filePath:   filepath.Join(root, accountsFile),
@@ -312,6 +322,21 @@ func (r *Registry) StartSchedulers() {
 		}
 		ws.Sched.Start()
 		log.Printf("lazy scheduler: akun %s", id)
+	}
+}
+
+func (r *Registry) StopSchedulers() {
+	if r == nil {
+		return
+	}
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	for _, id := range r.order {
+		ws := r.workspaces[id]
+		if ws == nil || ws.Sched == nil {
+			continue
+		}
+		ws.Sched.Stop()
 	}
 }
 

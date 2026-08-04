@@ -2,18 +2,27 @@ package main
 
 import (
 	"fmt"
+	"log"
 	"strings"
+	"sync"
 
 	"threads-dashboard/internal/account"
 	"threads-dashboard/internal/ai"
 	"threads-dashboard/internal/buffer"
 	"threads-dashboard/internal/instagram"
 	"threads-dashboard/internal/lazy"
+	"threads-dashboard/internal/org"
 	"threads-dashboard/internal/threads"
 )
 
-// Global account registry — HTTP handlers resolve the active workspace via helpers.
-var accounts *account.Registry
+// Global org + brand-account registry.
+// Interim: one active tenant/workspace per process (admin "open tenant" / tenant login switches it).
+var (
+	orgCtx   *org.Context
+	accounts *account.Registry
+	runtimeMu sync.Mutex
+	accountShared account.Shared
+)
 
 func th() *threads.Client {
 	ws := accounts.Active()
@@ -73,4 +82,31 @@ func accountByParam(id string) (*account.Workspace, error) {
 		return ws, nil
 	}
 	return accounts.Get(id)
+}
+
+// switchRuntimeTenant reloads org pointer + accounts registry for a tenant/workspace.
+func switchRuntimeTenant(tenantID, workspaceID string) error {
+	runtimeMu.Lock()
+	defer runtimeMu.Unlock()
+	root := ".data"
+	if orgCtx != nil && orgCtx.Root != "" {
+		root = orgCtx.Root
+	}
+	ctx, err := org.SwitchActive(root, tenantID, workspaceID)
+	if err != nil {
+		return err
+	}
+	if accounts != nil {
+		accounts.StopSchedulers()
+	}
+	reg, err := account.OpenAt(ctx.WorkspaceDir, accountShared)
+	if err != nil {
+		return err
+	}
+	ai.ConfigureWorkspaceStore(ctx.WorkspaceDir)
+	orgCtx = ctx
+	accounts = reg
+	accounts.StartSchedulers()
+	log.Printf("runtime: switch → tenant=%s workspace=%s (%d akun)", ctx.Tenant.ID, ctx.Workspace.ID, len(accounts.List()))
+	return nil
 }

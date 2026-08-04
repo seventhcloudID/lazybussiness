@@ -76,7 +76,7 @@ async function sendToBuffer(mediaId, btn) {
              <i class="bi bi-tiktok"></i> Kirim ke Buffer TikTok
            </button>`
         : canBuffer(p.media_type)
-          ? `<p class="text-[11px] text-muted mt-3 mb-0">Isi Buffer key di <a href="/akun.html" class="underline">Akun → Kelola</a>.</p>`
+          ? `<p class="text-[11px] text-muted mt-3 mb-0">Isi Buffer key di <a href="/app/akun.html" class="underline">Akun → Kelola</a>.</p>`
           : `<p class="text-[11px] text-muted mt-3 mb-0">Video/Reels belum didukung Buffer foto.</p>`;
       return `<div class="post-card p-4">
         ${media}

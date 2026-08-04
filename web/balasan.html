@@ -1,26 +1,28 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Balasan — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand44" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
 <body>
 <nav id="sidebar"></nav>
 <main>
-  <header class="th-page-head !mb-3">
+  <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Konten</p>
       <h1 class="th-title">Balasan</h1>
-      <p class="th-lead">Pilih post → generate draf → review/edit → approve baru kirim.</p>
+      <p class="th-lead">Pilih post → generate draf AI → review/edit → approve, baru kirim.</p>
     </div>
-    <div class="flex gap-2 flex-wrap items-center">
+    <div class="th-toolbar flex-wrap items-center gap-2">
       <span id="inbox-summary" class="th-chip">Belum pilih post</span>
-      <button id="btn-refresh-posts" class="th-btn th-btn-ghost" type="button" title="Muat ulang"><i class="bi bi-arrow-clockwise"></i></button>
+      <button id="btn-refresh-posts" class="th-btn th-btn-ghost text-xs" type="button" title="Muat ulang">
+        <i class="bi bi-arrow-clockwise"></i> Refresh
+      </button>
     </div>
   </header>
 
@@ -28,30 +30,32 @@
 
   <div class="reply-inbox">
     <aside class="reply-inbox-posts">
-      <div class="th-panel-head">
-        <span>Posts</span>
-        <span id="posts-count" class="text-xs font-medium text-muted"></span>
+      <div class="reply-col-head">
+        <div>
+          <p class="buat-kicker m-0">Posts</p>
+          <p class="buat-hint m-0" id="posts-count">—</p>
+        </div>
       </div>
       <div class="reply-post-search">
         <input id="post-search" class="th-input" type="search" placeholder="Cari post…">
       </div>
       <div id="posts-list" class="reply-post-list">
-        <div class="th-empty py-10"><p class="text-sm text-muted">Memuat post…</p></div>
+        <div class="th-empty py-10"><p class="text-sm text-muted m-0">Memuat post…</p></div>
       </div>
     </aside>
 
     <section class="reply-inbox-thread">
-      <div class="th-panel-head">
+      <div class="reply-col-head reply-thread-head">
         <div class="min-w-0">
-          <div id="thread-title" class="font-semibold truncate">Belum dibalas</div>
-          <div id="thread-sub" class="text-xs text-muted font-medium mt-0.5">Pilih post di kiri</div>
+          <div id="thread-title" class="reply-thread-title">Belum dibalas</div>
+          <div id="thread-sub" class="buat-hint m-0 mt-0.5">Pilih post di kiri</div>
         </div>
       </div>
 
-      <div id="thread-empty" class="th-empty py-16">
-        <div class="th-empty-icon"><i class="bi bi-chat-dots"></i></div>
-        <p class="font-semibold text-ink mb-1">Pilih post</p>
-        <p class="text-sm text-muted">Reply yang belum dibalas akan muncul di sini.</p>
+      <div id="thread-empty" class="reply-thread-empty">
+        <div class="reply-empty-icon"><i class="bi bi-chat-dots"></i></div>
+        <p class="reply-empty-title">Pilih post</p>
+        <p class="buat-hint m-0">Reply yang belum dibalas akan muncul di sini, siap di-generate drafnya.</p>
       </div>
 
       <div id="thread-body" class="hidden flex flex-col min-h-0 flex-1">
@@ -60,8 +64,8 @@
         <div class="ar-panel" id="auto-reply-panel">
           <div class="ar-panel-head">
             <div>
-              <div class="ar-kicker">Instruksi</div>
-              <div class="ar-title">Arahkan cara AI membalas</div>
+              <p class="buat-kicker m-0">Instruksi AI</p>
+              <p class="ar-title">Arahkan cara membalas</p>
             </div>
           </div>
           <textarea id="ar-intent" class="th-textarea" rows="3" placeholder="Contoh: jawab singkat & ramah, akui poin mereka, ajak diskusi. Tone founder santai. Jangan jualan."></textarea>
@@ -72,25 +76,25 @@
             <button type="button" id="btn-send" class="th-btn th-btn-soft" disabled>
               <i class="bi bi-send"></i> Kirim yang di-approve
             </button>
-            <button type="button" id="btn-discard" class="th-btn th-btn-ghost" disabled title="Buang semua draf">
+            <button type="button" id="btn-discard" class="th-btn th-btn-ghost text-xs" disabled title="Buang semua draf">
               Buang draf
             </button>
-            <span id="ar-progress" class="ar-hint mono"></span>
+            <span id="ar-progress" class="ar-hint mono !mt-0"></span>
           </div>
           <p id="ar-hint" class="ar-hint">Pilih post dulu.</p>
         </div>
 
-        <div class="th-panel-head !border-t" style="border-radius:0;border-left:0;border-right:0">
+        <div class="reply-pending-head">
           <span>Reply belum dibalas</span>
-          <span id="pending-count" class="text-xs text-muted font-medium">—</span>
+          <span id="pending-count" class="th-chip">—</span>
         </div>
         <div id="pending-list" class="ar-pending-list flex-1 overflow-y-auto"></div>
       </div>
     </section>
   </div>
 </main>
-<script src="/js/api.js?v=strand44"></script>
-<script src="/js/layout.js?v=strand44"></script>
-<script src="/js/pages/balasan.js?v=strand30"></script>
+<script src="/js/api.js?v=mn70"></script>
+<script src="/js/layout.js?v=mn73"></script>
+<script src="/js/pages/balasan.js?v=strand31"></script>
 </body>
 </html>

@@ -1,115 +1,140 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Insight — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand44" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
 <body>
 <nav id="sidebar"></nav>
-<main>
+<main class="ins-page">
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Analitik</p>
       <h1 class="th-title">AI Insight</h1>
-      <p class="th-lead">Breakdown akun — baca niche, voice, pola engagement, dan DNA konten. Tanpa draf atau to-do.</p>
+      <p class="th-lead">Breakdown akun — niche, voice, pola engagement, DNA konten. Tanpa draf atau to-do.</p>
     </div>
     <div class="th-toolbar">
       <span id="ai-badge" class="th-chip">Gemini</span>
-      <button id="btn-ai-insight" class="th-btn th-btn-primary">
+      <a href="/app/insights.html" class="th-btn th-btn-ghost text-xs"><i class="bi bi-bar-chart"></i> Insight</a>
+      <button id="btn-ai-insight" class="th-btn th-btn-primary" type="button">
         <i class="bi bi-stars"></i> Analisis akun
       </button>
     </div>
   </header>
 
-  <div id="ai-quota" class="th-panel mb-5">
-    <div class="th-panel-head">
-      <span>Kuota Gemini free tier</span>
-      <span id="ai-quota-tier" class="text-xs text-muted font-medium"></span>
-    </div>
-    <div class="th-panel-body">
-      <div class="grid grid-cols-1 sm:grid-cols-3 gap-4">
-        <div>
-          <div class="flex justify-between text-sm mb-1.5">
-            <span>RPD (hari)</span>
-            <span class="text-muted"><b id="q-rpd-used">—</b> / <span id="q-rpd-limit">—</span></span>
-          </div>
-          <div class="th-progress"><span id="q-rpd-bar"></span></div>
-        </div>
-        <div>
-          <div class="flex justify-between text-sm mb-1.5">
-            <span>RPM (menit)</span>
-            <span class="text-muted"><b id="q-rpm-used">—</b> / <span id="q-rpm-limit">—</span></span>
-          </div>
-          <div class="th-progress"><span id="q-rpm-bar"></span></div>
-        </div>
-        <div>
-          <div class="flex justify-between text-sm mb-1.5">
-            <span>TPM (token/menit)</span>
-            <span class="text-muted"><b id="q-tpm-used">—</b> / <span id="q-tpm-limit">—</span></span>
-          </div>
-          <div class="th-progress"><span id="q-tpm-bar"></span></div>
-        </div>
-      </div>
-      <p id="ai-quota-note" class="text-xs text-muted mt-3 mb-0"></p>
-    </div>
-  </div>
-
   <div id="ai-alert" class="th-alert hidden"></div>
 
-  <div id="ai-empty" class="th-panel mb-5">
-    <div class="th-empty">
-      <div class="th-empty-icon"><i class="bi bi-person-lines-fill"></i></div>
+  <div id="ai-empty" class="ins-section">
+    <div class="ins-posts-empty" style="padding:3rem 1.25rem">
       <p class="font-semibold text-ink mb-1">Belum ada breakdown</p>
-      <p class="text-sm text-muted mb-5 max-w-md mx-auto">AI baca profil + ~12 post terbaru, lalu bedah akun: voice, audience, hot/cold, dan pola — tanpa saran eksekusi.</p>
-      <button id="btn-ai-empty" class="th-btn th-btn-primary"><i class="bi bi-stars"></i> Analisis sekarang</button>
+      <p class="text-sm text-muted mb-4 max-w-md mx-auto">AI baca profil + ~12 post terbaru, lalu bedah akun: voice, audience, hot/cold, dan pola.</p>
+      <button id="btn-ai-empty" class="th-btn th-btn-primary" type="button">
+        <i class="bi bi-stars"></i> Analisis sekarang
+      </button>
     </div>
   </div>
 
-  <div id="ai-report" class="hidden ai-report">
-    <section class="ai-hero">
-      <div class="ai-hero-kicker">Baca akun</div>
-      <h2 id="ai-headline" class="ai-hero-title"></h2>
-      <p id="ai-summary" class="ai-hero-lead"></p>
-      <p id="ai-meta" class="ai-hero-meta"></p>
-    </section>
-
-    <section class="ai-score-grid" id="ai-account-read"></section>
-    <section class="ai-score-grid" id="ai-scorecard"></section>
-
-    <section>
-      <div class="ai-section-label"><i class="bi bi-activity"></i> Profil engagement</div>
-      <div id="ai-engagement"></div>
-    </section>
-
-    <section class="ai-split">
-      <div>
-        <div class="ai-section-label hot"><i class="bi bi-fire"></i> Konten yang rame</div>
-        <div class="ai-stack" id="ai-hot"></div>
-      </div>
-      <div>
-        <div class="ai-section-label cold"><i class="bi bi-snow"></i> Konten yang sepi</div>
-        <div class="ai-stack" id="ai-cold"></div>
+  <div id="ai-report" class="hidden">
+    <section class="ins-hero ins-ai-hero" aria-label="Ringkasan AI">
+      <p class="ins-kicker">Baca akun</p>
+      <p class="ins-ai-lead" id="ai-headline">…</p>
+      <p class="ins-ai-body" id="ai-summary">…</p>
+      <div class="ins-meta-row">
+        <span id="ai-meta">Sumber: …</span>
+        <span id="ai-quota-tier">Kuota: …</span>
       </div>
     </section>
 
-    <section>
-      <div class="ai-section-label"><i class="bi bi-fingerprint"></i> DNA konten</div>
-      <div id="ai-dna"></div>
+    <section class="ins-section" aria-label="Scorecard">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Scorecard</h2>
+        <p class="ins-section-lead">Tiga sinyal utama dari breakdown.</p>
+      </div>
+      <dl class="ins-ai-dl" id="ai-scorecard">
+        <div><dt>Kekuatan</dt><dd id="hero-strength">…</dd></div>
+        <div><dt>Kelemahan</dt><dd id="hero-weakness">…</dd></div>
+        <div><dt>Signal</dt><dd id="hero-signal">…</dd></div>
+      </dl>
     </section>
 
-    <section>
-      <div class="ai-section-label"><i class="bi bi-diagram-3"></i> Pola yang terlihat</div>
-      <div id="ai-patterns"></div>
+    <section class="ins-section" aria-label="Account read">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Account read</h2>
+        <p class="ins-section-lead">Niche, voice, audience, dan positioning.</p>
+      </div>
+      <dl class="ins-ai-dl" id="ai-account-read"></dl>
+    </section>
+
+    <section class="ins-section" aria-label="Profil engagement">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Profil engagement</h2>
+        <p class="ins-section-lead">Pendorong views/replies dan bias format.</p>
+      </div>
+      <dl class="ins-ai-dl" id="ai-engagement"></dl>
+    </section>
+
+    <section class="ins-section" aria-label="Konten rame">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Konten yang rame</h2>
+        <p class="ins-section-lead">Metrik + alasan hook — tanpa kartu gembung.</p>
+      </div>
+      <div class="ins-ai-list" id="ai-hot"></div>
+    </section>
+
+    <section class="ins-section" aria-label="Konten sepi">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Konten yang sepi</h2>
+        <p class="ins-section-lead">Yang jangkauannya lemah dan kenapa.</p>
+      </div>
+      <div class="ins-ai-list" id="ai-cold"></div>
+    </section>
+
+    <section class="ins-section" aria-label="DNA konten">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">DNA konten</h2>
+        <p class="ins-section-lead">Tema, signature, blind spots.</p>
+      </div>
+      <dl class="ins-ai-dl" id="ai-dna"></dl>
+    </section>
+
+    <section class="ins-section" aria-label="Pola">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Pola yang terlihat</h2>
+        <p class="ins-section-lead">Observasi lintas post.</p>
+      </div>
+      <ol class="ins-ai-ol" id="ai-patterns"></ol>
+    </section>
+
+    <section class="ins-section" aria-label="Kuota">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Kuota AI</h2>
+        <p class="ins-section-lead">Estimasi pemakaian Gemini free tier (lokal).</p>
+      </div>
+      <div class="ins-quota" id="ai-quota">
+        <div class="ins-quota-row">
+          <div class="ins-quota-label"><span>RPD (hari)</span><span class="mono"><b id="q-rpd-used">…</b> / <span id="q-rpd-limit">…</span></span></div>
+          <div class="th-progress"><span id="q-rpd-bar"></span></div>
+        </div>
+        <div class="ins-quota-row">
+          <div class="ins-quota-label"><span>RPM (menit)</span><span class="mono"><b id="q-rpm-used">…</b> / <span id="q-rpm-limit">…</span></span></div>
+          <div class="th-progress"><span id="q-rpm-bar"></span></div>
+        </div>
+        <div class="ins-quota-row">
+          <div class="ins-quota-label"><span>TPM (token/menit)</span><span class="mono"><b id="q-tpm-used">…</b> / <span id="q-tpm-limit">…</span></span></div>
+          <div class="th-progress"><span id="q-tpm-bar"></span></div>
+        </div>
+        <p id="ai-quota-note" class="ins-meta m-0"></p>
+      </div>
     </section>
   </div>
 </main>
-<script src="/js/api.js?v=strand44"></script>
-<script src="/js/layout.js?v=strand44"></script>
-<script src="/js/pages/ai-insight.js?v=saas9"></script>
+<script src="/js/api.js?v=mn70"></script>
+<script src="/js/layout.js?v=mn73"></script>
+<script src="/js/pages/ai-insight.js?v=strand13"></script>
 </body>
 </html>

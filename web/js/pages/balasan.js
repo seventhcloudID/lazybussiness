@@ -134,7 +134,9 @@ function renderPosts() {
     if (!q) return true;
     return String(p.text || '').toLowerCase().includes(q) || String(p.id || '').includes(q);
   });
-  document.getElementById('posts-count').textContent = items.length ? items.length + '' : '';
+  document.getElementById('posts-count').textContent = items.length
+    ? `${items.length} post`
+    : 'Tidak ada post';
 
   if (!items.length) {
     list.innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">Tidak ada post.</p></div>`;

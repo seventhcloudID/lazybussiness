@@ -5,12 +5,12 @@ let keysLoaded = false;
 
 const TAB_COPY = {
   workspace: {
-    title: 'Workspace',
-    lead: 'Kelola akun Threads/IG dan ganti workspace aktif.',
+    title: 'Akun brand',
+    lead: 'Kelola akun Threads/IG dalam workspace ini, lalu pilih akun aktif.',
   },
   keys: {
-    title: 'API keys',
-    lead: 'Gemini & OpenAI global. Buffer key per workspace (di Kelola akun).',
+    title: 'API keys workspace',
+    lead: 'Gemini & OpenAI (BYOK) untuk seluruh akun brand di workspace ini.',
   },
 };
 
@@ -105,7 +105,7 @@ function renderBuffer(root, accountId, st) {
   ` : `<p class="text-sm text-muted mb-3 m-0">${Threads.escapeHtml(st?.note || 'Belum ada Buffer API key untuk akun ini.')}</p>`;
 
   root.innerHTML = `
-    <p class="text-xs text-muted mb-2 m-0">Hanya untuk workspace ini — tidak dipakai akun lain.</p>
+    <p class="text-xs text-muted mb-2 m-0">Hanya untuk akun brand ini — tidak dipakai akun lain.</p>
     ${statusBlock}
     <label class="th-label">Buffer API key</label>
     <input class="th-input" type="password" data-buffer-key placeholder="Dari publish.buffer.com/settings/api" autocomplete="off">
@@ -336,19 +336,29 @@ function card(a) {
           </div>
         </div>
         <div>
-          <label class="th-label">Threads access token</label>
-          <input class="th-input" type="password" data-threads-token placeholder="Long-lived token Threads" autocomplete="off">
-          <div class="flex gap-2 mt-2 flex-wrap">
-            <button type="button" class="th-btn th-btn-primary text-xs" data-save-threads>Simpan Threads</button>
+          <label class="th-label">Threads</label>
+          <div class="flex gap-2 mb-2 flex-wrap">
+            <button type="button" class="th-btn th-btn-primary text-xs" data-oauth-threads>
+              <i class="bi bi-at"></i> Login dengan Threads
+            </button>
             <button type="button" class="th-btn th-btn-ghost text-xs" data-clear-threads>Hapus</button>
+          </div>
+          <input class="th-input" type="password" data-threads-token placeholder="Atau tempel long-lived token" autocomplete="off">
+          <div class="flex gap-2 mt-2 flex-wrap">
+            <button type="button" class="th-btn th-btn-soft text-xs" data-save-threads>Simpan token manual</button>
           </div>
         </div>
         <div>
-          <label class="th-label">Instagram access token</label>
-          <input class="th-input" type="password" data-ig-token placeholder="Long-lived token Instagram" autocomplete="off">
-          <div class="flex gap-2 mt-2 flex-wrap">
-            <button type="button" class="th-btn th-btn-primary text-xs" data-save-ig>Simpan IG</button>
+          <label class="th-label">Instagram</label>
+          <div class="flex gap-2 mb-2 flex-wrap">
+            <button type="button" class="th-btn th-btn-primary text-xs" data-oauth-ig>
+              <i class="bi bi-instagram"></i> Login dengan Instagram
+            </button>
             <button type="button" class="th-btn th-btn-ghost text-xs" data-clear-ig>Hapus</button>
+          </div>
+          <input class="th-input" type="password" data-ig-token placeholder="Atau tempel long-lived token" autocomplete="off">
+          <div class="flex gap-2 mt-2 flex-wrap">
+            <button type="button" class="th-btn th-btn-soft text-xs" data-save-ig>Simpan token manual</button>
           </div>
         </div>
         <div class="md:col-span-2 border-t border-line pt-4" data-buffer-body>
@@ -363,9 +373,43 @@ function card(a) {
   </section>`;
 }
 
+async function loadOrgBreadcrumb() {
+  const el = document.getElementById('org-breadcrumb');
+  if (!el) return;
+  try {
+    const org = await Threads.api('/api/org');
+    const t = org.tenant?.name || org.tenant?.id || 'Tenant';
+    const w = org.workspace?.name || org.workspace?.id || 'Workspace';
+    el.textContent = `${t} · workspace ${w} · ${org.account_count || 0} akun brand`;
+  } catch {
+    el.textContent = 'Tenant · Workspace';
+  }
+}
+
+function consumeOAuthFlash() {
+  const q = new URLSearchParams(location.search);
+  const st = q.get('oauth');
+  if (!st) return;
+  const provider = q.get('provider') || 'oauth';
+  const msg = q.get('msg') || '';
+  if (st === 'ok') {
+    showAlert(`${provider} terhubung via login Meta.`, true);
+    Threads.toast(`${provider} terhubung`, true);
+  } else {
+    showAlert(msg || `${provider} gagal dihubungkan.`, false);
+    Threads.toast(msg || 'OAuth gagal', false);
+  }
+  q.delete('oauth');
+  q.delete('provider');
+  q.delete('msg');
+  const next = location.pathname + (q.toString() ? '?' + q.toString() : '');
+  history.replaceState({}, '', next);
+}
+
 async function load() {
   const root = document.getElementById('akun-list');
   root.innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">Memuat…</p></div>`;
+  loadOrgBreadcrumb();
   try {
     const data = await Threads.api('/api/accounts');
     const list = data.accounts || [];
@@ -423,7 +467,7 @@ document.getElementById('akun-list').addEventListener('click', async (e) => {
   if (e.target.closest('[data-switch]')) {
     try {
       await Threads.api('/api/accounts/switch', { method: 'POST', body: JSON.stringify({ id }) });
-      Threads.toast('Workspace diganti', true);
+      Threads.toast('Akun aktif diganti', true);
       location.reload();
     } catch (err) {
       Threads.toast(err.message, false);
@@ -442,6 +486,28 @@ document.getElementById('akun-list').addEventListener('click', async (e) => {
       Threads.toast('Nama disimpan', true);
       expandedId = id;
       await load();
+    } catch (err) {
+      Threads.toast(err.message, false);
+    }
+    return;
+  }
+
+  if (e.target.closest('[data-oauth-threads]')) {
+    try {
+      const data = await Threads.api('/api/oauth/threads/start?account_id=' + encodeURIComponent(id));
+      if (!data?.url) throw new Error('URL OAuth kosong');
+      location.href = data.url;
+    } catch (err) {
+      Threads.toast(err.message, false);
+    }
+    return;
+  }
+
+  if (e.target.closest('[data-oauth-ig]')) {
+    try {
+      const data = await Threads.api('/api/oauth/instagram/start?account_id=' + encodeURIComponent(id));
+      if (!data?.url) throw new Error('URL OAuth kosong');
+      location.href = data.url;
     } catch (err) {
       Threads.toast(err.message, false);
     }
@@ -533,4 +599,5 @@ document.getElementById('akun-list').addEventListener('click', async (e) => {
 
 const initialTab = new URLSearchParams(location.search).get('tab') === 'keys' ? 'keys' : 'workspace';
 setTab(initialTab);
+consumeOAuthFlash();
 load();

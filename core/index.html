@@ -1,0 +1,59 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Core — Operator</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=strand67" id="app-css">
+<link rel="stylesheet" href="/core/css/core.css?v=strand67">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body class="core-body">
+<div class="core-shell">
+  <aside class="core-sidebar" id="core-sidebar"></aside>
+
+  <div class="core-content">
+    <div class="core-mobilebar">
+      <button type="button" class="core-burger" id="core-burger" aria-label="Menu">
+        <i class="bi bi-list"></i>
+      </button>
+      <div class="core-mark">Core</div>
+      <span></span>
+    </div>
+
+    <main class="core-main">
+      <header class="core-page-head">
+        <div>
+          <h1 class="core-page-title">Tenants &amp; Users</h1>
+          <p class="core-page-lead">Provisioning &amp; settlement — tanpa signup publik.</p>
+        </div>
+        <button type="button" id="btn-refresh" class="th-btn th-btn-ghost"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
+      </header>
+
+      <div id="admin-alert" class="th-alert hidden mb-3"></div>
+
+      <section class="core-section">
+        <div class="core-toolbar">
+          <h2 class="core-section-title">Tenants</h2>
+          <button type="button" id="btn-add-tenant" class="th-btn th-btn-primary"><i class="bi bi-plus-lg"></i> Tambah</button>
+        </div>
+        <div class="core-table-wrap" id="tenant-list"></div>
+      </section>
+
+      <section class="core-section">
+        <div class="core-toolbar">
+          <h2 class="core-section-title">Users</h2>
+          <button type="button" id="btn-add-user" class="th-btn th-btn-primary"><i class="bi bi-plus-lg"></i> Tambah</button>
+        </div>
+        <div class="core-table-wrap" id="user-list"></div>
+      </section>
+    </main>
+  </div>
+</div>
+<script src="/js/api.js?v=strand68"></script>
+<script src="/core/js/shell.js?v=strand68"></script>
+<script src="/core/js/admin.js?v=strand68"></script>
+</body>
+</html>

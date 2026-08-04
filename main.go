@@ -20,6 +20,8 @@ import (
 	"threads-dashboard/internal/buffer"
 	"threads-dashboard/internal/instagram"
 	"threads-dashboard/internal/lazy"
+	"threads-dashboard/internal/oauth"
+	"threads-dashboard/internal/org"
 	"threads-dashboard/internal/threads"
 )
 
@@ -30,32 +32,41 @@ func main() {
 	if addr != "" && !strings.HasPrefix(addr, ":") && !strings.Contains(addr, ":") {
 		addr = ":" + addr
 	}
+
+	var err error
+	orgCtx, err = org.Bootstrap(".data")
+	if err != nil {
+		log.Fatal("org: ", err)
+	}
+	ai.ConfigureWorkspaceStore(orgCtx.WorkspaceDir)
+	log.Printf("tenant=%s workspace=%s", orgCtx.Tenant.ID, orgCtx.Workspace.ID)
+
 	aiClient := ai.NewFromEnv()
 	thumbClient := ai.NewThumbnailFromEnv()
 	if aiClient.Enabled() {
 		log.Printf("AI insight siap (%s / %s, %d key)", aiClient.Provider(), aiClient.Model(), aiClient.KeyCount())
 	} else {
-		log.Println("AI insight nonaktif — set AI_API_KEY di .env")
+		log.Println("AI insight nonaktif — set AI_API_KEY di .env atau API keys workspace")
 	}
 	if thumbClient.Enabled() {
 		log.Printf("Thumbnail ChatGPT siap (%s)", thumbClient.Model())
 	} else {
-		log.Println("Thumbnail ChatGPT nonaktif — set key di Kelola akun atau OPENAI_API_KEY di .env")
+		log.Println("Thumbnail ChatGPT nonaktif — set key di API keys workspace atau OPENAI_API_KEY di .env")
 	}
 
 	publicBase := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/")
-
-	var err error
-	accounts, err = account.Open(account.Shared{
+	accountShared = account.Shared{
 		AI: aiClient, Thumb: thumbClient, Public: publicBase,
-	})
+	}
+
+	accounts, err = account.OpenAt(orgCtx.WorkspaceDir, accountShared)
 	if err != nil {
 		log.Fatal("accounts: ", err)
 	}
 	if b := buf(); b != nil && b.Enabled() {
 		log.Printf("Buffer akun aktif (%s) siap — TikTok Notify Me + X shareNow", accounts.ActiveID())
 	} else {
-		log.Println("Buffer akun aktif belum ada key — isi di Workspace → Kelola")
+		log.Println("Buffer akun aktif belum ada key — isi di Akun → Kelola")
 	}
 	if t := os.Getenv("THREADS_ACCESS_TOKEN"); t != "" {
 		th().SetToken(t)
@@ -95,36 +106,124 @@ func main() {
 			}
 		}
 	}
-	log.Printf("workspace aktif: %s (%d akun)", accounts.ActiveID(), len(accounts.List()))
+	log.Printf("akun aktif: %s (%d akun dalam workspace)", accounts.ActiveID(), len(accounts.List()))
+
+	users, err := auth.OpenUsers(".data")
+	if err != nil {
+		log.Fatal("users: ", err)
+	}
+	if seeded, serr := users.SeedAdminFromEnv(); serr != nil {
+		log.Fatal("users seed: ", serr)
+	} else if seeded {
+		log.Println("users: admin di-seed dari AUTH_USER/AUTH_PASSWORD → .data/users.json")
+	}
 
 	gate := auth.NewFromEnv()
+	gate.SetUsers(users)
 	if gate.Enabled() {
-		log.Println("login aktif (AUTH_USER/AUTH_PASSWORD)")
+		log.Printf("login aktif (%d user)", users.Count())
 	} else {
-		log.Println("login NONAKTIF — set AUTH_USER + AUTH_PASSWORD di .env (wajib di VPS)")
+		log.Println("login NONAKTIF — set AUTH_USER + AUTH_PASSWORD di .env (seed admin) atau isi .data/users.json")
+	}
+
+	oa := oauth.FromEnv()
+	if oa.ThreadsReady() {
+		log.Printf("oauth threads → %s", oa.ThreadsRedirectURI())
+	} else {
+		log.Println("oauth threads off — set THREADS_APP_ID + THREADS_APP_SECRET + PUBLIC_BASE_URL")
+	}
+	if oa.InstagramReady() {
+		log.Printf("oauth instagram → %s", oa.InstagramRedirectURI())
+	} else {
+		log.Println("oauth instagram off — set INSTAGRAM_APP_ID + INSTAGRAM_APP_SECRET + PUBLIC_BASE_URL")
 	}
 
 	mux := http.NewServeMux()
-	mux.HandleFunc("GET /{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/ringkasan.html", http.StatusFound)
+	serveLanding := func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join("web", "index.html"))
+	}
+	mux.HandleFunc("GET /{$}", serveLanding)
+	mux.HandleFunc("GET /index.html", serveLanding)
+	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
 	})
-	mux.Handle("GET /", http.FileServer(http.Dir("web")))
+	mux.HandleFunc("GET /app/{$}", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
+	})
+	mux.HandleFunc("GET /core", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/core/", http.StatusFound)
+	})
+	mux.HandleFunc("GET /admin.html", func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, "/core/", http.StatusFound)
+	})
+	mux.HandleFunc("GET /login.html", func(w http.ResponseWriter, r *http.Request) {
+		q := r.URL.RawQuery
+		target := "/app/login.html"
+		if q != "" {
+			target += "?" + q
+		}
+		http.Redirect(w, r, target, http.StatusFound)
+	})
+	// Customer dashboard
+	mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServer(http.Dir("web"))))
+	// Operator console (separate tree from customer dashboard)
+	mux.Handle("GET /core/", http.StripPrefix("/core/", http.FileServer(http.Dir("core"))))
+	// Shared assets (absolute /css /js used by both portals)
+	mux.Handle("GET /css/", http.StripPrefix("/css/", http.FileServer(http.Dir("web/css"))))
+	mux.Handle("GET /js/", http.StripPrefix("/js/", http.FileServer(http.Dir("web/js"))))
+	// Legacy bookmarks: /ringkasan.html → /app/ringkasan.html
+	mux.HandleFunc("GET /{page}", func(w http.ResponseWriter, r *http.Request) {
+		page := r.PathValue("page")
+		if !strings.HasSuffix(page, ".html") || strings.Contains(page, "/") {
+			http.NotFound(w, r)
+			return
+		}
+		http.Redirect(w, r, "/app/"+page, http.StatusFound)
+	})
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":           true,
 			"connected":    th().Connected(),
 			"ig_connected": igc().Connected(),
+			"tenant_id":    orgCtx.Tenant.ID,
+			"workspace_id": orgCtx.Workspace.ID,
 			"account_id":   accounts.ActiveID(),
 			"ai":           aiClient.Enabled(),
 			"auth":         gate.Enabled(),
 		})
 	})
+	mux.HandleFunc("GET /api/org", func(w http.ResponseWriter, r *http.Request) {
+		list := accounts.List()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"tenant": map[string]any{
+				"id":   orgCtx.Tenant.ID,
+				"name": orgCtx.Tenant.Name,
+			},
+			"workspace": map[string]any{
+				"id":   orgCtx.Workspace.ID,
+				"name": orgCtx.Workspace.Name,
+			},
+			"active_account_id": accounts.ActiveID(),
+			"account_count":     len(list),
+			"accounts":          list,
+		})
+	})
 
 	mux.HandleFunc("GET /api/auth/me", func(w http.ResponseWriter, r *http.Request) {
-		writeJSON(w, http.StatusOK, map[string]any{
-			"enabled":       gate.Enabled(),
-			"authenticated": !gate.Enabled() || gate.Valid(r),
-		})
+		sess := gate.SessionFromRequest(r)
+		authed := sess != nil && (!gate.Enabled() || gate.Valid(r))
+		out := map[string]any{
+			"enabled":           gate.Enabled(),
+			"authenticated":     authed,
+			"active_tenant_id":  orgCtx.Tenant.ID,
+			"active_tenant_name": orgCtx.Tenant.Name,
+		}
+		if sess != nil && authed {
+			out["username"] = sess.Username
+			out["role"] = sess.Role
+			out["tenant_id"] = sess.TenantID
+		}
+		writeJSON(w, http.StatusOK, out)
 	})
 	mux.HandleFunc("POST /api/auth/login", func(w http.ResponseWriter, r *http.Request) {
 		if !gate.Enabled() {
@@ -139,27 +238,327 @@ func main() {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
 			return
 		}
-		if !gate.Check(body.Username, body.Password) {
+		u, err := gate.Authenticate(body.Username, body.Password)
+		if err != nil || u == nil {
 			writeErr(w, http.StatusUnauthorized, "username/password salah")
 			return
 		}
-		gate.IssueCookie(w, body.Username)
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		if u.Role == auth.RoleTenant && u.TenantID != "" {
+			if t, terr := org.GetTenant(".data", u.TenantID); terr == nil {
+				if t.Billing.Status == "suspended" {
+					writeErr(w, http.StatusForbidden, "tenant ditangguhkan — hubungi admin")
+					return
+				}
+			}
+			if err := switchRuntimeTenant(u.TenantID, ""); err != nil {
+				writeErr(w, http.StatusBadGateway, "gagal buka tenant: "+err.Error())
+				return
+			}
+		}
+		gate.IssueSession(w, u)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":        true,
+			"username":  u.Username,
+			"role":      u.Role,
+			"tenant_id": u.TenantID,
+		})
 	})
 	mux.HandleFunc("POST /api/auth/logout", func(w http.ResponseWriter, r *http.Request) {
 		gate.ClearCookie(w)
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 
+	requireAdmin := func(w http.ResponseWriter, r *http.Request) *auth.Session {
+		sess := gate.SessionFromRequest(r)
+		if sess == nil || !sess.IsAdmin() {
+			writeErr(w, http.StatusForbidden, "admin only")
+			return nil
+		}
+		return sess
+	}
+
+	mux.HandleFunc("GET /api/admin/tenants", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		list, err := org.ListTenants(".data")
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		items := make([]map[string]any, 0, len(list))
+		for _, t := range list {
+			wsMeta, _ := org.ListWorkspaces(".data", t.ID)
+			workspaces := make([]map[string]any, 0, len(wsMeta))
+			var accountsN, threadsN, igN, bufN, geminiN, openaiN int
+			for _, ws := range wsMeta {
+				dir := filepath.Join(".data", "tenants", t.ID, "workspaces", ws.ID)
+				peek := account.PeekWorkspaceDir(dir, ws.ID, ws.Name)
+				workspaces = append(workspaces, map[string]any{
+					"id":             peek.ID,
+					"name":           peek.Name,
+					"account_count":  peek.AccountCount,
+					"threads_n":      peek.ThreadsN,
+					"instagram_n":    peek.InstagramN,
+					"buffer_n":       peek.BufferN,
+					"gemini_keys":    peek.GeminiKeys,
+					"openai_keys":    peek.OpenAIKeys,
+					"accounts":       peek.Accounts,
+				})
+				accountsN += peek.AccountCount
+				threadsN += peek.ThreadsN
+				igN += peek.InstagramN
+				bufN += peek.BufferN
+				geminiN += peek.GeminiKeys
+				openaiN += peek.OpenAIKeys
+			}
+			items = append(items, map[string]any{
+				"id":         t.ID,
+				"name":       t.Name,
+				"created_at": t.CreatedAt,
+				"billing":    t.Billing,
+				"workspaces": workspaces,
+				"active":     t.ID == orgCtx.Tenant.ID,
+				"connect": map[string]any{
+					"accounts":  accountsN,
+					"threads":   threadsN,
+					"instagram": igN,
+					"buffer":    bufN,
+					"gemini":    geminiN,
+					"openai":    openaiN,
+				},
+			})
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"tenants":             items,
+			"active_tenant_id":    orgCtx.Tenant.ID,
+			"active_workspace_id": orgCtx.Workspace.ID,
+		})
+	})
+	mux.HandleFunc("POST /api/admin/tenants", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		var body struct {
+			ID       string            `json:"id"`
+			Name     string            `json:"name"`
+			Billing  org.TenantBilling `json:"billing"`
+			Username string            `json:"username"`
+			Password string            `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		body.Username = strings.TrimSpace(body.Username)
+		body.Password = strings.TrimSpace(body.Password)
+		if body.Username == "" || body.Password == "" {
+			writeErr(w, http.StatusBadRequest, "username + password login wajib (supaya customer bisa masuk /app)")
+			return
+		}
+		t, err := org.CreateTenant(".data", body.ID, body.Name, body.Billing)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		u, err := users.Create(body.Username, body.Password, auth.RoleTenant, t.ID)
+		if err != nil {
+			_ = org.DeleteTenant(".data", t.ID)
+			writeErr(w, http.StatusBadRequest, "tenant dibatalkan: "+err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tenant": t, "user": u})
+	})
+	mux.HandleFunc("PATCH /api/admin/tenants/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		id := r.PathValue("id")
+		var body struct {
+			Name    *string            `json:"name"`
+			Billing *org.TenantBilling `json:"billing"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		t, err := org.UpdateTenant(".data", id, func(m *org.TenantMeta) error {
+			if body.Name != nil {
+				m.Name = *body.Name
+			}
+			if body.Billing != nil {
+				m.Billing = *body.Billing
+			}
+			return nil
+		})
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "tenant": t})
+	})
+	mux.HandleFunc("POST /api/admin/tenants/{id}/open", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		id := r.PathValue("id")
+		var body struct {
+			WorkspaceID string `json:"workspace_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		if err := switchRuntimeTenant(id, body.WorkspaceID); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":           true,
+			"tenant_id":    orgCtx.Tenant.ID,
+			"tenant_name":  orgCtx.Tenant.Name,
+			"workspace_id": orgCtx.Workspace.ID,
+			"accounts":     len(accounts.List()),
+		})
+	})
+
+	mux.HandleFunc("GET /api/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"users": users.List()})
+	})
+	mux.HandleFunc("POST /api/admin/users", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		var body struct {
+			Username string `json:"username"`
+			Password string `json:"password"`
+			Role     string `json:"role"`
+			TenantID string `json:"tenant_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		wasEmpty := users.Count() == 0
+		role := strings.TrimSpace(body.Role)
+		if wasEmpty && role != auth.RoleAdmin {
+			writeErr(w, http.StatusBadRequest, "user pertama harus role admin (atau seed lewat AUTH_USER/AUTH_PASSWORD)")
+			return
+		}
+		u, err := users.Create(body.Username, body.Password, body.Role, body.TenantID)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		// Creating the first user turns auth on — keep this browser session logged in.
+		if wasEmpty && u.Role == auth.RoleAdmin {
+			gate.IssueSession(w, u)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": u})
+	})
+	mux.HandleFunc("PATCH /api/admin/users/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		id := r.PathValue("id")
+		var body struct {
+			Active   *bool         `json:"active"`
+			Role     *string       `json:"role"`
+			TenantID *string       `json:"tenant_id"`
+			Billing  *auth.Billing `json:"billing"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		u, err := users.Update(id, func(u *auth.User) error {
+			if body.Active != nil {
+				u.Active = *body.Active
+			}
+			if body.Role != nil {
+				role := strings.TrimSpace(*body.Role)
+				if role != auth.RoleAdmin && role != auth.RoleTenant {
+					return fmt.Errorf("role tidak valid")
+				}
+				u.Role = role
+			}
+			if body.TenantID != nil {
+				u.TenantID = strings.TrimSpace(*body.TenantID)
+			}
+			if body.Billing != nil {
+				u.Billing = *body.Billing
+			}
+			if u.Role == auth.RoleTenant && u.TenantID == "" {
+				return fmt.Errorf("tenant_id wajib untuk role tenant")
+			}
+			return nil
+		})
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "user": u})
+	})
+	mux.HandleFunc("POST /api/admin/users/{id}/password", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		id := r.PathValue("id")
+		var body struct {
+			Password string `json:"password"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		if err := users.SetPassword(id, body.Password); err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	})
+
+	mux.HandleFunc("GET /api/admin/pricing", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		p, err := org.LoadPricing(".data")
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"pricing": p})
+	})
+	mux.HandleFunc("PUT /api/admin/pricing", func(w http.ResponseWriter, r *http.Request) {
+		if requireAdmin(w, r) == nil {
+			return
+		}
+		var body org.Pricing
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		p, err := org.SavePricing(".data", body)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "pricing": p})
+	})
+
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
 		ws := accounts.Active()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"connected":    th().Connected(),
-			"user_id":      th().UserID(),
-			"ig_connected": igc().Connected(),
-			"ig_user_id":   igc().UserID(),
-			"account_id":   accounts.ActiveID(),
-			"account_name": ws.Meta.Name,
+			"connected":      th().Connected(),
+			"user_id":        th().UserID(),
+			"ig_connected":   igc().Connected(),
+			"ig_user_id":     igc().UserID(),
+			"tenant_id":      orgCtx.Tenant.ID,
+			"tenant_name":    orgCtx.Tenant.Name,
+			"workspace_id":   orgCtx.Workspace.ID,
+			"workspace_name": orgCtx.Workspace.Name,
+			"account_id":     accounts.ActiveID(),
+			"account_name":   ws.Meta.Name,
 		})
 	})
 
@@ -343,6 +742,50 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 
+	mux.HandleFunc("GET /api/oauth/status", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, oa.Status())
+	})
+	mux.HandleFunc("GET /api/oauth/threads/start", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimSpace(r.URL.Query().Get("account_id"))
+		if id == "" {
+			id = "active"
+		}
+		ws, err := accountByParam(id)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		u, err := oa.ThreadsAuthorizeURL(ws.Meta.ID)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"url": u, "redirect_uri": oa.ThreadsRedirectURI()})
+	})
+	mux.HandleFunc("GET /api/oauth/instagram/start", func(w http.ResponseWriter, r *http.Request) {
+		id := strings.TrimSpace(r.URL.Query().Get("account_id"))
+		if id == "" {
+			id = "active"
+		}
+		ws, err := accountByParam(id)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		u, err := oa.InstagramAuthorizeURL(ws.Meta.ID)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"url": u, "redirect_uri": oa.InstagramRedirectURI()})
+	})
+	mux.HandleFunc("GET /auth/threads/callback", func(w http.ResponseWriter, r *http.Request) {
+		handleOAuthCallback(w, r, oa, "threads")
+	})
+	mux.HandleFunc("GET /auth/instagram/callback", func(w http.ResponseWriter, r *http.Request) {
+		handleOAuthCallback(w, r, oa, "instagram")
+	})
+
 	mux.HandleFunc("POST /api/token", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Token string `json:"token"`
@@ -399,8 +842,14 @@ func main() {
 
 	mux.HandleFunc("GET /api/insights", func(w http.ResponseWriter, r *http.Request) {
 		aggregate := r.URL.Query().Get("aggregate") == "1" || r.URL.Query().Get("aggregate") == "true"
+		postLimit := -1
+		if v := strings.TrimSpace(r.URL.Query().Get("posts")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil {
+				postLimit = n
+			}
+		}
 		proxy(w, func() (json.RawMessage, error) {
-			return th().GetInsightsOpts(r.URL.Query().Get("since"), r.URL.Query().Get("until"), aggregate)
+			return th().GetInsightsOpts(r.URL.Query().Get("since"), r.URL.Query().Get("until"), aggregate, postLimit)
 		})
 	})
 
@@ -1421,7 +1870,7 @@ func main() {
 	})
 	mux.HandleFunc("GET /api/lazy/track", func(w http.ResponseWriter, r *http.Request) {
 		withMetrics := r.URL.Query().Get("metrics") != "0"
-		writeJSON(w, http.StatusOK, lazy.BuildTrackReport(lz(), th(), withMetrics))
+		writeJSON(w, http.StatusOK, lazy.BuildTrackReport(lz(), th(), igc(), withMetrics))
 	})
 	mux.HandleFunc("GET /api/lazy/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -1741,7 +2190,7 @@ func main() {
 	} else {
 		log.Println("PUBLIC_BASE_URL kosong — auto IG carousel akan di-skip")
 	}
-	if err := http.ListenAndServe(addr, withCORS(gate.Middleware(mux))); err != nil {
+	if err := http.ListenAndServe(addr, withCORS(gate.Middleware(gate.RequireAdminHTML(mux)))); err != nil {
 		log.Fatal(err)
 	}
 }
@@ -1773,6 +2222,92 @@ func writeAPIErr(w http.ResponseWriter, err error) {
 		return
 	}
 	writeErr(w, http.StatusBadGateway, err.Error())
+}
+
+func oauthRedirect(w http.ResponseWriter, r *http.Request, provider, status, msg string) {
+	q := url.Values{"oauth": {status}, "provider": {provider}}
+	if msg != "" {
+		q.Set("msg", msg)
+	}
+	http.Redirect(w, r, "/app/akun.html?"+q.Encode(), http.StatusFound)
+}
+
+func handleOAuthCallback(w http.ResponseWriter, r *http.Request, oa *oauth.Config, provider string) {
+	if errMsg := strings.TrimSpace(r.URL.Query().Get("error")); errMsg != "" {
+		desc := strings.TrimSpace(r.URL.Query().Get("error_description"))
+		if desc == "" {
+			desc = errMsg
+		}
+		oauthRedirect(w, r, provider, "err", desc)
+		return
+	}
+	code := oauth.CleanCode(r.URL.Query().Get("code"))
+	state := r.URL.Query().Get("state")
+	accountID, err := oa.ParseState(state, provider)
+	if err != nil {
+		oauthRedirect(w, r, provider, "err", err.Error())
+		return
+	}
+	ws, err := accountByParam(accountID)
+	if err != nil {
+		oauthRedirect(w, r, provider, "err", err.Error())
+		return
+	}
+
+	var tok *oauth.TokenResult
+	switch provider {
+	case "threads":
+		tok, err = oa.ExchangeThreadsCode(code)
+	case "instagram":
+		tok, err = oa.ExchangeInstagramCode(code)
+	default:
+		err = fmt.Errorf("provider tidak dikenal")
+	}
+	if err != nil {
+		oauthRedirect(w, r, provider, "err", err.Error())
+		return
+	}
+
+	switch provider {
+	case "threads":
+		ws.Threads.SetToken(tok.AccessToken)
+		me, merr := ws.Threads.GetMe()
+		if merr != nil {
+			ws.Threads.ClearToken()
+			oauthRedirect(w, r, provider, "err", merr.Error())
+			return
+		}
+		var profile struct {
+			Username string `json:"username"`
+		}
+		_ = json.Unmarshal(me, &profile)
+		_ = accounts.UpdateMeta(ws.Meta.ID, func(m *account.Meta) {
+			if profile.Username != "" {
+				m.ThreadsUsername = profile.Username
+				if m.Name == "" || m.Name == m.ID || m.Name == "main" {
+					m.Name = profile.Username
+				}
+			}
+		})
+	case "instagram":
+		ws.IG.SetToken(tok.AccessToken)
+		me, merr := ws.IG.GetMe()
+		if merr != nil {
+			ws.IG.ClearToken()
+			oauthRedirect(w, r, provider, "err", merr.Error())
+			return
+		}
+		var profile struct {
+			Username string `json:"username"`
+		}
+		_ = json.Unmarshal(me, &profile)
+		_ = accounts.UpdateMeta(ws.Meta.ID, func(m *account.Meta) {
+			if profile.Username != "" {
+				m.InstagramUsername = profile.Username
+			}
+		})
+	}
+	oauthRedirect(w, r, provider, "ok", "")
 }
 
 func writeErr(w http.ResponseWriter, status int, msg string) {

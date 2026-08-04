@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Login — Core</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=strand59" id="app-css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body class="login-body">
+  <main class="login-wrap">
+    <div class="login-card th-panel">
+      <div class="th-panel-body">
+        <p class="th-eyebrow m-0 mb-1">Core</p>
+        <h1 class="th-title text-2xl m-0 mb-1">Operator login</h1>
+        <p class="th-lead m-0 mb-4">Konsol admin — terpisah dari dashboard customer (/app).</p>
+        <div id="login-alert" class="th-alert hidden mb-3"></div>
+        <form id="login-form" class="space-y-3">
+          <div>
+            <label class="th-label" for="user">Username</label>
+            <input id="user" class="th-input" autocomplete="username" required>
+          </div>
+          <div>
+            <label class="th-label" for="pass">Password</label>
+            <input id="pass" type="password" class="th-input" autocomplete="current-password" required>
+          </div>
+          <button type="submit" class="th-btn th-btn-primary w-full justify-center" id="btn-login">
+            <i class="bi bi-box-arrow-in-right"></i> Masuk Core
+          </button>
+        </form>
+        <p class="text-xs text-muted mt-4 mb-0">Customer dashboard: <a href="/app/login.html" class="underline">/app</a></p>
+      </div>
+    </div>
+  </main>
+<script src="/js/api.js?v=strand59"></script>
+<script>
+(async () => {
+  try {
+    const me = await Threads.api('/api/auth/me');
+    if (me?.authenticated && (!me.enabled || me.role === 'admin')) {
+      const next = new URLSearchParams(location.search).get('next') || '/core/';
+      location.replace(next.startsWith('/core') ? next : '/core/');
+    }
+  } catch {}
+})();
+
+document.getElementById('login-form').onsubmit = async (e) => {
+  e.preventDefault();
+  const alert = document.getElementById('login-alert');
+  const btn = document.getElementById('btn-login');
+  alert.classList.add('hidden');
+  btn.disabled = true;
+  try {
+    const res = await Threads.api('/api/auth/login', {
+      method: 'POST',
+      body: JSON.stringify({
+        username: document.getElementById('user').value.trim(),
+        password: document.getElementById('pass').value,
+      }),
+    });
+    if (res.role && res.role !== 'admin') {
+      alert.textContent = 'Akun ini bukan operator. Pakai /app untuk dashboard.';
+      alert.classList.remove('hidden');
+      btn.disabled = false;
+      try { await Threads.api('/api/auth/logout', { method: 'POST', body: '{}' }); } catch {}
+      return;
+    }
+    const next = new URLSearchParams(location.search).get('next') || '/core/';
+    location.replace(next.startsWith('/core') ? next : '/core/');
+  } catch (err) {
+    alert.textContent = err.message || 'Login gagal';
+    alert.classList.remove('hidden');
+    btn.disabled = false;
+  }
+};
+</script>
+</body>
+</html>

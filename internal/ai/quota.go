@@ -63,7 +63,7 @@ func newQuotaTrackerFromEnv(keyCount int) *quotaTracker {
 		keyCount = 1
 	}
 	t := &quotaTracker{
-		path:     filepath.Join(".data", "ai_quota.json"),
+		path:     quotaFile(),
 		tier:     env("AI_TIER", "free"),
 		rpmLimit: envInt("AI_QUOTA_RPM", defaultRPM) * keyCount,
 		rpdLimit: envInt("AI_QUOTA_RPD", defaultRPD) * keyCount,

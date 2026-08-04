@@ -6,6 +6,7 @@ let state = {
   posts: [],
   insights: null,
   me: null,
+  loading: 'idle', // idle | account | posts | done
 };
 
 const fmt = {
@@ -75,6 +76,50 @@ function sparkPath(values, w = 132, h = 28, pad = 2) {
   return { line, area, w, h };
 }
 
+function setLoadState(phase, message) {
+  state.loading = phase;
+  const chip = document.getElementById('load-chip');
+  const text = document.getElementById('load-chip-text');
+  const chartLoad = document.getElementById('chart-load');
+  const postsLoad = document.getElementById('posts-load');
+  const busy = phase === 'account' || phase === 'posts';
+
+  if (chip) {
+    chip.classList.toggle('show', busy || phase === 'done');
+    chip.classList.toggle('is-done', phase === 'done');
+    if (phase === 'idle') chip.classList.remove('show', 'is-done');
+  }
+  if (text) {
+    if (phase === 'done') text.textContent = 'Data siap';
+    else if (message) text.textContent = message;
+    else if (phase === 'account') text.textContent = 'Memuat metrik akun…';
+    else if (phase === 'posts') text.textContent = 'Memuat tren & post…';
+  }
+  const spin = chip?.querySelector('.ov-spinner');
+  if (spin) spin.style.display = busy ? '' : 'none';
+  chartLoad?.classList.toggle('show', busy);
+  postsLoad?.classList.toggle('show', busy);
+
+  if (phase === 'done') {
+    window.clearTimeout(setLoadState._doneTimer);
+    setLoadState._doneTimer = window.setTimeout(() => {
+      if (state.loading === 'done') chip?.classList.remove('show');
+    }, 1600);
+  }
+}
+
+function renderKPISkeleton() {
+  const row = document.getElementById('kpi-row');
+  row.setAttribute('aria-busy', 'true');
+  row.innerHTML = Array.from({ length: 6 }, () => `
+    <article class="ov-kpi is-skel" aria-hidden="true">
+      <span class="ov-kpi-skel-k"></span>
+      <span class="ov-kpi-skel-v"></span>
+      <span class="ov-kpi-skel-sub"></span>
+      <span class="ov-kpi-skel-spark"></span>
+    </article>`).join('');
+}
+
 function renderKPIs() {
   const m = metricMap(state.insights);
   const posts = state.posts;
@@ -126,7 +171,10 @@ function renderChart() {
     `${labels[state.metric] || state.metric} per post (terbaru)`;
 
   if (series.length < 2) {
-    svg.innerHTML = `<text x="440" y="160" text-anchor="middle" fill="var(--muted)" font-size="13">Belum ada cukup data post</text>`;
+    const waiting = state.loading === 'account' || state.loading === 'posts';
+    svg.innerHTML = waiting
+      ? ''
+      : `<text x="440" y="160" text-anchor="middle" fill="var(--muted)" font-size="13">Belum ada cukup data post</text>`;
     document.getElementById('stat-peak').textContent = '—';
     document.getElementById('stat-avg').textContent = '—';
     document.getElementById('stat-low').textContent = '—';
@@ -214,7 +262,10 @@ function renderPosts() {
   const initials = String(state.me?.username || 'TH').replace(/^@/, '').slice(0, 2).toUpperCase();
   const sorted = [...state.posts].sort((a, b) => postMetrics(b).er - postMetrics(a).er).slice(0, 8);
   if (!sorted.length) {
-    rows.innerHTML = `<div class="ov-tr"><div class="ov-td text-muted" style="flex:1;padding:12px 0">Belum ada post di rentang ini — atau token belum terhubung.</div></div>`;
+    const waiting = state.loading === 'account' || state.loading === 'posts';
+    rows.innerHTML = waiting
+      ? ''
+      : `<div class="ov-tr"><div class="ov-td text-muted" style="flex:1;padding:12px 0">Belum ada post di rentang ini — atau token belum terhubung.</div></div>`;
     return;
   }
   rows.innerHTML = sorted.map((p) => {
@@ -252,27 +303,55 @@ function updateTitle() {
 }
 
 async function load() {
+  setLoadState('account', 'Memuat metrik akun…');
+  renderKPISkeleton();
+  renderChart();
+  renderPosts();
   try {
     const st = await Threads.api('/api/status');
     if (!st.connected) {
       document.getElementById('top-title').textContent = 'Hubungkan akun Threads';
       document.getElementById('pulse-meta').textContent = 'Buka Settings → Threads Token';
+      setLoadState('idle');
+      document.getElementById('load-chip')?.classList.remove('show');
       renderKPIs();
       renderChart();
       renderPosts();
       return;
     }
-    const me = await Threads.api('/api/me');
-    const insights = await Threads.api('/api/insights?aggregate=1&' + rangeQuery(state.range)).catch(() => null);
+    const range = rangeQuery(state.range);
+
+    // Phase 1: KPI akun dulu (tanpa N insight per-post)
+    const [me, fast] = await Promise.all([
+      Threads.api('/api/me'),
+      Threads.api('/api/insights?aggregate=1&posts=0&' + range).catch(() => null),
+    ]);
     state.me = me;
-    state.insights = insights;
-    state.posts = Array.isArray(insights?.posts) ? insights.posts : [];
+    state.insights = fast;
+    state.posts = [];
     updateTitle();
     renderKPIs();
     renderPulse();
+    setLoadState('posts', 'Memuat tren & post…');
     renderChart();
     renderPosts();
+
+    // Phase 2: chart + tabel dari sampel post
+    const full = await Threads.api('/api/insights?aggregate=1&posts=12&' + range).catch(() => null);
+    if (full) {
+      state.insights = full;
+      state.posts = Array.isArray(full.posts) ? full.posts : [];
+      renderKPIs();
+      renderPulse();
+      renderChart();
+      renderPosts();
+    }
+    setLoadState('done');
   } catch (e) {
+    setLoadState('idle');
+    document.getElementById('load-chip')?.classList.remove('show');
+    document.getElementById('chart-load')?.classList.remove('show');
+    document.getElementById('posts-load')?.classList.remove('show');
     document.getElementById('top-title').textContent = 'Server offline';
     Threads.toast(e.message || 'Gagal muat ringkasan', false);
   }

@@ -1,5 +1,16 @@
 window.Threads = window.Threads || {};
 
+/** Customer dashboard base path (operator console is /core). */
+Threads.APP = '/app';
+
+Threads.appUrl = function (path) {
+  const p = String(path || '');
+  if (!p) return Threads.APP + '/';
+  if (p.startsWith('/app/') || p.startsWith('/core/') || p.startsWith('/api/')) return p;
+  if (p.startsWith('/')) return Threads.APP + p;
+  return Threads.APP + '/' + p;
+};
+
 Threads.ensureAssets = function () {
   // Jangan inject ulang kalau halaman sudah punya app.css (hindari override versi lama).
   if (document.getElementById('app-css') || document.querySelector('link[href*="/css/app.css"]')) return;
@@ -16,14 +27,14 @@ Threads.ensureAssets = function () {
   document.head.appendChild(pre2);
 
   const fonts = document.createElement('link');
-  fonts.href = 'https://fonts.googleapis.com/css2?family=Plus+Jakarta+Sans:ital,wght@0,400;0,500;0,600;0,700;0,800;1,400&display=swap';
+  fonts.href = 'https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap';
   fonts.rel = 'stylesheet';
   document.head.appendChild(fonts);
 
   const css = document.createElement('link');
   css.id = 'app-css';
   css.rel = 'stylesheet';
-  css.href = '/css/app.css?v=strand57';
+  css.href = '/css/app.css?v=mn73';
   document.head.appendChild(css);
 };
 
@@ -32,7 +43,8 @@ Threads.mountSidebar = function (active) {
   if (!el) return;
   el.classList.add('th-sidebar', 'sb');
 
-  const link = (page, href, icon, label, badge) => {
+  const link = (page, path, icon, label, badge) => {
+    const href = Threads.appUrl(path);
     const on = page === active ? ' is-active' : '';
     const b = badge ? `<span class="sb-badge">${badge}</span>` : '<span></span>';
     return `<a class="sb-item${on}" href="${href}"><span class="sb-icon"><i class="bi ${icon}"></i></span><span>${label}</span>${b}</a>`;
@@ -46,16 +58,10 @@ Threads.mountSidebar = function (active) {
 
   el.innerHTML = `
   <div class="sb-brand">
-    <div class="sb-logo" aria-hidden="true">
-      <svg viewBox="0 0 24 24" width="22" height="22">
-        <circle cx="12" cy="12" r="11" fill="var(--accent)"/>
-        <path d="M6 16 C 9 8, 15 8, 18 16" stroke="#fff" stroke-width="1.8" fill="none" stroke-linecap="round"/>
-        <path d="M6 12 C 9 6, 15 6, 18 12" stroke="#fff" stroke-width="1.4" fill="none" stroke-linecap="round" opacity=".55"/>
-      </svg>
-    </div>
+    <div class="sb-logo" aria-hidden="true"><span class="sb-logo-dot"></span></div>
     <div class="sb-brand-text">
-      <div class="sb-brand-name">Threads</div>
-      <div class="sb-brand-sub">Workspace</div>
+      <div class="sb-brand-name">malesngonten</div>
+      <div class="sb-brand-sub">dashboard</div>
     </div>
   </div>
 
@@ -64,7 +70,7 @@ Threads.mountSidebar = function (active) {
       <div class="sb-avatar" id="sb-avatar">··</div>
       <div class="sb-acct-text">
         <div class="sb-acct-name" id="sb-handle">Memuat…</div>
-        <div class="sb-acct-sub" id="sb-acct-sub">Pilih workspace</div>
+        <div class="sb-acct-sub" id="sb-acct-sub">Pilih akun</div>
       </div>
       <i class="bi bi-chevron-down sb-acct-caret" aria-hidden="true"></i>
     </button>
@@ -76,32 +82,30 @@ Threads.mountSidebar = function (active) {
       ${link('ringkasan', '/ringkasan.html', 'bi-grid-1x2', 'Ringkasan')}
       ${link('profil', '/profil.html', 'bi-person-circle', 'Profil')}
     `)}
-    ${group('Content', `
-      ${link('buat', '/buat.html', 'bi-pencil-square', 'Buat Post')}
-      ${link('generate', '/generate.html', 'bi-magic', 'Generate AI')}
-      ${link('gemini-chat', '/gemini-chat.html', 'bi-chat-heart', 'Chat Gemini')}
-      ${link('thumbnail', '/thumbnail.html', 'bi-image', 'Lab Thumbnail')}
-      ${link('lazy', '/lazy.html', 'bi-lightning-charge', 'Lazy Business')}
-      ${link('lazy-track', '/lazy-track.html', 'bi-graph-up-arrow', 'Lazy Track')}
-      ${link('posts', '/posts.html', 'bi-collection', 'Post Saya')}
+    ${group('Konten', `
+      ${link('buat', '/buat.html', 'bi-pencil-square', 'Buat post')}
+      ${link('generate', '/generate.html', 'bi-magic', 'Generate')}
+      ${link('lazy', '/lazy.html', 'bi-lightning-charge', 'Lazy')}
+      ${link('lazy-track', '/lazy-track.html', 'bi-graph-up-arrow', 'Lazy track')}
+      ${link('posts', '/posts.html', 'bi-collection', 'Posts')}
       ${link('balasan', '/balasan.html', 'bi-chat-dots', 'Balasan')}
     `)}
     ${group('Analytics', `
       ${link('insights', '/insights.html', 'bi-bar-chart', 'Insight')}
-      ${link('ai-insight', '/ai-insight.html', 'bi-stars', 'AI Insight')}
+      ${link('ai-insight', '/ai-insight.html', 'bi-stars', 'AI insight')}
       ${link('kuota', '/kuota.html', 'bi-speedometer2', 'Kuota')}
     `)}
     ${group('Instagram', `
-      ${link('ig-profil', '/ig-profil.html', 'bi-instagram', 'IG Profil')}
-      ${link('ig-posts', '/ig-posts.html', 'bi-images', 'IG Posts')}
-      ${link('ig-carousel', '/ig-carousel.html', 'bi-collection-play', 'IG Carousel')}
-      ${link('carousel-templates', '/carousel-templates.html', 'bi-palette2', 'Template Carousel')}
+      ${link('ig-profil', '/ig-profil.html', 'bi-instagram', 'Profil')}
+      ${link('ig-posts', '/ig-posts.html', 'bi-images', 'Posts')}
+      ${link('ig-carousel', '/ig-carousel.html', 'bi-collection-play', 'Carousel')}
+      ${link('carousel-templates', '/carousel-templates.html', 'bi-palette2', 'Template')}
     `)}
-    ${group('Settings', `
-      ${link('akun', '/akun.html', 'bi-people', 'Akun & API')}
+    ${group('Akun', `
+      ${link('akun', '/akun.html', 'bi-key', 'API & koneksi')}
       <button type="button" id="btn-logout" class="sb-item sb-logout">
         <span class="sb-icon"><i class="bi bi-box-arrow-right"></i></span>
-        <span>Logout</span>
+        <span>Keluar</span>
         <span></span>
       </button>
     `)}
@@ -110,12 +114,12 @@ Threads.mountSidebar = function (active) {
   <div class="sb-foot">
     <div class="sb-quota" id="sb-quota" hidden>
       <div class="sb-quota-row">
-        <span>API quota</span>
+        <span>Kuota API</span>
         <span class="mono" id="sb-quota-label">—</span>
       </div>
       <div class="sb-bar"><div class="sb-bar-fill" id="sb-quota-fill" style="width:0%"></div></div>
     </div>
-    <a class="sb-upgrade" href="/buat.html">+ Buat post baru</a>
+    <a class="sb-upgrade" href="${Threads.appUrl('/buat.html')}">Buat post</a>
   </div>
   `;
 
@@ -143,21 +147,25 @@ Threads.mountSidebar = function (active) {
 
   el.querySelector('#btn-logout')?.addEventListener('click', async () => {
     try { await Threads.api('/api/auth/logout', { method: 'POST', body: '{}' }); } catch {}
-    location.href = '/login.html';
+    location.href = Threads.appUrl('/login.html');
   });
 
   (async () => {
     try {
-      const data = await Threads.api('/api/accounts');
+      const [data, org] = await Promise.all([
+        Threads.api('/api/accounts'),
+        Threads.api('/api/org').catch(() => null),
+      ]);
       const list = data.accounts || [];
       const activeAcct = list.find(a => a.active) || list[0];
       const label = activeAcct?.threads_username
         ? '@' + String(activeAcct.threads_username).replace(/^@/, '')
         : (activeAcct?.name || 'Belum connect');
       document.getElementById('sb-handle').textContent = label;
+      const wsName = org?.workspace?.name || 'Workspace';
       document.getElementById('sb-acct-sub').textContent = activeAcct
-        ? (activeAcct.lazy_enabled ? 'Lazy ON' : (list.length > 1 ? list.length + ' akun' : '1 akun'))
-        : 'Belum ada akun';
+        ? `${wsName} · ${list.length} akun`
+        : wsName;
       const initials = String(activeAcct?.threads_username || activeAcct?.name || 'T')
         .replace(/^@/, '').slice(0, 2).toUpperCase();
       document.getElementById('sb-avatar').textContent = initials;
@@ -171,7 +179,7 @@ Threads.mountSidebar = function (active) {
           <span class="sb-ws-opt-name">${Threads.escapeHtml(name)}</span>
           <span class="sb-ws-opt-meta">${a.lazy_enabled ? 'Lazy' : ''}${mark}</span>
         </button>`;
-      }).join('') + `<a class="sb-ws-opt sb-ws-manage" href="/akun.html"><span>Kelola akun & API</span><i class="bi bi-arrow-right"></i></a>`;
+      }).join('') + `<a class="sb-ws-opt sb-ws-manage" href="${Threads.appUrl('/akun.html')}"><span>Kelola akun & API</span><i class="bi bi-arrow-right"></i></a>`;
 
       menu.querySelectorAll('[data-switch-acct]').forEach(btn => {
         btn.addEventListener('click', async () => {
@@ -191,7 +199,7 @@ Threads.mountSidebar = function (active) {
     } catch {
       document.getElementById('sb-handle').textContent = 'Belum connect';
       document.getElementById('sb-acct-sub').textContent = 'Buka kelola akun';
-      menu.innerHTML = `<a class="sb-ws-opt sb-ws-manage" href="/akun.html"><span>Kelola akun</span><i class="bi bi-arrow-right"></i></a>`;
+      menu.innerHTML = `<a class="sb-ws-opt sb-ws-manage" href="${Threads.appUrl('/akun.html')}"><span>Kelola akun</span><i class="bi bi-arrow-right"></i></a>`;
     }
     try {
       const q = await Threads.api('/api/quota');

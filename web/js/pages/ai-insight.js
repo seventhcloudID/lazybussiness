@@ -39,7 +39,7 @@ function fillQuotaBar(prefix, bucket) {
 function renderQuota(q) {
   if (!q) return;
   const tier = document.getElementById('ai-quota-tier');
-  if (tier) tier.textContent = `${q.tier || 'free'} · ${q.model || ''}`.trim();
+  if (tier) tier.textContent = `Kuota: ${q.tier || 'free'} · ${q.model || ''}`.trim();
   fillQuotaBar('rpd', q.rpd);
   fillQuotaBar('rpm', q.rpm);
   fillQuotaBar('tpm', q.tpm);
@@ -65,7 +65,7 @@ function showAlert(msg) {
 
 function setLoading(on) {
   const btns = [document.getElementById('btn-ai-insight'), document.getElementById('btn-ai-empty')];
-  btns.forEach(btn => {
+  btns.forEach((btn) => {
     if (!btn) return;
     btn.disabled = on;
     btn.innerHTML = on
@@ -75,19 +75,40 @@ function setLoading(on) {
 }
 
 function chips(list) {
-  return (list || []).map(t => `<span class="th-chip">${Threads.escapeHtml(t)}</span>`).join('');
+  return (list || [])
+    .map((t) => `<span class="ins-ai-tag">${Threads.escapeHtml(t)}</span>`)
+    .join('');
 }
 
-function contentCard(item) {
-  return `<article class="ai-content-card">
-    <div class="ai-content-label">${Threads.escapeHtml(item.label || 'Post')}</div>
-    ${item.excerpt ? `<p class="ai-content-excerpt">${Threads.escapeHtml(item.excerpt)}</p>` : ''}
-    <p class="ai-content-why">${Threads.escapeHtml(item.why || '')}</p>
-    <div class="foot">
-      ${item.proof ? `<div><strong>Bukti</strong><span>${Threads.escapeHtml(item.proof)}</span></div>` : ''}
-      ${item.pattern ? `<div><strong>Pola</strong><span>${Threads.escapeHtml(item.pattern)}</span></div>` : ''}
+function dlRow(title, body) {
+  if (!body) return '';
+  return `<div><dt>${Threads.escapeHtml(title)}</dt><dd>${Threads.escapeHtml(body)}</dd></div>`;
+}
+
+function dlChips(title, list) {
+  const html = chips(list);
+  if (!html) return `<div><dt>${Threads.escapeHtml(title)}</dt><dd class="ins-meta">—</dd></div>`;
+  return `<div><dt>${Threads.escapeHtml(title)}</dt><dd class="ins-ai-tags">${html}</dd></div>`;
+}
+
+/** Compact content row: metrics line + hook/why — no card chrome. */
+function contentRow(item, i) {
+  const metrics = String(item.proof || item.label || '').trim();
+  const note = String(item.why || item.excerpt || item.pattern || '').trim();
+  const title = String(item.label || '').trim();
+  const showTitle = title && title !== metrics && title.length < 80;
+  return `<div class="ins-ai-row">
+    <span class="ins-ai-n mono">${i + 1}</span>
+    <div class="ins-ai-row-body">
+      ${metrics ? `<p class="ins-ai-metrics mono">${Threads.escapeHtml(metrics)}</p>` : ''}
+      ${showTitle ? `<p class="ins-ai-title">${Threads.escapeHtml(title)}</p>` : ''}
+      ${note ? `<p class="ins-ai-note">${Threads.escapeHtml(note)}</p>` : ''}
     </div>
-  </article>`;
+  </div>`;
+}
+
+function emptyList(msg) {
+  return `<p class="ins-meta m-0">${Threads.escapeHtml(msg)}</p>`;
 }
 
 function renderReport(raw) {
@@ -100,84 +121,67 @@ function renderReport(raw) {
   if (summaryLooksJson && !data.hot_content?.length) {
     document.getElementById('ai-headline').textContent = 'Breakdown gagal dirender';
     document.getElementById('ai-summary').textContent = 'Hasil AI masih format mentah. Klik Analisis akun lagi.';
-    document.getElementById('ai-meta').textContent = [data.provider, data.model].filter(Boolean).join(' · ');
+    document.getElementById('ai-meta').textContent = [data.provider, data.model].filter(Boolean).join(' · ') || '—';
     return;
   }
 
   document.getElementById('ai-headline').textContent = data.headline || 'Breakdown akun';
-  document.getElementById('ai-summary').textContent = data.summary || '';
+  document.getElementById('ai-summary').textContent = data.summary || '—';
+
+  const sc = data.scorecard || {};
+  document.getElementById('hero-strength').textContent = sc.strength || '—';
+  document.getElementById('hero-weakness').textContent = sc.weakness || '—';
+  document.getElementById('hero-signal').textContent = sc.opportunity || '—';
+
   const meta = [data.provider, data.model].filter(Boolean);
   if (data.usage?.total_tokens) {
     const u = data.usage;
     meta.push(
       `token ${Number(u.total_tokens).toLocaleString('id-ID')} ` +
-      `(prompt ${Number(u.prompt_tokens || 0).toLocaleString('id-ID')} + ` +
-      `output ${Number(u.completion_tokens || 0).toLocaleString('id-ID')})`
+        `(prompt ${Number(u.prompt_tokens || 0).toLocaleString('id-ID')} + ` +
+        `output ${Number(u.completion_tokens || 0).toLocaleString('id-ID')})`,
     );
   }
-  document.getElementById('ai-meta').textContent = meta.join(' · ');
+  document.getElementById('ai-meta').textContent = meta.length ? meta.join(' · ') : 'Sumber: AI';
   if (data.quota) renderQuota(data.quota);
 
   const ar = data.account_read || {};
   document.getElementById('ai-account-read').innerHTML = [
-    { t: 'Niche', v: ar.niche, k: 'opportunity', icon: 'bi-bullseye' },
-    { t: 'Voice', v: ar.voice, k: 'strength', icon: 'bi-mic' },
-    { t: 'Audience', v: ar.audience, k: 'weakness', icon: 'bi-people' },
-    { t: 'Positioning', v: ar.positioning, k: 'opportunity', icon: 'bi-geo' },
-  ].filter(x => x.v).map(x => `
-    <div class="ai-score ${x.k}">
-      <div class="ai-score-label"><i class="bi ${x.icon}"></i> ${x.t}</div>
-      <p>${Threads.escapeHtml(x.v)}</p>
-    </div>`).join('') || '';
-
-  const sc = data.scorecard || {};
-  document.getElementById('ai-scorecard').innerHTML = [
-    { t: 'Kekuatan', v: sc.strength, k: 'strength', icon: 'bi-graph-up-arrow' },
-    { t: 'Kelemahan', v: sc.weakness, k: 'weakness', icon: 'bi-exclamation-triangle' },
-    { t: 'Signal', v: sc.opportunity, k: 'opportunity', icon: 'bi-radar' },
-  ].map(x => `
-    <div class="ai-score ${x.k}">
-      <div class="ai-score-label"><i class="bi ${x.icon}"></i> ${x.t}</div>
-      <p>${Threads.escapeHtml(x.v || '—')}</p>
-    </div>`).join('');
+    dlRow('Niche', ar.niche),
+    dlRow('Voice', ar.voice),
+    dlRow('Audience', ar.audience),
+    dlRow('Positioning', ar.positioning),
+  ].filter(Boolean).join('') || emptyList('Belum ada account read.');
 
   const ep = data.engagement_profile || {};
-  document.getElementById('ai-engagement').innerHTML = `
-    <div class="ai-formula">
-      <div class="ai-formula-step"><div class="n">Views</div><div class="t">Pendorong</div><p>${Threads.escapeHtml(ep.what_drives_views || '—')}</p></div>
-      <div class="ai-formula-step"><div class="n">Replies</div><div class="t">Pendorong</div><p>${Threads.escapeHtml(ep.what_drives_replies || '—')}</p></div>
-      <div class="ai-formula-step"><div class="n">Format</div><div class="t">Bias</div><p>${Threads.escapeHtml(ep.format_bias || '—')}</p></div>
-      <div class="ai-formula-step"><div class="n">Panjang</div><div class="t">Bias</div><p>${Threads.escapeHtml(ep.length_bias || '—')}</p></div>
-    </div>`;
+  document.getElementById('ai-engagement').innerHTML = [
+    dlRow('Views', ep.what_drives_views),
+    dlRow('Replies', ep.what_drives_replies),
+    dlRow('Format', ep.format_bias),
+    dlRow('Panjang', ep.length_bias),
+  ].filter(Boolean).join('') || emptyList('Belum ada profil engagement.');
 
-  document.getElementById('ai-hot').innerHTML = (data.hot_content || []).length
-    ? data.hot_content.map(i => contentCard(i)).join('')
-    : '<p class="text-sm text-muted m-0">Tidak ada data hot content.</p>';
+  const hot = data.hot_content || [];
+  document.getElementById('ai-hot').innerHTML = hot.length
+    ? hot.map((item, i) => contentRow(item, i)).join('')
+    : emptyList('Tidak ada data hot content.');
 
-  document.getElementById('ai-cold').innerHTML = (data.cold_content || []).length
-    ? data.cold_content.map(i => contentCard(i)).join('')
-    : '<p class="text-sm text-muted m-0">Tidak ada data cold content.</p>';
+  const cold = data.cold_content || [];
+  document.getElementById('ai-cold').innerHTML = cold.length
+    ? cold.map((item, i) => contentRow(item, i)).join('')
+    : emptyList('Tidak ada data cold content.');
 
   const dna = data.content_dna || {};
-  document.getElementById('ai-dna').innerHTML = `
-    <div class="ai-topics">
-      <div class="ai-topic-box go">
-        <div class="t">Tema berulang</div>
-        <div class="flex flex-wrap gap-2">${chips(dna.recurring_themes) || '—'}</div>
-      </div>
-      <div class="ai-topic-box go">
-        <div class="t">Signature moves</div>
-        <div class="flex flex-wrap gap-2">${chips(dna.signature_moves) || '—'}</div>
-      </div>
-      <div class="ai-topic-box no">
-        <div class="t">Blind spots</div>
-        <div class="flex flex-wrap gap-2">${chips(dna.blind_spots) || '—'}</div>
-      </div>
-    </div>`;
+  document.getElementById('ai-dna').innerHTML = [
+    dlChips('Tema berulang', dna.recurring_themes),
+    dlChips('Signature moves', dna.signature_moves),
+    dlChips('Blind spots', dna.blind_spots),
+  ].join('');
 
-  document.getElementById('ai-patterns').innerHTML = (data.patterns || []).length
-    ? `<ul class="text-sm text-muted pl-5 list-disc space-y-1.5 m-0">${data.patterns.map(p => `<li>${Threads.escapeHtml(p)}</li>`).join('')}</ul>`
-    : '<p class="text-sm text-muted m-0">—</p>';
+  const patterns = data.patterns || [];
+  document.getElementById('ai-patterns').innerHTML = patterns.length
+    ? patterns.map((p) => `<li>${Threads.escapeHtml(p)}</li>`).join('')
+    : emptyList('Belum ada pola yang terbaca.');
 }
 
 async function generate() {

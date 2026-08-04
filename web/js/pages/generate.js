@@ -146,7 +146,7 @@ function renderDrafts(result) {
   draftThumbs = {};
   const root = document.getElementById('drafts');
   if (!lastDrafts.length) {
-    root.innerHTML = '<div class="th-panel"><div class="th-empty py-10"><p class="text-sm text-muted">Belum ada draf.</p></div></div>';
+    root.innerHTML = `<div class="gen-empty th-panel"><div class="th-empty py-12"><p class="text-sm text-muted m-0">Belum ada draf.</p></div></div>`;
     return;
   }
 
@@ -154,24 +154,23 @@ function renderDrafts(result) {
     <article class="ai-draft" data-idx="${i}">
       <div class="ai-draft-top">
         <div class="tags">
-          <span class="th-chip">Utas ${i + 1}</span>
-          <span class="th-chip">${Threads.escapeHtml(n.format || 'THREAD')}</span>
+          <span class="th-chip th-chip-ok">Utas ${i + 1}</span>
           <span class="th-chip">${(n.parts || []).length || 1} bagian</span>
           ${n.based_on ? `<span class="th-chip">${Threads.escapeHtml(n.based_on)}</span>` : ''}
         </div>
         <h3>${Threads.escapeHtml(n.title || 'Utas edukasi')}</h3>
+        ${n.why ? `<p class="ai-draft-why">${Threads.escapeHtml(n.why)}</p>` : ''}
       </div>
       <div class="ai-draft-body">
-        ${renderParts(n.parts) || `<p class="draft">${Threads.escapeHtml(n.draft || '')}</p>`}
-        <p class="why">${Threads.escapeHtml(n.why || '')}</p>
-        ${n.risk ? `<p class="why"><strong>Risiko:</strong> ${Threads.escapeHtml(n.risk)}</p>` : ''}
         <div class="gen-draft-split">
           <div class="gen-draft-main min-w-0">
+            ${renderParts(n.parts) || `<p class="draft">${Threads.escapeHtml(n.draft || '')}</p>`}
+            ${n.risk ? `<p class="why"><strong>Risiko:</strong> ${Threads.escapeHtml(n.risk)}</p>` : ''}
             <div class="ai-draft-actions">
-              <button type="button" class="th-btn th-btn-soft text-xs" data-copy="${i}"><i class="bi bi-clipboard"></i> Salin utas</button>
-              <button type="button" class="th-btn th-btn-ghost text-xs" data-thumb="${i}" ${thumbEnabled ? '' : 'disabled title="Set OPENAI_API_KEY"'}><i class="bi bi-image"></i> Thumbnail</button>
               <button type="button" class="th-btn th-btn-primary text-xs" data-use="${i}"><i class="bi bi-pencil-square"></i> Ke Buat Post</button>
-              <button type="button" class="th-btn th-btn-soft text-xs" data-carousel="${i}"><i class="bi bi-images"></i> Ke Carousel IG</button>
+              <button type="button" class="th-btn th-btn-soft text-xs" data-carousel="${i}"><i class="bi bi-images"></i> Carousel IG</button>
+              <button type="button" class="th-btn th-btn-ghost text-xs" data-copy="${i}"><i class="bi bi-clipboard"></i> Salin</button>
+              <button type="button" class="th-btn th-btn-ghost text-xs" data-thumb="${i}" ${thumbEnabled ? '' : 'disabled title="Set OpenAI key di API keys workspace"'}><i class="bi bi-image"></i> Thumbnail</button>
               <button type="button" class="th-btn th-btn-ghost text-xs" data-fb="good" data-i="${i}" title="Bagus"><i class="bi bi-hand-thumbs-up"></i></button>
               <button type="button" class="th-btn th-btn-ghost text-xs" data-fb="bad" data-i="${i}" title="Jelek"><i class="bi bi-hand-thumbs-down"></i></button>
             </div>
@@ -180,7 +179,7 @@ function renderDrafts(result) {
             <div class="gen-thumb-box gen-thumb-box-side" data-thumb-box="${i}">
               <div class="gen-thumb-placeholder" data-thumb-ph="${i}">Belum ada thumbnail</div>
               <img class="gen-thumb-img" alt="Thumbnail utas 4:3" hidden />
-              <p class="gen-thumb-cap">Threads 4:3 · preview saja, belum di-post</p>
+              <p class="gen-thumb-cap">Threads 4:3 · preview</p>
             </div>
           </aside>
         </div>
@@ -372,12 +371,25 @@ document.getElementById('btn-fill-template').onclick = () => {
   document.getElementById('instructions-status').textContent = 'Template terisi — klik Simpan';
 };
 
+function setGenerateBusy(busy) {
+  ['btn-generate', 'btn-generate-foot'].forEach((id) => {
+    const btn = document.getElementById(id);
+    if (!btn) return;
+    btn.disabled = busy;
+    btn.innerHTML = busy
+      ? '<i class="bi bi-hourglass-split"></i> Generating…'
+      : '<i class="bi bi-magic"></i> ' + (id === 'btn-generate-foot' ? 'Generate sekarang' : 'Generate');
+  });
+}
+
+document.getElementById('btn-generate-foot')?.addEventListener('click', () => {
+  document.getElementById('btn-generate')?.click();
+});
+
 document.getElementById('btn-generate').onclick = async () => {
   showAlert('');
   if (!(await Threads.requireConnected())) return;
-  const btn = document.getElementById('btn-generate');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Generating…';
+  setGenerateBusy(true);
   showAlert('Generate draf…');
   try {
     // autosave instructions / niche if dirty
@@ -424,8 +436,7 @@ document.getElementById('btn-generate').onclick = async () => {
     showAlert(e.message);
     Threads.toast(e.message, false);
   } finally {
-    btn.disabled = false;
-    btn.innerHTML = '<i class="bi bi-magic"></i> Generate';
+    setGenerateBusy(false);
   }
 };
 
@@ -475,7 +486,7 @@ document.getElementById('drafts').addEventListener('click', async e => {
         }),
       });
     } catch {}
-    location.href = '/buat.html?from=ai';
+    location.href = '/app/buat.html?from=ai';
     return;
   }
   if (car) {
@@ -486,7 +497,7 @@ document.getElementById('drafts').addEventListener('click', async e => {
     if (parts.length < 2) return Threads.toast('Utas minimal 2 bagian untuk carousel', false);
     localStorage.setItem('threads_carousel_parts', JSON.stringify(parts));
     localStorage.setItem('threads_compose_parts', JSON.stringify(parts));
-    location.href = '/ig-carousel.html?from=utas';
+    location.href = '/app/ig-carousel.html?from=utas';
     return;
   }
   if (fb) {

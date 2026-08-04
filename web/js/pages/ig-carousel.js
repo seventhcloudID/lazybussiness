@@ -151,7 +151,7 @@ async function renderPngPreview(text, brand, index, total) {
     });
     if (seq !== renderSeq) return;
     if (res.status === 401) {
-      location.replace('/login.html?next=' + encodeURIComponent(location.pathname));
+      location.replace('/app/login.html?next=' + encodeURIComponent(location.pathname));
       return;
     }
     if (!res.ok) {
@@ -286,7 +286,7 @@ document.getElementById('btn-to-threads').onclick = () => {
   if (parts.length < 1) return Threads.toast('Isi slide dulu', false);
   localStorage.setItem('threads_compose_parts', JSON.stringify(parts));
   localStorage.setItem('threads_compose_draft', parts.join('\n\n'));
-  location.href = '/buat.html?from=carousel';
+  location.href = '/app/buat.html?from=carousel';
 };
 
 document.getElementById('btn-from-utas').onclick = () => {
@@ -361,7 +361,7 @@ document.getElementById('btn-publish').onclick = async () => {
     const st = await Threads.api('/api/ig/status');
     if (!st.connected) {
       Threads.toast('Hubungkan token IG dulu', false);
-      location.href = '/ig-token.html';
+      location.href = '/app/ig-token.html';
       return;
     }
   } catch {

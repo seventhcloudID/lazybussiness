@@ -39,12 +39,24 @@ function jobMetrics(j) {
   return { views, likes, replies, reposts, quotes, engagement, er };
 }
 
-/** ok | deleted | unknown — 0 views = dihapus; tanpa metrics = belum diukur (jangan tampilkan 0). */
+/** ok | deleted | unknown — tanpa metrics = belum diukur; diukur tapi semua nol = dihapus. */
 function metricState(j) {
   if (j?.deleted) return 'deleted';
   if (!j?.metrics) return 'unknown';
-  if (Number(j.metrics.views || 0) <= 0) return 'deleted';
+  const m = j.metrics;
+  const alive = Number(m.views || 0) > 0 || Number(m.likes || 0) > 0 ||
+    Number(m.replies || 0) > 0 || Number(m.reposts || 0) > 0 || Number(m.quotes || 0) > 0;
+  if (!alive) return 'deleted';
   return 'ok';
+}
+
+function platformTip(j) {
+  const pm = j?.platform_metrics;
+  if (!pm) return '';
+  const bits = [];
+  if (pm.threads) bits.push(`Th ${fmt.num(pm.threads.views || 0)}v`);
+  if (pm.ig) bits.push(`IG ${fmt.num(pm.ig.views || 0)}v`);
+  return bits.length ? bits.join(' · ') : '';
 }
 
 function sparkPath(values, w = 132, h = 28, pad = 2) {
@@ -111,24 +123,20 @@ function channelIcons(ch) {
 
 function renderKPIs() {
   const s = report?.summary || {};
-  const measured = measuredJobs();
-  const n = measured.length || s.measured || 0;
   const views = seriesFor('views');
   const likes = seriesFor('likes');
-  const replies = seriesFor('replies');
   const eng = seriesFor('engagement');
   const erSeries = seriesFor('er');
-  const avgViews = n ? (views.reduce((a, b) => a + b, 0) / Math.max(views.length, 1)) : 0;
   const er = (s.views || 0) > 0 ? ((s.engagement || 0) / s.views) * 100 : 0;
   const success = (s.total || 0) > 0 ? ((s.done || 0) / s.total) * 100 : 0;
   const deletedNote = (s.deleted || 0) > 0 ? ` · ${s.deleted} dihapus` : '';
 
   const kpis = [
     { k: 'Post Lazy', v: fmt.full(s.total || 0), sub: `${s.done || 0} selesai${deletedNote}`, spark: views, lead: true },
-    { k: 'Views', v: fmt.full(s.views || 0), sub: `avg ${fmt.num(avgViews)} / post aktif`, spark: views },
-    { k: 'Likes', v: fmt.full(s.likes || 0), sub: `${fmt.num(s.replies || 0)} balasan`, spark: likes },
-    { k: 'Engagement', v: fmt.full(s.engagement || 0), sub: 'exclude post 0 views', spark: eng },
-    { k: 'ER Lazy', v: er.toFixed(2) + '%', sub: 'dari views Threads aktif', spark: erSeries },
+    { k: 'Views', v: fmt.full(s.views || 0), sub: `Th ${fmt.num(s.views_threads || 0)} · IG ${fmt.num(s.views_ig || 0)}`, spark: views },
+    { k: 'Likes', v: fmt.full(s.likes || 0), sub: `Th ${fmt.num(s.likes_threads || 0)} · IG ${fmt.num(s.likes_ig || 0)}`, spark: likes },
+    { k: 'Engagement', v: fmt.full(s.engagement || 0), sub: 'Threads + Instagram', spark: eng },
+    { k: 'ER Lazy', v: er.toFixed(2) + '%', sub: 'dari total views platform', spark: erSeries },
     { k: 'Success rate', v: success.toFixed(0) + '%', sub: `${s.failed || 0} gagal · ${s.skipped_ig || 0} IG skip`, spark: eng },
   ];
 
@@ -228,13 +236,15 @@ function renderPulse() {
   document.getElementById('pulse-range').textContent =
     `${report?.from || '—'} → ${report?.to || '—'}`;
   document.getElementById('pulse-meta').textContent =
-    `TZ ${report?.timezone || '—'} · ${s.total || 0} hasil Lazy`;
+    `TZ ${report?.timezone || '—'} · ${s.total || 0} hasil Lazy · views Th+IG digabung`;
 
   const items = [
-    ['Threads', s.threads],
-    ['Instagram', s.ig],
+    ['Threads (post)', s.threads],
+    ['Instagram (post)', s.ig],
     ['Buffer X', s.x],
     ['TikTok', s.tiktok],
+    ['Views Threads', s.views_threads],
+    ['Views IG', s.views_ig],
   ];
   document.getElementById('pace-list').innerHTML = items.map(([k, v]) => `
     <div class="ov-pace-row">
@@ -244,7 +254,7 @@ function renderPulse() {
 
   const total = Math.max(s.total || 1, 1);
   const bars = [
-    ['Threads', s.threads || 0, '#2563eb'],
+    ['Threads', s.threads || 0, '#2B3BEF'],
     ['IG', s.ig || 0, '#db2777'],
     ['X', s.x || 0, '#0f172a'],
     ['TikTok', s.tiktok || 0, '#0d9488'],
@@ -284,7 +294,7 @@ function renderPosts() {
             : `<span class="ov-avatar">${Threads.escapeHtml((j.title || 'LB').slice(0, 2).toUpperCase())}</span>`}
           <div class="min-w-0">
             <div class="ov-post-text">${Threads.escapeHtml(text)}</div>
-            <div class="text-[11px] text-muted mt-0.5">${Threads.escapeHtml(j.date || '')} · ${relativeTime(j.finished_at || j.scheduled_at)}${deleted ? ' · dihapus' : ''}</div>
+            <div class="text-[11px] text-muted mt-0.5">${Threads.escapeHtml(j.date || '')} · ${relativeTime(j.finished_at || j.scheduled_at)}${deleted ? ' · dihapus' : ''}${platformTip(j) ? ' · ' + Threads.escapeHtml(platformTip(j)) : ''}</div>
           </div>
         </div>
       </div>
@@ -311,6 +321,10 @@ async function load() {
   try {
     report = await Threads.api('/api/lazy/track?metrics=1');
     renderAll();
+    if (report?.note) {
+      const foot = document.querySelector('.ov-foot span');
+      if (foot) foot.textContent = report.note;
+    }
   } catch (e) {
     showAlert(e.message);
     document.getElementById('kpi-row').innerHTML = '';

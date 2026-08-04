@@ -210,7 +210,7 @@ func (c *Client) GetMediaByID(id string) (*MediaDetail, error) {
 		return nil, fmt.Errorf("media_id wajib")
 	}
 	raw, err := c.Do(http.MethodGet, "/"+id, url.Values{
-		"fields": {"id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,children{id,media_type,media_url,thumbnail_url}"},
+		"fields": {"id,caption,media_type,media_url,thumbnail_url,permalink,timestamp,like_count,comments_count,children{id,media_type,media_url,thumbnail_url}"},
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -223,6 +223,131 @@ func (c *Client) GetMediaByID(id string) (*MediaDetail, error) {
 		return nil, fmt.Errorf("media tidak ditemukan")
 	}
 	return &m, nil
+}
+
+// MediaMetrics ringkasan metrik satu post IG (untuk Lazy Track).
+type MediaMetrics struct {
+	Views   float64
+	Likes   float64
+	Replies float64 // comments
+	Reach   float64
+	Raw     map[string]float64
+}
+
+// GetMediaMetrics gabungkan field media + insights (views/impressions/reach).
+func (c *Client) GetMediaMetrics(mediaID string) (*MediaMetrics, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return nil, fmt.Errorf("media_id wajib")
+	}
+	out := &MediaMetrics{Raw: map[string]float64{}}
+
+	// Baseline dari node media (selalu tersedia tanpa insight permission khusus).
+	rawNode, err := c.Do(http.MethodGet, "/"+mediaID, url.Values{
+		"fields": {"id,like_count,comments_count"},
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	var node struct {
+		ID            string  `json:"id"`
+		LikeCount     float64 `json:"like_count"`
+		CommentsCount float64 `json:"comments_count"`
+	}
+	_ = json.Unmarshal(rawNode, &node)
+	out.Likes = node.LikeCount
+	out.Replies = node.CommentsCount
+	out.Raw["like_count"] = node.LikeCount
+	out.Raw["comments_count"] = node.CommentsCount
+
+	// Insights: coba set modern dulu, lalu fallback legacy.
+	for _, metrics := range []string{
+		"views,reach,likes,comments,saved,total_interactions",
+		"impressions,reach,engagement",
+		"views,reach",
+	} {
+		raw, ierr := c.Do(http.MethodGet, "/"+mediaID+"/insights", url.Values{
+			"metric": {metrics},
+		}, nil)
+		if ierr != nil {
+			continue
+		}
+		parsed := parseInsightValues(raw)
+		if len(parsed) == 0 {
+			continue
+		}
+		for k, v := range parsed {
+			out.Raw[k] = v
+		}
+		break
+	}
+
+	if v, ok := out.Raw["views"]; ok && v > 0 {
+		out.Views = v
+	} else if v, ok := out.Raw["impressions"]; ok && v > 0 {
+		out.Views = v
+	} else if v, ok := out.Raw["reach"]; ok && v > 0 {
+		out.Views = v
+	}
+	if v, ok := out.Raw["likes"]; ok && v > out.Likes {
+		out.Likes = v
+	}
+	if v, ok := out.Raw["comments"]; ok && v > out.Replies {
+		out.Replies = v
+	}
+	if v, ok := out.Raw["reach"]; ok {
+		out.Reach = v
+	}
+	return out, nil
+}
+
+func parseInsightValues(raw json.RawMessage) map[string]float64 {
+	var wrap struct {
+		Data []struct {
+			Name   string `json:"name"`
+			Values []struct {
+				Value any `json:"value"`
+			} `json:"values"`
+			TotalValue *struct {
+				Value any `json:"value"`
+			} `json:"total_value"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(raw, &wrap) != nil {
+		return nil
+	}
+	out := map[string]float64{}
+	for _, d := range wrap.Data {
+		var val float64
+		if d.TotalValue != nil {
+			val = anyFloat(d.TotalValue.Value)
+		} else if len(d.Values) > 0 {
+			val = anyFloat(d.Values[0].Value)
+		}
+		out[d.Name] = val
+	}
+	if len(out) == 0 {
+		return nil
+	}
+	return out
+}
+
+func anyFloat(v any) float64 {
+	switch t := v.(type) {
+	case float64:
+		return t
+	case float32:
+		return float64(t)
+	case int:
+		return float64(t)
+	case int64:
+		return float64(t)
+	case json.Number:
+		f, _ := t.Float64()
+		return f
+	default:
+		return 0
+	}
 }
 
 // ImageURLsFromMedia collects photo URLs for Buffer (IMAGE / CAROUSEL album children).

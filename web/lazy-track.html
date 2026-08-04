@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lazy Track — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand59" id="app-css">
-<link rel="stylesheet" href="/css/overview.css?v=strand57">
+<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/overview.css?v=mn71">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -17,7 +17,7 @@
     <div>
       <p class="th-eyebrow">Automasi</p>
       <h1 class="th-title">Lazy Track</h1>
-      <p class="th-lead">Capaian post dari Lazy Business — metrik Threads & sebaran channel.</p>
+      <p class="th-lead">Capaian post Lazy — metrik digabung dari semua platform yang terkoneksi (Threads + Instagram).</p>
     </div>
     <div class="ov-toolbar">
       <div class="ov-seg" id="filter-seg" role="group" aria-label="Filter status">
@@ -26,7 +26,7 @@
         <button type="button" class="ov-seg-btn" data-filter="skipped_ig">IG skip</button>
         <button type="button" class="ov-seg-btn" data-filter="failed">Gagal</button>
       </div>
-      <a class="th-btn th-btn-ghost text-xs" href="/lazy.html"><i class="bi bi-lightning"></i> Lazy</a>
+      <a class="th-btn th-btn-ghost text-xs" href="/app/lazy.html"><i class="bi bi-lightning"></i> Lazy</a>
       <button type="button" id="btn-refresh" class="th-btn th-btn-primary text-xs">
         <i class="bi bi-arrow-clockwise"></i> Refresh
       </button>
@@ -42,7 +42,7 @@
       <div class="th-panel-head flex flex-wrap items-center justify-between gap-2">
         <span>Tren capaian Lazy</span>
         <div class="ov-metric-toggle" id="metric-toggle">
-          <button type="button" class="ov-mt-btn is-on" data-metric="views"><span class="ov-mt-dot" style="background:#2563eb"></span>Views</button>
+          <button type="button" class="ov-mt-btn is-on" data-metric="views"><span class="ov-mt-dot" style="background:#2B3BEF"></span>Views</button>
           <button type="button" class="ov-mt-btn" data-metric="likes"><span class="ov-mt-dot"></span>Likes</button>
           <button type="button" class="ov-mt-btn" data-metric="replies"><span class="ov-mt-dot" style="background:#059669"></span>Balasan</button>
           <button type="button" class="ov-mt-btn" data-metric="engagement"><span class="ov-mt-dot" style="background:#d97706"></span>Engagement</button>
@@ -73,7 +73,7 @@
         <p class="text-xs text-muted mt-1 mb-3" id="pulse-meta">Memuat…</p>
         <div id="pace-list"></div>
         <div class="ltrk-ch-bars mt-3" id="ch-bars"></div>
-        <a class="th-btn th-btn-soft text-xs mt-3" href="/lazy.html"><i class="bi bi-lightning"></i> Buka Lazy Business</a>
+        <a class="th-btn th-btn-soft text-xs mt-3" href="/app/lazy.html"><i class="bi bi-lightning"></i> Buka Lazy Business</a>
       </div>
     </section>
   </div>
@@ -100,12 +100,12 @@
   </section>
 
   <div class="ov-foot">
-    <span>Hanya post dari Lazy Business · metrik Threads API</span>
+    <span>Metrik digabung dari Threads + Instagram · X/TikTok Buffer belum ada analytics API</span>
     <span><button type="button" class="link" id="btn-refresh-foot">Muat ulang</button></span>
   </div>
 </main>
-<script src="/js/api.js?v=strand44"></script>
-<script src="/js/layout.js?v=strand57"></script>
-<script src="/js/pages/lazy-track.js?v=strand61"></script>
+<script src="/js/api.js?v=mn70"></script>
+<script src="/js/layout.js?v=mn73"></script>
+<script src="/js/pages/lazy-track.js?v=mn70"></script>
 </body>
 </html>

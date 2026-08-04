@@ -52,7 +52,7 @@ func rankedHourMinutes(client *threads.Client, loc *time.Location) []int {
 	if client == nil || !client.Connected() {
 		return nil
 	}
-	raw, err := client.GetInsightsOpts("", "", true)
+	raw, err := client.GetInsightsOpts("", "", true, 20)
 	if err != nil {
 		return nil
 	}

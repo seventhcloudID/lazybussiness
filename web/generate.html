@@ -1,11 +1,11 @@
-﻿<!DOCTYPE html>
+<!DOCTYPE html>
 <html lang="id">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generate Konten — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=strand44" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -15,15 +15,11 @@
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Konten</p>
-      <h1 class="th-title">Generate Konten</h1>
-      <p class="th-lead">Draf utas + thumbnail Threads 4:3 (preview dulu, publish belakangan lewat Buat Post).</p>
+      <h1 class="th-title">Generate</h1>
+      <p class="th-lead">AI bikin draf utas Threads + thumbnail 4:3. Preview dulu, publish lewat Buat Post.</p>
     </div>
     <div class="th-toolbar flex-wrap items-center gap-2">
-      <label class="flex items-center gap-2 text-xs text-ink cursor-pointer select-none">
-        <input type="checkbox" id="auto-thumb" checked>
-        <span>Auto thumbnail</span>
-      </label>
-      <span id="thumb-preset" class="th-chip">gpt-image-2 · 1024×768</span>
+      <a class="th-btn th-btn-ghost text-xs" href="/app/buat.html"><i class="bi bi-pencil-square"></i> Buat Post</a>
       <button id="btn-generate" class="th-btn th-btn-primary" type="button">
         <i class="bi bi-magic"></i> Generate
       </button>
@@ -32,53 +28,100 @@
 
   <div id="gen-alert" class="th-alert hidden"></div>
 
-  <div class="grid grid-cols-1 xl:grid-cols-[minmax(0,1fr)_minmax(280px,340px)] gap-4 mb-5">
-    <div class="th-panel">
-      <div class="th-panel-head">Instruksi AI</div>
-      <div class="th-panel-body">
-        <label class="th-label">Instruksi tetap (style & larangan)</label>
-        <textarea id="instructions" class="th-textarea" rows="12" placeholder="Isi aturan tetap kamu di sini…"></textarea>
-        <div class="flex flex-wrap gap-2 mt-3">
-          <button id="btn-save-instructions" class="th-btn th-btn-soft" type="button">Simpan instruksi</button>
-          <button id="btn-fill-template" class="th-btn th-btn-ghost" type="button">Isi template edukasi</button>
-          <span id="instructions-status" class="text-xs text-muted self-center"></span>
-        </div>
-        <div class="mt-4">
-          <label class="th-label">Topik hari ini (opsional)</label>
-          <input id="topic" class="th-input" placeholder="Mis. WA blast / face recognition SIM / infrastruktur internet">
-        </div>
-      </div>
-    </div>
-
-    <div class="th-panel">
-      <div class="th-panel-head">Niche</div>
-      <div class="th-panel-body space-y-3 text-sm">
+  <div class="gen-layout">
+    <section class="th-panel gen-setup">
+      <div class="gen-setup-top">
         <div>
-          <label class="th-label">Niche akun (boleh lebih dari satu)</label>
-          <textarea id="niche" class="th-textarea text-sm" rows="4" placeholder="Satu niche per baris"></textarea>
-          <button id="btn-save-niche" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan niche</button>
-          <div class="mt-4">
-            <label class="th-label">Nama brand</label>
-            <input id="brand" class="th-input text-sm" placeholder="Muncul di carousel IG">
-            <button id="btn-save-brand" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan brand</button>
+          <p class="buat-kicker">Brief</p>
+          <p class="buat-hint">Topik hari ini + niche. Instruksi tetap bisa diubah kalau perlu.</p>
+        </div>
+        <div class="gen-setup-opts">
+          <label class="gen-toggle">
+            <input type="checkbox" id="auto-thumb" checked>
+            <span>Auto thumbnail</span>
+          </label>
+          <span id="thumb-preset" class="th-chip">gpt-image-2 — 1024x768</span>
+        </div>
+      </div>
+
+      <div class="gen-setup-body">
+        <div class="gen-topic-block">
+          <label class="th-label" for="topic">Topik hari ini</label>
+          <input id="topic" class="th-input gen-topic-input" placeholder="Mis. WA blast — face recognition SIM — infrastruktur internet">
+        </div>
+
+        <div class="gen-setup-grid">
+          <div>
+            <label class="th-label" for="niche">Niche akun</label>
+            <textarea id="niche" class="th-textarea" rows="4" placeholder="Satu niche per baris"></textarea>
+            <button id="btn-save-niche" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan niche</button>
           </div>
-          <p class="text-[11px] text-muted mt-1.5 m-0">Utas → Threads. Utas yang sama → carousel IG dengan brand.</p>
+          <div>
+            <label class="th-label" for="brand">Nama brand</label>
+            <input id="brand" class="th-input" placeholder="Muncul di carousel IG">
+            <button id="btn-save-brand" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan brand</button>
+            <p class="buat-hint mt-2">Utas ? Threads. Brand dipakai saat bawa ke carousel IG.</p>
+          </div>
+        </div>
+
+        <details class="buat-advanced gen-instructions">
+          <summary>Instruksi AI (style & larangan)</summary>
+          <div class="gen-instructions-body">
+            <textarea id="instructions" class="th-textarea" rows="10" placeholder="Aturan tetap gaya tulisan…"></textarea>
+            <div class="flex flex-wrap gap-2 mt-2">
+              <button id="btn-save-instructions" class="th-btn th-btn-soft text-xs" type="button">Simpan instruksi</button>
+              <button id="btn-fill-template" class="th-btn th-btn-ghost text-xs" type="button">Isi template edukasi</button>
+              <span id="instructions-status" class="text-xs text-muted self-center"></span>
+            </div>
+          </div>
+        </details>
+      </div>
+
+      <div class="gen-setup-foot">
+        <p class="buat-hint m-0">Generate menghasilkan 2 draf utas. Thumbnail butuh OpenAI key di API keys workspace.</p>
+        <button type="button" class="th-btn th-btn-primary" id="btn-generate-foot">
+          <i class="bi bi-magic"></i> Generate sekarang
+        </button>
+      </div>
+    </section>
+
+    <aside class="gen-aside">
+      <section class="th-panel">
+        <div class="th-panel-head">Alur</div>
+        <div class="th-panel-body">
+          <ol class="gen-steps">
+            <li><strong>Brief</strong> — topik + niche</li>
+            <li><strong>Generate</strong> — 2 draf utas</li>
+            <li><strong>Thumbnail</strong> — preview 4:3</li>
+            <li><strong>Ke Buat Post</strong> — publish</li>
+          </ol>
+        </div>
+      </section>
+      <section class="th-panel hidden" id="consideration-box">
+        <div class="th-panel-head">Pertimbangan AI</div>
+        <div class="th-panel-body">
+          <p id="consideration" class="gen-consideration m-0"></p>
+        </div>
+      </section>
+    </aside>
+  </div>
+
+  <section class="gen-results">
+    <div class="gen-results-head">
+      <h2 class="gen-results-title">Hasil draf</h2>
+      <p class="buat-hint m-0">Pilih utas terbaik, lalu bawa ke Buat Post atau Carousel IG.</p>
+    </div>
+    <div id="drafts" class="ai-draft-grid">
+      <div class="gen-empty th-panel">
+        <div class="th-empty py-12">
+          <p class="text-sm text-muted m-0">Belum ada draf. Isi topik/niche, lalu klik Generate.</p>
         </div>
       </div>
     </div>
-  </div>
-
-  <div id="consideration-box" class="th-panel mb-5 hidden">
-    <div class="th-panel-head">Pertimbangan generate</div>
-    <div class="th-panel-body">
-      <p id="consideration" class="m-0 text-sm leading-relaxed"></p>
-    </div>
-  </div>
-
-  <div id="drafts" class="ai-draft-grid"></div>
+  </section>
 </main>
-<script src="/js/api.js?v=strand44"></script>
-<script src="/js/layout.js?v=strand44"></script>
-<script src="/js/pages/generate.js?v=strand26"></script>
+<script src="/js/api.js?v=mn70"></script>
+<script src="/js/layout.js?v=mn73"></script>
+<script src="/js/pages/generate.js?v=strand27"></script>
 </body>
 </html>

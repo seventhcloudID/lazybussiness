@@ -30,7 +30,7 @@
 }
 .ov-seg-btn:hover { color: var(--ink); }
 .ov-seg-btn.is-on {
-  background: var(--ink);
+  background: var(--accent);
   color: #fff;
 }
 
@@ -278,4 +278,86 @@
   text-decoration: underline;
   text-underline-offset: 2px;
   cursor: pointer;
+}
+
+/* Loading */
+.ov-load-chip {
+  display: none;
+  align-items: center;
+  gap: 0.45rem;
+  padding: 0.35rem 0.7rem;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  font-size: 0.72rem;
+  font-weight: 600;
+  color: var(--muted);
+  box-shadow: var(--shadow);
+}
+.ov-load-chip.show { display: inline-flex; }
+.ov-load-chip.is-done {
+  color: var(--accent);
+  border-color: color-mix(in srgb, var(--accent) 28%, var(--line));
+  background: var(--accent-soft);
+}
+
+.ov-spinner {
+  width: 14px;
+  height: 14px;
+  border: 2px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: ov-spin 0.7s linear infinite;
+  flex-shrink: 0;
+}
+.ov-spinner-lg {
+  width: 22px;
+  height: 22px;
+  border-width: 2.5px;
+}
+@keyframes ov-spin {
+  to { transform: rotate(360deg); }
+}
+
+.ov-kpi.is-skel {
+  pointer-events: none;
+}
+.ov-kpi-skel-k,
+.ov-kpi-skel-v,
+.ov-kpi-skel-sub,
+.ov-kpi-skel-spark {
+  display: block;
+  border-radius: 4px;
+  background: linear-gradient(90deg, var(--bg-alt) 25%, var(--surface) 50%, var(--bg-alt) 75%);
+  background-size: 200% 100%;
+  animation: ov-shimmer 1.15s ease-in-out infinite;
+}
+.ov-kpi-skel-k { width: 42%; height: 10px; margin-bottom: 2px; }
+.ov-kpi-skel-v { width: 68%; height: 22px; margin: 4px 0; }
+.ov-kpi-skel-sub { width: 55%; height: 9px; }
+.ov-kpi-skel-spark { width: 100%; height: 28px; margin-top: auto; border-radius: 6px; }
+@keyframes ov-shimmer {
+  0% { background-position: 200% 0; }
+  100% { background-position: -200% 0; }
+}
+
+.ov-panel-body { position: relative; }
+.ov-panel-load {
+  display: none;
+  position: absolute;
+  inset: 0;
+  z-index: 3;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.55rem;
+  background: color-mix(in srgb, var(--surface) 82%, transparent);
+  backdrop-filter: blur(2px);
+  font-size: 0.78rem;
+  font-weight: 600;
+  color: var(--muted);
+}
+.ov-panel-load.show { display: flex; }
+.ov-chart-wrap .ov-panel-load {
+  border-radius: var(--radius-sm);
 }

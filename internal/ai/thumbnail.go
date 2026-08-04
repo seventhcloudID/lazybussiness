@@ -154,7 +154,7 @@ func (c *ThumbnailClient) KeysStatus() map[string]any {
 		"env_count":   envN,
 		"key_hint":    firstKeyHint(c),
 		"masked":      masked,
-		"note":        "Key UI di .data/openai_keys.json. Key .env digabung otomatis.",
+		"note":        "Key OpenAI milik workspace ini (BYOK). Key .env digabung otomatis.",
 	}
 }
 
