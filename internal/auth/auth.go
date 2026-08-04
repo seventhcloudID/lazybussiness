@@ -191,6 +191,8 @@ func isPublic(r *http.Request) bool {
 		return true
 	case p == "/" || p == "/index.html":
 		return true
+	case p == "/privacy" || p == "/privacy.html" || p == "/privacy-policy" || p == "/privacy-policy.html":
+		return true
 	case p == "/health":
 		return true
 	case p == "/auth/threads/callback" || p == "/auth/instagram/callback":

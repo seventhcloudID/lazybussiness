@@ -145,6 +145,13 @@ func main() {
 	}
 	mux.HandleFunc("GET /{$}", serveLanding)
 	mux.HandleFunc("GET /index.html", serveLanding)
+	servePrivacy := func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join("web", "privacy.html"))
+	}
+	mux.HandleFunc("GET /privacy", servePrivacy)
+	mux.HandleFunc("GET /privacy.html", servePrivacy)
+	mux.HandleFunc("GET /privacy-policy", servePrivacy)
+	mux.HandleFunc("GET /privacy-policy.html", servePrivacy)
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
 	})
