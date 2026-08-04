@@ -100,7 +100,96 @@ func (c *Config) Status() map[string]any {
 		"instagram_ready":    c.InstagramReady(),
 		"threads_redirect":   c.ThreadsRedirectURI(),
 		"instagram_redirect": c.InstagramRedirectURI(),
+		"deauthorize_url":    c.DeauthorizeURI(),
+		"data_deletion_url":  c.DataDeletionURI(),
 	}
+}
+
+func (c *Config) DeauthorizeURI() string {
+	if c == nil || c.PublicBase == "" {
+		return ""
+	}
+	return c.PublicBase + "/auth/meta/deauthorize"
+}
+
+func (c *Config) DataDeletionURI() string {
+	if c == nil || c.PublicBase == "" {
+		return ""
+	}
+	return c.PublicBase + "/auth/meta/data-deletion"
+}
+
+func (c *Config) DataDeletionStatusURI(code string) string {
+	return c.PublicBase + "/auth/meta/data-deletion-status?code=" + url.QueryEscape(code)
+}
+
+// ParseSignedRequest memverifikasi signed_request Meta (deauth / data deletion).
+func (c *Config) ParseSignedRequest(signed string) (userID string, err error) {
+	signed = strings.TrimSpace(signed)
+	parts := strings.Split(signed, ".")
+	if len(parts) != 2 {
+		return "", fmt.Errorf("signed_request tidak valid")
+	}
+	sigRaw, err := base64.RawURLEncoding.DecodeString(parts[0])
+	if err != nil {
+		sigRaw, err = base64.URLEncoding.DecodeString(parts[0])
+		if err != nil {
+			return "", fmt.Errorf("signature decode gagal")
+		}
+	}
+	payload := parts[1]
+	payloadJSON, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		payloadJSON, err = base64.URLEncoding.DecodeString(payload)
+		if err != nil {
+			return "", fmt.Errorf("payload decode gagal")
+		}
+	}
+	var data struct {
+		Algorithm string `json:"algorithm"`
+		UserID    string `json:"user_id"`
+	}
+	if err := json.Unmarshal(payloadJSON, &data); err != nil {
+		return "", fmt.Errorf("payload JSON tidak valid")
+	}
+	if data.UserID == "" {
+		return "", fmt.Errorf("user_id kosong")
+	}
+	if alg := strings.ToUpper(strings.TrimSpace(data.Algorithm)); alg != "" && alg != "HMAC-SHA256" {
+		return "", fmt.Errorf("algorithm tidak didukung")
+	}
+	secrets := c.appSecrets()
+	if len(secrets) == 0 {
+		return "", fmt.Errorf("app secret belum di-set")
+	}
+	for _, sec := range secrets {
+		mac := hmac.New(sha256.New, []byte(sec))
+		_, _ = mac.Write([]byte(payload))
+		if hmac.Equal(sigRaw, mac.Sum(nil)) {
+			return data.UserID, nil
+		}
+	}
+	return "", fmt.Errorf("signature tidak cocok")
+}
+
+func (c *Config) appSecrets() []string {
+	seen := map[string]bool{}
+	var out []string
+	for _, s := range []string{c.ThreadsAppSecret, c.InstagramAppSecret} {
+		s = strings.TrimSpace(s)
+		if s == "" || seen[s] {
+			continue
+		}
+		seen[s] = true
+		out = append(out, s)
+	}
+	return out
+}
+
+func ConfirmationCode(userID string) string {
+	userID = strings.TrimSpace(userID)
+	sum := sha256.Sum256([]byte("del:" + userID + ":" + fmt.Sprint(time.Now().Unix()/86400)))
+	return hex.EncodeToString(sum[:8])
 }
 
 type statePayload struct {

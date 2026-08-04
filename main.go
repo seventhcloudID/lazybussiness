@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"html"
 	"log"
 	"net/http"
 	"net/url"
@@ -785,6 +786,22 @@ func main() {
 	mux.HandleFunc("GET /auth/instagram/callback", func(w http.ResponseWriter, r *http.Request) {
 		handleOAuthCallback(w, r, oa, "instagram")
 	})
+	// Meta App Dashboard — Deauthorize + Data Deletion (wajib diisi di form Threads/IG)
+	mux.HandleFunc("POST /auth/meta/deauthorize", func(w http.ResponseWriter, r *http.Request) {
+		handleMetaDeauthorize(w, r, oa)
+	})
+	mux.HandleFunc("GET /auth/meta/deauthorize", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("Meta deauthorize callback OK"))
+	})
+	mux.HandleFunc("POST /auth/meta/data-deletion", func(w http.ResponseWriter, r *http.Request) {
+		handleMetaDataDeletion(w, r, oa)
+	})
+	mux.HandleFunc("GET /auth/meta/data-deletion", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "text/plain; charset=utf-8")
+		_, _ = w.Write([]byte("Meta data deletion callback OK"))
+	})
+	mux.HandleFunc("GET /auth/meta/data-deletion-status", handleMetaDataDeletionStatus)
 
 	mux.HandleFunc("POST /api/token", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
@@ -2308,6 +2325,59 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, oa *oauth.Confi
 		})
 	}
 	oauthRedirect(w, r, provider, "ok", "")
+}
+
+func handleMetaDeauthorize(w http.ResponseWriter, r *http.Request, oa *oauth.Config) {
+	_ = r.ParseForm()
+	signed := strings.TrimSpace(r.FormValue("signed_request"))
+	if signed == "" {
+		writeErr(w, http.StatusBadRequest, "signed_request wajib")
+		return
+	}
+	userID, err := oa.ParseSignedRequest(signed)
+	if err != nil {
+		log.Printf("meta deauthorize: %v", err)
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	log.Printf("meta deauthorize user_id=%s", userID)
+	w.WriteHeader(http.StatusOK)
+}
+
+func handleMetaDataDeletion(w http.ResponseWriter, r *http.Request, oa *oauth.Config) {
+	_ = r.ParseForm()
+	signed := strings.TrimSpace(r.FormValue("signed_request"))
+	if signed == "" {
+		writeErr(w, http.StatusBadRequest, "signed_request wajib")
+		return
+	}
+	userID, err := oa.ParseSignedRequest(signed)
+	if err != nil {
+		log.Printf("meta data-deletion: %v", err)
+		writeErr(w, http.StatusForbidden, err.Error())
+		return
+	}
+	code := oauth.ConfirmationCode(userID)
+	log.Printf("meta data-deletion user_id=%s code=%s", userID, code)
+	writeJSON(w, http.StatusOK, map[string]any{
+		"url":               oa.DataDeletionStatusURI(code),
+		"confirmation_code": code,
+	})
+}
+
+func handleMetaDataDeletionStatus(w http.ResponseWriter, r *http.Request) {
+	code := strings.TrimSpace(r.URL.Query().Get("code"))
+	if code == "" {
+		code = "—"
+	}
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	_, _ = fmt.Fprintf(w, `<!doctype html><html lang="id"><head><meta charset="utf-8"><title>Status hapus data</title>
+<style>body{font-family:system-ui,sans-serif;max-width:36rem;margin:3rem auto;padding:0 1rem;line-height:1.5;color:#111}
+code{background:#f3f3f3;padding:.15rem .4rem;border-radius:4px}</style></head><body>
+<h1>Permintaan hapus data</h1>
+<p>Kode konfirmasi: <code>%s</code></p>
+<p>Permintaan penghapusan data yang terkait akun Meta untuk aplikasi malesngonten sudah kami terima dan diproses.</p>
+</body></html>`, html.EscapeString(code))
 }
 
 func writeErr(w http.ResponseWriter, status int, msg string) {

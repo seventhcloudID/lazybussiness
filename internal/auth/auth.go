@@ -195,6 +195,8 @@ func isPublic(r *http.Request) bool {
 		return true
 	case p == "/auth/threads/callback" || p == "/auth/instagram/callback":
 		return true
+	case p == "/auth/meta/deauthorize" || p == "/auth/meta/data-deletion" || p == "/auth/meta/data-deletion-status":
+		return true
 	case p == "/api/auth/login" || p == "/api/auth/logout" || p == "/api/auth/me":
 		return true
 	case strings.HasPrefix(p, "/media/lazy/"):
