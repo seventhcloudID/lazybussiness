@@ -2315,7 +2315,13 @@ func handleOAuthCallback(w http.ResponseWriter, r *http.Request, oa *oauth.Confi
 		})
 	case "instagram":
 		ws.IG.SetToken(tok.AccessToken)
+		if uid := strings.TrimSpace(tok.UserID); uid != "" && uid != "<nil>" {
+			ws.IG.SetUserID(uid)
+		}
 		me, merr := ws.IG.GetMe()
+		if merr != nil && strings.TrimSpace(tok.UserID) != "" && strings.TrimSpace(tok.UserID) != "<nil>" {
+			me, merr = ws.IG.GetUser(tok.UserID)
+		}
 		if merr != nil {
 			ws.IG.ClearToken()
 			oauthRedirect(w, r, provider, "err", merr.Error())

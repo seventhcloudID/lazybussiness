@@ -414,19 +414,34 @@ func (c *Config) ExchangeInstagramCode(code string) (*TokenResult, error) {
 }
 
 func (c *Config) exchangeInstagramLongLived(short string) (token string, exp int64, raw json.RawMessage, err error) {
-	u := "https://graph.instagram.com/access_token?" + url.Values{
+	form := url.Values{
 		"grant_type":    {"ig_exchange_token"},
 		"client_secret": {c.InstagramAppSecret},
 		"access_token":  {short},
-	}.Encode()
+	}
+	// GET dulu (dokumentasi Meta), fallback POST jika Meta tolak method.
+	u := "https://graph.instagram.com/access_token?" + form.Encode()
 	res, err := c.HTTP.Get(u)
 	if err != nil {
 		return "", 0, nil, err
 	}
-	defer res.Body.Close()
 	body, _ := io.ReadAll(res.Body)
+	res.Body.Close()
 	if res.StatusCode >= 400 {
-		return "", 0, nil, fmt.Errorf("instagram long-lived: %s", truncate(string(body), 280))
+		req, rerr := http.NewRequest(http.MethodPost, "https://graph.instagram.com/access_token", strings.NewReader(form.Encode()))
+		if rerr != nil {
+			return "", 0, nil, fmt.Errorf("instagram long-lived: %s", truncate(string(body), 280))
+		}
+		req.Header.Set("Content-Type", "application/x-www-form-urlencoded")
+		res2, rerr := c.HTTP.Do(req)
+		if rerr != nil {
+			return "", 0, nil, fmt.Errorf("instagram long-lived: %s", truncate(string(body), 280))
+		}
+		body, _ = io.ReadAll(res2.Body)
+		res2.Body.Close()
+		if res2.StatusCode >= 400 {
+			return "", 0, nil, fmt.Errorf("instagram long-lived: %s", truncate(string(body), 280))
+		}
 	}
 	var out struct {
 		AccessToken string `json:"access_token"`

@@ -2,6 +2,7 @@ package instagram
 
 import (
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -13,7 +14,10 @@ import (
 	"time"
 )
 
-const BaseURL = "https://graph.instagram.com"
+const (
+	BaseURL    = "https://graph.instagram.com"
+	APIVersion = "v22.0"
+)
 
 type Client struct {
 	mu        sync.RWMutex
@@ -105,13 +109,26 @@ func (c *Client) setUserID(id string) {
 	c.userID = id
 }
 
+// SetUserID menyimpan IG user id dari OAuth (tanpa panggil /me).
+func (c *Client) SetUserID(id string) {
+	c.setUserID(strings.TrimSpace(id))
+}
+
 type APIError struct {
 	Status int
 	Body   json.RawMessage
 }
 
 func (e *APIError) Error() string {
+	if e != nil && isUnsupportedGET(e.Body) {
+		return "instagram: akun belum bisa diakses API (butuh akun Professional/Business atau Creator, dan di mode Development akun harus jadi Tester + accept invite Meta). Error mentah: Unsupported request - method type: get"
+	}
 	return fmt.Sprintf("instagram api: status %d: %s", e.Status, string(e.Body))
+}
+
+func isUnsupportedGET(body json.RawMessage) bool {
+	s := strings.ToLower(string(body))
+	return strings.Contains(s, "unsupported request") && strings.Contains(s, "method type")
 }
 
 func (c *Client) Do(method, path string, query url.Values, form url.Values) (json.RawMessage, error) {
@@ -120,7 +137,16 @@ func (c *Client) Do(method, path string, query url.Values, form url.Values) (jso
 		return nil, fmt.Errorf("token Instagram belum di-set")
 	}
 
-	u, err := url.Parse(BaseURL + path)
+	if !strings.HasPrefix(path, "/") {
+		path = "/" + path
+	}
+	// Versioned Graph path, kecuali endpoint token exchange di root.
+	fullPath := path
+	if path != "/access_token" && path != "/refresh_access_token" && !strings.HasPrefix(path, "/"+APIVersion+"/") {
+		fullPath = "/" + APIVersion + path
+	}
+
+	u, err := url.Parse(BaseURL + fullPath)
 	if err != nil {
 		return nil, err
 	}
@@ -165,10 +191,30 @@ func (c *Client) Do(method, path string, query url.Values, form url.Values) (jso
 }
 
 func (c *Client) GetMe() (json.RawMessage, error) {
+	// Prefer explicit user id (lebih andal di Instagram Login API daripada /me).
+	if id := strings.TrimSpace(c.UserID()); id != "" {
+		if raw, err := c.GetUser(id); err == nil {
+			return raw, nil
+		}
+	}
 	raw, err := c.Do(http.MethodGet, "/me", url.Values{
-		"fields": {"id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count"},
+		"fields": {"id,username,account_type"},
 	}, nil)
 	if err != nil {
+		var apiErr *APIError
+		if errors.As(err, &apiErr) && isUnsupportedGET(apiErr.Body) {
+			// Retry field lebih minimal — kadang field ekstra memicu error Meta.
+			raw2, err2 := c.Do(http.MethodGet, "/me", url.Values{"fields": {"id,username"}}, nil)
+			if err2 == nil {
+				var me struct {
+					ID string `json:"id"`
+				}
+				if json.Unmarshal(raw2, &me) == nil && me.ID != "" {
+					c.setUserID(me.ID)
+				}
+				return raw2, nil
+			}
+		}
 		return nil, err
 	}
 	var me struct {
@@ -177,6 +223,21 @@ func (c *Client) GetMe() (json.RawMessage, error) {
 	if json.Unmarshal(raw, &me) == nil && me.ID != "" {
 		c.setUserID(me.ID)
 	}
+	return raw, nil
+}
+
+func (c *Client) GetUser(id string) (json.RawMessage, error) {
+	id = strings.TrimSpace(id)
+	if id == "" {
+		return nil, fmt.Errorf("user id kosong")
+	}
+	raw, err := c.Do(http.MethodGet, "/"+id, url.Values{
+		"fields": {"id,username,account_type"},
+	}, nil)
+	if err != nil {
+		return nil, err
+	}
+	c.setUserID(id)
 	return raw, nil
 }
 
