@@ -195,6 +195,8 @@ function renderDay() {
         ${e.source === 'manual' && e.status === 'pending' ? `<a class="th-btn th-btn-ghost text-xs" href="/app/buat.html">Edit di Buat</a>` : ''}
         ${e.source === 'lazy' ? `<a class="th-btn th-btn-ghost text-xs" href="/app/lazy.html">Lazy</a>` : ''}
         ${ids.length ? `<a class="th-btn th-btn-ghost text-xs" href="/app/posts.html">Lihat posts</a>` : ''}
+        ${ids.length ? `<button type="button" class="th-btn th-btn-danger text-xs" data-delete-content="${Threads.escapeHtml(e.id)}" data-ids="${Threads.escapeHtml(ids.join(','))}"><i class="bi bi-trash"></i> Hapus konten</button>` : ''}
+        ${e.source === 'manual' ? `<button type="button" class="th-btn th-btn-danger text-xs" data-delete-schedule="${Threads.escapeHtml(e.id)}"><i class="bi bi-calendar-x"></i> Hapus jadwal</button>` : ''}
       </div>
     </article>`;
   }).join('');
@@ -204,6 +206,46 @@ function renderDay() {
       try {
         await Threads.api('/api/schedule/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '{}' });
         Threads.toast('Jadwal dibatalkan', true);
+        await load();
+      } catch (err) {
+        Threads.toast(err.message, false);
+      }
+    });
+  });
+
+  list.querySelectorAll('[data-delete-content]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const ids = btn.getAttribute('data-ids').split(',').filter(Boolean);
+      if (!ids.length) return;
+      const label = ids.length === 1 ? '1 post Threads' : `${ids.length} post Threads`;
+      const ok = await Threads.confirm(
+        `Hapus ${label} dari platform Threads? Tindakan ini tidak bisa dibatalkan.`,
+        { title: 'Hapus konten', okLabel: 'Ya, hapus', danger: true }
+      );
+      if (!ok) return;
+      try {
+        for (const mid of ids) {
+          await Threads.api('/api/media/' + encodeURIComponent(mid), { method: 'DELETE' });
+        }
+        Threads.toast('Konten dihapus', true);
+        await load();
+      } catch (err) {
+        Threads.toast(err.message, false);
+      }
+    });
+  });
+
+  list.querySelectorAll('[data-delete-schedule]').forEach((btn) => {
+    btn.addEventListener('click', async () => {
+      const id = btn.getAttribute('data-delete-schedule');
+      const ok = await Threads.confirm(
+        'Hapus jadwal ini permanen dari daftar? Post yang sudah terpublish di Threads tidak ikut dihapus.',
+        { title: 'Hapus jadwal', okLabel: 'Ya, hapus', danger: true }
+      );
+      if (!ok) return;
+      try {
+        await Threads.api('/api/schedule/' + encodeURIComponent(id), { method: 'DELETE' });
+        Threads.toast('Jadwal dihapus', true);
         await load();
       } catch (err) {
         Threads.toast(err.message, false);
