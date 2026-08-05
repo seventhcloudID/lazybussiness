@@ -4668,6 +4668,35 @@ main.main {
   box-shadow: 0 4px 14px rgba(17, 24, 39, 0.06);
 }
 
+/* ——— Insight post inline di kartu Posts ——— */
+.post-metrics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  margin-top: 0.7rem;
+}
+.post-metric {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  font-size: 0.7rem;
+  font-weight: 650;
+  color: var(--ink-2);
+  background: var(--bg-alt);
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  padding: 0.2rem 0.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.post-metric i { font-size: 0.72rem; color: var(--muted); }
+.post-metric.is-high {
+  background: var(--accent-soft);
+  border-color: rgba(43, 59, 239, 0.28);
+  color: var(--accent);
+}
+.post-metric.is-high i { color: var(--accent); }
+.post-metric:empty { display: none; }
+
 .action-btn {
   display: inline-flex;
   align-items: center;

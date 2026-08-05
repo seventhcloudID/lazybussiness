@@ -16,6 +16,47 @@ function typeLabel(t) {
   return m;
 }
 
+function metricIcon(name) {
+  const n = String(name || '').toLowerCase();
+  if (n.includes('view')) return 'bi-eye';
+  if (n.includes('like')) return 'bi-heart';
+  if (n.includes('repl')) return 'bi-chat';
+  if (n.includes('quote')) return 'bi-chat-quote';
+  if (n.includes('repost') || n.includes('share')) return 'bi-repeat';
+  return 'bi-bar-chart';
+}
+
+function metricLabel(name) {
+  const n = String(name || '').toLowerCase();
+  if (n.includes('like')) return 'Suka';
+  if (n.includes('repost')) return 'Repost';
+  if (n.includes('quote')) return 'Quote';
+  if (n.includes('repl')) return 'Balasan';
+  if (n.includes('view')) return 'Views';
+  return name || 'Metrik';
+}
+
+/** Ambil insight tiap post secara paralel. Gagal satu post tidak merusak lainnya. */
+async function fetchPostInsights(items) {
+  const out = new Map();
+  await Promise.all(items.map(async (p) => {
+    if (!p.id) return;
+    try {
+      const resp = await Threads.api('/api/media/' + encodeURIComponent(p.id) + '/insights');
+      const metrics = [];
+      for (const m of (resp?.data || [])) {
+        const v = m.values?.[0]?.value ?? m.total_value?.value ?? 0;
+        const n = Number(v) || 0;
+        if (m.name) metrics.push({ name: m.name, value: n });
+      }
+      out.set(p.id, metrics);
+    } catch {
+      out.set(p.id, []);
+    }
+  }));
+  return out;
+}
+
 function skeleton() {
   return Array.from({ length: 6 }).map(() => `
     <div class="post-card p-4 h-full">
@@ -46,7 +87,7 @@ function emptyState(msg, sub) {
   </div>`;
 }
 
-function renderPosts(data) {
+async function renderPosts(data) {
   const list = document.getElementById('posts-list');
   const items = (data?.data || []).filter(p => {
     const t = String(p.media_type || '').toUpperCase();
@@ -60,6 +101,15 @@ function renderPosts(data) {
   if (!items.length) {
     list.innerHTML = emptyState('Belum ada post', 'Coba ubah filter tanggal, atau buat post baru.');
     return;
+  }
+
+  // Muat insight semua post secara paralel.
+  list.innerHTML = skeleton();
+  let insights;
+  try {
+    insights = await fetchPostInsights(items);
+  } catch {
+    insights = new Map();
   }
 
   const uname = meCache?.username ? '@' + meCache.username : '@akun';
@@ -79,6 +129,17 @@ function renderPosts(data) {
       ? `<a href="${Threads.escapeHtml(p.permalink)}" target="_blank" rel="noopener" class="action-btn" title="Buka di Threads"><i class="bi bi-box-arrow-up-right"></i></a>`
       : '';
 
+    const metrics = insights.get(p.id) || [];
+    const hasViews = metrics.some(m => String(m.name).toLowerCase().includes('view'));
+    const metricHtml = metrics.length
+      ? `<div class="post-metrics">${metrics.map(m => {
+          const isHigh = hasViews && String(m.name).toLowerCase().includes('view');
+          return `<span class="post-metric${isHigh ? ' is-high' : ''}" title="${Threads.escapeHtml(metricLabel(m.name))}">
+            <i class="bi ${metricIcon(m.name)}"></i> ${Threads.fmtNum(m.value)}
+          </span>`;
+        }).join('')}</div>`
+      : '';
+
     return `<article class="post-card p-4 flex flex-col h-full">
       <div class="flex gap-2.5 mb-2">
         <div class="shrink-0">${avatar}</div>
@@ -94,8 +155,8 @@ function renderPosts(data) {
       </div>
       <p class="whitespace-pre-wrap text-sm leading-relaxed text-ink flex-1 ${preview ? '' : 'text-muted italic'}">${Threads.escapeHtml(preview || 'Tanpa teks')}</p>
       ${media}
+      ${metricHtml}
       <div class="mt-3 pt-3 border-t border-line flex items-center gap-0.5">
-        <button data-insights="${Threads.escapeHtml(p.id)}" class="action-btn" title="Metrik"><i class="bi bi-bar-chart"></i></button>
         <a href="/app/balasan.html?media_id=${encodeURIComponent(p.id || '')}" class="action-btn" title="Balasan"><i class="bi bi-chat"></i></a>
         ${permalink}
         <button data-copy="${Threads.escapeHtml(p.id)}" class="action-btn" title="Salin ID"><i class="bi bi-copy"></i></button>
@@ -112,7 +173,7 @@ async function loadPosts() {
   const q = new URLSearchParams();
   if (since) q.set('since', Math.floor(new Date(since).getTime() / 1000));
   if (until) q.set('until', Math.floor(new Date(until + 'T23:59:59').getTime() / 1000));
-  renderPosts(await Threads.api('/api/threads?' + q.toString()));
+  await renderPosts(await Threads.api('/api/threads?' + q.toString()));
 }
 
 document.getElementById('btn-posts-filter').onclick = () => loadPosts().catch(e => Threads.toast(e.message, false));
@@ -120,7 +181,6 @@ document.getElementById('btn-posts-refresh').onclick = () => loadPosts().catch(e
 
 document.getElementById('posts-list').addEventListener('click', async e => {
   const del = e.target.closest('[data-delete]');
-  const insights = e.target.closest('[data-insights]');
   const copy = e.target.closest('[data-copy]');
   try {
     if (copy) {
@@ -149,15 +209,6 @@ document.getElementById('posts-list').addEventListener('click', async e => {
         }
       }
       return;
-    }
-    if (insights) {
-      const data = await Threads.api('/api/media/' + insights.dataset.insights + '/insights');
-      const lines = (data?.data || []).map(m => {
-        const v = m.values?.[0]?.value ?? m.total_value?.value ?? '—';
-        return `${m.title || m.name}: ${Threads.fmtNum(v)}`;
-      });
-      if (!lines.length) return Threads.toast('Tidak ada metrik', false);
-      await Threads.alert(lines.join('\n'), { title: 'Insight post' });
     }
   } catch (err) { Threads.toast(err.message, false); }
 });
