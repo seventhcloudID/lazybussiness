@@ -1439,16 +1439,25 @@ func main() {
 		monthKey := start.Format("2006-01")
 
 		type calEvent struct {
-			ID        string    `json:"id"`
-			Source    string    `json:"source"` // lazy | manual
-			Title     string    `json:"title"`
-			Status    string    `json:"status"`
-			At        time.Time `json:"at"`
-			Day       string    `json:"day"`
-			Preview   string    `json:"preview,omitempty"`
-			Error     string    `json:"error,omitempty"`
-			PartsN    int       `json:"parts_n,omitempty"`
-			ThreadsID string    `json:"threads_id,omitempty"`
+			ID           string    `json:"id"`
+			Source       string    `json:"source"` // lazy | manual
+			Title        string    `json:"title"`
+			Status       string    `json:"status"`
+			At           time.Time `json:"at"`
+			Day          string    `json:"day"`
+			Preview      string    `json:"preview,omitempty"`
+			Text         string    `json:"text,omitempty"`
+			Parts        []string  `json:"parts,omitempty"`
+			Caption      string    `json:"caption,omitempty"`
+			MediaType    string    `json:"media_type,omitempty"`
+			ImageURL     string    `json:"image_url,omitempty"`
+			ThumbURL     string    `json:"thumb_url,omitempty"`
+			Error        string    `json:"error,omitempty"`
+			PartsN       int       `json:"parts_n,omitempty"`
+			ThreadsIDs   []string  `json:"threads_ids,omitempty"`
+			IGMediaID    string    `json:"ig_media_id,omitempty"`
+			BufferPostID string    `json:"buffer_post_id,omitempty"`
+			BufferXPostID string   `json:"buffer_x_post_id,omitempty"`
 		}
 		var events []calEvent
 
@@ -1468,14 +1477,23 @@ func main() {
 				} else if j.Caption != "" {
 					preview = j.Caption
 				}
-				tid := ""
-				if len(j.ThreadsIDs) > 0 {
-					tid = j.ThreadsIDs[0]
+				img := strings.TrimSpace(j.ThumbURL)
+				if img == "" && len(j.ImageURLs) > 0 {
+					img = j.ImageURLs[0]
 				}
 				events = append(events, calEvent{
 					ID: j.ID, Source: "lazy", Title: title, Status: j.Status,
-					At: at, Day: at.Format("2006-01-02"), Preview: firstLine(preview, 100),
-					Error: j.Error, PartsN: len(j.Parts), ThreadsID: tid,
+					At: at, Day: at.Format("2006-01-02"),
+					Preview: firstLine(preview, 120),
+					Text:    preview,
+					Parts:   append([]string(nil), j.Parts...),
+					Caption: strings.TrimSpace(j.Caption),
+					ThumbURL: img,
+					Error:   j.Error, PartsN: len(j.Parts),
+					ThreadsIDs: append([]string(nil), j.ThreadsIDs...),
+					IGMediaID: strings.TrimSpace(j.IGMediaID),
+					BufferPostID: strings.TrimSpace(j.BufferPostID),
+					BufferXPostID: strings.TrimSpace(j.BufferXPostID),
 				})
 			}
 		}
@@ -1489,14 +1507,16 @@ func main() {
 				if preview == "" && len(p.Parts) > 0 {
 					preview = p.Parts[0]
 				}
-				tid := ""
-				if len(p.ThreadsIDs) > 0 {
-					tid = p.ThreadsIDs[0]
-				}
 				events = append(events, calEvent{
 					ID: p.ID, Source: "manual", Title: "Manual", Status: p.Status,
-					At: at, Day: at.Format("2006-01-02"), Preview: firstLine(preview, 100),
-					Error: p.Error, PartsN: len(p.Parts), ThreadsID: tid,
+					At: at, Day: at.Format("2006-01-02"),
+					Preview: firstLine(preview, 120),
+					Text:    preview,
+					Parts:   append([]string(nil), p.Parts...),
+					MediaType: strings.TrimSpace(p.MediaType),
+					ImageURL:  strings.TrimSpace(p.ImageURL),
+					Error:     p.Error, PartsN: len(p.Parts),
+					ThreadsIDs: append([]string(nil), p.ThreadsIDs...),
 				})
 			}
 		}
