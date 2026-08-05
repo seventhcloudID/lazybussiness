@@ -263,25 +263,23 @@ async function loadScheduleList() {
     const recent = posts.filter((p) => p.status !== 'pending' && p.status !== 'running').slice(-5).reverse();
     const show = [...pending, ...recent];
     if (!show.length) {
-      root.innerHTML = `<p class="text-sm text-muted m-0">Belum ada jadwal.</p>`;
+      root.innerHTML = `<p class="buat-sched-empty">Belum ada jadwal.</p>`;
       return;
     }
     root.innerHTML = show.map((p) => {
-      const preview = Threads.escapeHtml((p.text || p.parts?.[0] || '').slice(0, 80));
+      const preview = Threads.escapeHtml((p.text || p.parts?.[0] || '').slice(0, 120));
       const st = Threads.escapeHtml(p.status || '');
       const when = Threads.escapeHtml(fmtRunAt(p.run_at));
       const canCancel = p.status === 'pending';
-      return `<div class="buat-sched-item mb-3 pb-3 border-b border-line last:border-0 last:mb-0 last:pb-0">
-        <div class="flex justify-between gap-2 items-start">
-          <div class="min-w-0">
-            <p class="text-xs text-muted m-0">${when}</p>
-            <p class="text-sm m-0 mt-0.5 truncate">${preview || '—'}</p>
-            <span class="th-chip text-xs mt-1 inline-flex">${st}</span>
-            ${p.error ? `<p class="text-xs text-danger m-0 mt-1">${Threads.escapeHtml(p.error)}</p>` : ''}
-          </div>
-          ${canCancel ? `<button type="button" class="th-btn th-btn-ghost text-xs" data-cancel-sched="${Threads.escapeHtml(p.id)}">Batal</button>` : ''}
+      return `<article class="buat-sched-item">
+        <div class="buat-sched-main">
+          <p class="buat-sched-when">${when}</p>
+          <p class="buat-sched-text">${preview || '—'}</p>
+          <div class="buat-sched-meta"><span class="th-chip">${st}</span></div>
+          ${p.error ? `<p class="buat-sched-err">${Threads.escapeHtml(p.error)}</p>` : ''}
         </div>
-      </div>`;
+        ${canCancel ? `<button type="button" class="th-btn th-btn-ghost text-xs" data-cancel-sched="${Threads.escapeHtml(p.id)}">Batal</button>` : ''}
+      </article>`;
     }).join('');
     root.querySelectorAll('[data-cancel-sched]').forEach((btn) => {
       btn.addEventListener('click', async () => {
@@ -296,7 +294,7 @@ async function loadScheduleList() {
       });
     });
   } catch (e) {
-    root.innerHTML = `<p class="text-sm text-muted m-0">${Threads.escapeHtml(e.message)}</p>`;
+    root.innerHTML = `<p class="buat-sched-empty">${Threads.escapeHtml(e.message)}</p>`;
   }
 }
 
