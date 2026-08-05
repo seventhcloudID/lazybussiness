@@ -1,14 +1,14 @@
 openapi: 3.1.0
 info:
-  title: malesngonten Connect API
+  title: malesngonten REST API
   version: 1.0.0
   description: |
-    API publik untuk menghubungkan GPT Actions, Hermes, atau otomasi eksternal
-    ke dashboard malesngonten (Threads / Instagram / Lazy).
+    REST API malesngonten — akses Threads/Instagram/Lazy lewat HTTP saja
+    (tanpa wajib buka dashboard).
 
-    Autentikasi: header `Authorization: Bearer <CONNECT_API_KEY>`.
-    Buat key di dashboard → Akun → API keys workspace → Connect API,
-    atau set `CONNECT_API_KEY` di `.env` server.
+    Auth: `Authorization: Bearer <API_KEY>`
+    Buat key di Akun → API keys → REST API, atau `CONNECT_API_KEY` di `.env`.
+    Docs manusia: `{PUBLIC_BASE_URL}/docs`
 servers:
   - url: https://flowa.tigaawan.com
     description: Production

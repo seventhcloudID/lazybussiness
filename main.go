@@ -171,9 +171,14 @@ func main() {
 	mux.HandleFunc("GET /openapi", serveOpenAPI)
 	mux.HandleFunc("GET /openapi.yaml", serveOpenAPI)
 	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) {
-		// ChatGPT Actions sering minta URL; yaml tetap sumber kebenaran.
 		http.Redirect(w, r, "/openapi.yaml", http.StatusFound)
 	})
+	serveAPIDocs := func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join("web", "docs.html"))
+	}
+	mux.HandleFunc("GET /docs", serveAPIDocs)
+	mux.HandleFunc("GET /api-docs", serveAPIDocs)
+	mux.HandleFunc("GET /docs.html", serveAPIDocs)
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
 	})
@@ -776,11 +781,13 @@ func main() {
 		writeJSON(w, http.StatusOK, oa.Status())
 	})
 	mux.HandleFunc("GET /api/connect/keys", func(w http.ResponseWriter, r *http.Request) {
+		base := strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/")
 		writeJSON(w, http.StatusOK, map[string]any{
-			"keys":         gate.ConnectKeys().List(),
-			"openapi_url":  strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/") + "/openapi.yaml",
-			"env_key_set":  strings.TrimSpace(os.Getenv("CONNECT_API_KEY")) != "",
-			"auth_header":  "Authorization: Bearer <key>",
+			"keys":        gate.ConnectKeys().List(),
+			"docs_url":    base + "/docs",
+			"openapi_url": base + "/openapi.yaml",
+			"env_key_set": strings.TrimSpace(os.Getenv("CONNECT_API_KEY")) != "",
+			"auth_header": "Authorization: Bearer <key>",
 		})
 	})
 	mux.HandleFunc("POST /api/connect/keys", func(w http.ResponseWriter, r *http.Request) {

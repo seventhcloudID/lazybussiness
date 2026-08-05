@@ -1,0 +1,94 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>API Docs — malesngonten</title>
+<meta name="description" content="Akses malesngonten lewat REST API + Bearer key.">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Sora:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+:root{--paper:#E7E9F0;--ink:#0F1018;--soft:#5E6276;--blue:#2B3BEF;--sun:#FFD24A;--line:rgba(15,16,24,.12);--pad:clamp(20px,5vw,64px)}
+*{box-sizing:border-box}
+body{margin:0;background:var(--paper);color:var(--ink);font-family:"Sora",system-ui,sans-serif;font-size:16px;line-height:1.65}
+a{color:var(--blue);text-decoration:none}a:hover{text-decoration:underline}
+.nav{position:sticky;top:0;backdrop-filter:blur(14px);background:rgba(231,233,240,.9);border-bottom:1px solid var(--line)}
+.nav-in{max-width:820px;margin:0 auto;padding:0 var(--pad);height:64px;display:flex;align-items:center;gap:16px}
+.brand{display:flex;align-items:center;gap:9px;font-weight:800;color:var(--ink);text-decoration:none}
+.dot{width:11px;height:11px;border-radius:50%;background:var(--sun);box-shadow:0 0 0 3px rgba(255,210,74,.3)}
+.nav-in .back{margin-left:auto;color:var(--soft);font-size:.9rem}
+main{max-width:820px;margin:0 auto;padding:40px var(--pad) 80px}
+h1{font-size:clamp(1.8rem,4vw,2.4rem);letter-spacing:-.03em;margin:0 0 8px}
+.lead{color:var(--soft);margin:0 0 28px}
+h2{font-size:1.15rem;margin:32px 0 10px}
+p,li{color:#1c1e2a}
+code,pre{font-family:ui-monospace,Consolas,monospace;font-size:.85rem}
+pre{background:#fff;border:1px solid var(--line);border-radius:14px;padding:14px 16px;overflow:auto}
+code{background:rgba(15,16,24,.06);padding:.1rem .35rem;border-radius:4px}
+.note{margin-top:28px;padding:14px 16px;border:1px solid var(--line);border-radius:14px;background:#fff;font-size:.92rem;color:var(--soft)}
+table{width:100%;border-collapse:collapse;font-size:.92rem}
+th,td{text-align:left;padding:8px 10px;border-bottom:1px solid var(--line);vertical-align:top}
+th{color:var(--soft);font-weight:600;font-size:.8rem;text-transform:uppercase;letter-spacing:.04em}
+</style>
+</head>
+<body>
+<header class="nav">
+  <div class="nav-in">
+    <a class="brand" href="/"><span class="dot"></span>malesngonten</a>
+    <a class="back" href="/">← Beranda</a>
+  </div>
+</header>
+<main>
+  <h1>REST API</h1>
+  <p class="lead">Pakai malesngonten tanpa UI — cukup HTTP + API key. Cocok untuk script, bot, n8n, Zapier, atau backend kamu sendiri.</p>
+
+  <h2>1. Auth</h2>
+  <p>Setiap request (kecuali <code>/health</code> dan halaman publik) kirim header:</p>
+  <pre>Authorization: Bearer mn_YOUR_KEY</pre>
+  <p>Buat key di dashboard: <strong>Akun → API keys → REST API</strong>, atau set <code>CONNECT_API_KEY</code> di <code>.env</code> server.</p>
+
+  <h2>2. Base URL</h2>
+  <pre>https://flowa.tigaawan.com</pre>
+
+  <h2>3. Contoh cepat</h2>
+  <pre>curl -s https://flowa.tigaawan.com/api/status \
+  -H "Authorization: Bearer mn_YOUR_KEY"</pre>
+  <pre>curl -s https://flowa.tigaawan.com/api/publish \
+  -H "Authorization: Bearer mn_YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"media_type":"TEXT","text":"Halo dari API","publish":true}'</pre>
+  <pre>curl -s https://flowa.tigaawan.com/api/accounts/switch \
+  -H "Authorization: Bearer mn_YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"id":"main"}'</pre>
+
+  <h2>4. Endpoint utama</h2>
+  <table>
+    <thead><tr><th>Method</th><th>Path</th><th>Fungsi</th></tr></thead>
+    <tbody>
+      <tr><td>GET</td><td><code>/api/status</code></td><td>Status Threads/IG + akun aktif</td></tr>
+      <tr><td>GET</td><td><code>/api/me</code></td><td>Profil Threads</td></tr>
+      <tr><td>GET</td><td><code>/api/accounts</code></td><td>Daftar akun brand</td></tr>
+      <tr><td>POST</td><td><code>/api/accounts/switch</code></td><td>Ganti akun aktif</td></tr>
+      <tr><td>POST</td><td><code>/api/publish</code></td><td>Publish / buat container Threads</td></tr>
+      <tr><td>GET</td><td><code>/api/container?id=</code></td><td>Cek status container</td></tr>
+      <tr><td>POST</td><td><code>/api/ai/generate</code></td><td>Generate utas (AI)</td></tr>
+      <tr><td>POST</td><td><code>/api/ai/carousel</code></td><td>Generate carousel</td></tr>
+      <tr><td>GET</td><td><code>/api/lazy/status</code></td><td>Status Lazy</td></tr>
+      <tr><td>POST</td><td><code>/api/lazy/run-now</code></td><td>Jalankan Lazy sekarang</td></tr>
+      <tr><td>GET</td><td><code>/api/ig/me</code></td><td>Profil Instagram</td></tr>
+      <tr><td>GET</td><td><code>/api/ig/media</code></td><td>List media IG</td></tr>
+      <tr><td>GET</td><td><code>/api/replies/pending</code></td><td>Balasan belum dijawab</td></tr>
+    </tbody>
+  </table>
+
+  <h2>5. Spec mesin (opsional)</h2>
+  <p>Kalau tool kamu butuh schema formal: <a href="/openapi.yaml"><code>/openapi.yaml</code></a></p>
+
+  <div class="note">
+    Token Threads/IG tetap disimpan di server (OAuth atau tempel di dashboard). Client API hanya kirim Bearer key malesngonten — tidak perlu bawa token Meta di tiap request.
+  </div>
+</main>
+</body>
+</html>

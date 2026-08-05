@@ -10,7 +10,7 @@ const TAB_COPY = {
   },
   keys: {
     title: 'API keys workspace',
-    lead: 'Gemini, OpenAI (BYOK), dan Connect API (OpenAPI / GPT Actions) untuk workspace ini.',
+    lead: 'Gemini, OpenAI (BYOK), dan REST API key untuk akses lewat HTTP.',
   },
 };
 
@@ -309,19 +309,23 @@ function renderConnect(st) {
           <span class="text-xs text-muted">${Threads.escapeHtml(k.name || '')}</span>
           <button type="button" class="th-btn th-btn-ghost text-xs" data-connect-del="${Threads.escapeHtml(k.id)}">Hapus</button>
         </li>`).join('')}</ul>`
-    : `<p class="text-xs text-muted mb-3">Belum ada Connect key. Buat satu untuk GPT Actions / Hermes.</p>`;
+    : `<p class="text-xs text-muted mb-3">Belum ada API key. Buat satu untuk akses lewat curl / script / otomasi.</p>`;
+  const docs = (st?.openapi_url || '').replace(/\/openapi\.yaml$/, '/docs') || (location.origin + '/docs');
   root.innerHTML = `
-    <p class="text-sm text-muted mb-2 m-0">Orang / bot connect ke malesngonten lewat OpenAPI + Bearer key.</p>
-    <p class="text-xs mb-3 m-0">Spec: <a class="underline" href="${Threads.escapeHtml(openapi)}" target="_blank" rel="noopener">${Threads.escapeHtml(openapi)}</a>
-    ${st?.env_key_set ? ' · <span class="th-chip th-chip-ok">CONNECT_API_KEY di .env aktif</span>' : ''}</p>
+    <p class="text-sm text-muted mb-2 m-0">Akses dashboard lewat REST API: kirim header <code class="th-code">Authorization: Bearer mn_…</code>.</p>
+    <p class="text-xs mb-3 m-0">
+      Docs: <a class="underline" href="${Threads.escapeHtml(docs)}" target="_blank" rel="noopener">${Threads.escapeHtml(docs)}</a>
+      · Schema: <a class="underline" href="${Threads.escapeHtml(openapi)}" target="_blank" rel="noopener">openapi.yaml</a>
+      ${st?.env_key_set ? ' · <span class="th-chip th-chip-ok">CONNECT_API_KEY di .env aktif</span>' : ''}
+    </p>
     ${rows}
     <div class="flex gap-2 flex-wrap items-end">
       <div class="flex-1 min-w-[10rem]">
         <label class="th-label">Nama key</label>
-        <input id="connect-key-name" class="th-input" placeholder="hermes / chatgpt" autocomplete="off">
+        <input id="connect-key-name" class="th-input" placeholder="script / n8n / bot" autocomplete="off">
       </div>
-      <button type="button" class="th-btn th-btn-primary text-xs" id="btn-connect-create">Buat key</button>
-      <a class="th-btn th-btn-ghost text-xs" href="${Threads.escapeHtml(openapi)}" target="_blank" rel="noopener">Buka OpenAPI</a>
+      <button type="button" class="th-btn th-btn-primary text-xs" id="btn-connect-create">Buat API key</button>
+      <a class="th-btn th-btn-ghost text-xs" href="${Threads.escapeHtml(docs)}" target="_blank" rel="noopener">Docs API</a>
     </div>
     <pre id="connect-key-once" class="th-code mt-3 text-xs whitespace-pre-wrap hidden"></pre>
   `;

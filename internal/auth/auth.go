@@ -209,6 +209,8 @@ func isPublic(r *http.Request) bool {
 		return true
 	case p == "/openapi.yaml" || p == "/openapi.json" || p == "/openapi":
 		return true
+	case p == "/docs" || p == "/docs.html" || p == "/api-docs":
+		return true
 	case p == "/health":
 		return true
 	case p == "/auth/threads/callback" || p == "/auth/instagram/callback":
