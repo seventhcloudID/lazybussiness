@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -1409,6 +1410,118 @@ func main() {
 			return
 		}
 		proxy(w, func() (json.RawMessage, error) { return th().ManageReply(body.ReplyID, body.Hide) })
+	})
+
+	mux.HandleFunc("GET /api/calendar", func(w http.ResponseWriter, r *http.Request) {
+		ws := accounts.Active()
+		if ws == nil {
+			writeErr(w, http.StatusBadRequest, "akun tidak siap")
+			return
+		}
+		month := strings.TrimSpace(r.URL.Query().Get("month")) // YYYY-MM
+		loc := time.FixedZone("WIB", 7*3600)
+		if ws.Lazy != nil {
+			loc = ws.Lazy.Location()
+		}
+		now := time.Now().In(loc)
+		var start time.Time
+		if month != "" {
+			t, err := time.ParseInLocation("2006-01", month, loc)
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, "month format YYYY-MM")
+				return
+			}
+			start = time.Date(t.Year(), t.Month(), 1, 0, 0, 0, 0, loc)
+		} else {
+			start = time.Date(now.Year(), now.Month(), 1, 0, 0, 0, 0, loc)
+		}
+		end := start.AddDate(0, 1, 0)
+		monthKey := start.Format("2006-01")
+
+		type calEvent struct {
+			ID        string    `json:"id"`
+			Source    string    `json:"source"` // lazy | manual
+			Title     string    `json:"title"`
+			Status    string    `json:"status"`
+			At        time.Time `json:"at"`
+			Day       string    `json:"day"`
+			Preview   string    `json:"preview,omitempty"`
+			Error     string    `json:"error,omitempty"`
+			PartsN    int       `json:"parts_n,omitempty"`
+			ThreadsID string    `json:"threads_id,omitempty"`
+		}
+		var events []calEvent
+
+		if ws.Lazy != nil {
+			for _, j := range ws.Lazy.ListJobs() {
+				at := j.ScheduledAt.In(loc)
+				if at.Before(start) || !at.Before(end) {
+					continue
+				}
+				title := strings.TrimSpace(j.Title)
+				if title == "" {
+					title = "Lazy"
+				}
+				preview := ""
+				if len(j.Parts) > 0 {
+					preview = j.Parts[0]
+				} else if j.Caption != "" {
+					preview = j.Caption
+				}
+				tid := ""
+				if len(j.ThreadsIDs) > 0 {
+					tid = j.ThreadsIDs[0]
+				}
+				events = append(events, calEvent{
+					ID: j.ID, Source: "lazy", Title: title, Status: j.Status,
+					At: at, Day: at.Format("2006-01-02"), Preview: firstLine(preview, 100),
+					Error: j.Error, PartsN: len(j.Parts), ThreadsID: tid,
+				})
+			}
+		}
+		if ws.Schedule != nil {
+			for _, p := range ws.Schedule.List(true) {
+				at := p.RunAt.In(loc)
+				if at.Before(start) || !at.Before(end) {
+					continue
+				}
+				preview := p.Text
+				if preview == "" && len(p.Parts) > 0 {
+					preview = p.Parts[0]
+				}
+				tid := ""
+				if len(p.ThreadsIDs) > 0 {
+					tid = p.ThreadsIDs[0]
+				}
+				events = append(events, calEvent{
+					ID: p.ID, Source: "manual", Title: "Manual", Status: p.Status,
+					At: at, Day: at.Format("2006-01-02"), Preview: firstLine(preview, 100),
+					Error: p.Error, PartsN: len(p.Parts), ThreadsID: tid,
+				})
+			}
+		}
+		sort.Slice(events, func(i, j int) bool {
+			return events[i].At.Before(events[j].At)
+		})
+
+		byDay := map[string][]calEvent{}
+		for _, e := range events {
+			byDay[e.Day] = append(byDay[e.Day], e)
+		}
+		tz := "Asia/Jakarta"
+		if ws.Lazy != nil {
+			if t := ws.Lazy.GetConfig().Timezone; t != "" {
+				tz = t
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"month":      monthKey,
+			"timezone":   tz,
+			"account_id": ws.Meta.ID,
+			"events":     events,
+			"by_day":     byDay,
+			"today":      now.Format("2006-01-02"),
+		})
 	})
 
 	mux.HandleFunc("GET /api/schedule", func(w http.ResponseWriter, r *http.Request) {
