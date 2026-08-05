@@ -1,0 +1,356 @@
+openapi: 3.1.0
+info:
+  title: malesngonten Connect API
+  version: 1.0.0
+  description: |
+    API publik untuk menghubungkan GPT Actions, Hermes, atau otomasi eksternal
+    ke dashboard malesngonten (Threads / Instagram / Lazy).
+
+    Autentikasi: header `Authorization: Bearer <CONNECT_API_KEY>`.
+    Buat key di dashboard → Akun → API keys workspace → Connect API,
+    atau set `CONNECT_API_KEY` di `.env` server.
+servers:
+  - url: https://flowa.tigaawan.com
+    description: Production
+paths:
+  /health:
+    get:
+      operationId: health
+      summary: Health check (tanpa auth)
+      security: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Health"
+  /api/status:
+    get:
+      operationId: getStatus
+      summary: Status koneksi Threads/IG + akun aktif
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/Status"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/me:
+    get:
+      operationId: getThreadsMe
+      summary: Profil Threads akun aktif
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: Profil Threads
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/accounts:
+    get:
+      operationId: listAccounts
+      summary: Daftar akun brand di workspace
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/accounts/switch:
+    post:
+      operationId: switchAccount
+      summary: Pilih akun brand aktif
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [id]
+              properties:
+                id:
+                  type: string
+                  description: Account id (mis. main)
+      responses:
+        "200":
+          description: Switched
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/publish:
+    post:
+      operationId: publishThreads
+      summary: Buat container Threads (+ opsional publish sekarang)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/PublishRequest"
+      responses:
+        "200":
+          description: Container / published
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/container:
+    get:
+      operationId: getContainer
+      summary: Status container Threads
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/ai/generate:
+    post:
+      operationId: generateThread
+      summary: Generate draf utas dengan AI (BYOK Gemini)
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+              properties:
+                topic:
+                  type: string
+                niche:
+                  type: string
+      responses:
+        "200":
+          description: Generated content
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/ai/carousel:
+    post:
+      operationId: generateCarousel
+      summary: Generate copy/carousel IG dengan AI
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/lazy/status:
+    get:
+      operationId: lazyStatus
+      summary: Status Lazy scheduler akun aktif
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/lazy/run-now:
+    post:
+      operationId: lazyRunNow
+      summary: Jalankan Lazy sekarang
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: false
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: true
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/ig/me:
+    get:
+      operationId: getInstagramMe
+      summary: Profil Instagram akun aktif
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/ig/media:
+    get:
+      operationId: listInstagramMedia
+      summary: Daftar media Instagram
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: limit
+          in: query
+          schema:
+            type: string
+            default: "25"
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/replies/pending:
+    get:
+      operationId: listPendingReplies
+      summary: Balasan Threads yang belum dijawab
+      security:
+        - BearerAuth: []
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+components:
+  securitySchemes:
+    BearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: API key
+      description: Connect API key (mn_…) dari dashboard atau CONNECT_API_KEY di .env
+  responses:
+    Unauthorized:
+      description: Unauthorized
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+    Error:
+      description: Error
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/Error"
+  schemas:
+    Error:
+      type: object
+      properties:
+        error:
+          type: string
+        code:
+          type: string
+    Health:
+      type: object
+      properties:
+        ok:
+          type: boolean
+        connected:
+          type: boolean
+        ig_connected:
+          type: boolean
+    Status:
+      type: object
+      additionalProperties: true
+    PublishRequest:
+      type: object
+      properties:
+        media_type:
+          type: string
+          default: TEXT
+          description: TEXT | IMAGE | VIDEO
+        text:
+          type: string
+        image_url:
+          type: string
+          format: uri
+        video_url:
+          type: string
+          format: uri
+        reply_control:
+          type: string
+        reply_to_id:
+          type: string
+        publish:
+          type: boolean
+          default: false
+          description: true = publish segera setelah container dibuat
+security:
+  - BearerAuth: []

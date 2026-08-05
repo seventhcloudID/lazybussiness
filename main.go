@@ -121,10 +121,21 @@ func main() {
 
 	gate := auth.NewFromEnv()
 	gate.SetUsers(users)
+	connectKeys, err := auth.OpenConnectKeys(orgCtx.WorkspaceDir)
+	if err != nil {
+		log.Fatal("connect keys: ", err)
+	}
+	gate.SetConnectKeys(connectKeys)
 	if gate.Enabled() {
 		log.Printf("login aktif (%d user)", users.Count())
 	} else {
 		log.Println("login NONAKTIF — set AUTH_USER + AUTH_PASSWORD di .env (seed admin) atau isi .data/users.json")
+	}
+	if strings.TrimSpace(os.Getenv("CONNECT_API_KEY")) != "" {
+		log.Println("CONNECT_API_KEY aktif (Bearer OpenAPI)")
+	}
+	if n := len(connectKeys.List()); n > 0 {
+		log.Printf("connect API keys: %d", n)
 	}
 
 	oa := oauth.FromEnv()
@@ -152,6 +163,17 @@ func main() {
 	mux.HandleFunc("GET /privacy.html", servePrivacy)
 	mux.HandleFunc("GET /privacy-policy", servePrivacy)
 	mux.HandleFunc("GET /privacy-policy.html", servePrivacy)
+	serveOpenAPI := func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/yaml; charset=utf-8")
+		w.Header().Set("Cache-Control", "public, max-age=120")
+		http.ServeFile(w, r, filepath.Join("openapi", "openapi.yaml"))
+	}
+	mux.HandleFunc("GET /openapi", serveOpenAPI)
+	mux.HandleFunc("GET /openapi.yaml", serveOpenAPI)
+	mux.HandleFunc("GET /openapi.json", func(w http.ResponseWriter, r *http.Request) {
+		// ChatGPT Actions sering minta URL; yaml tetap sumber kebenaran.
+		http.Redirect(w, r, "/openapi.yaml", http.StatusFound)
+	})
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
 	})
@@ -752,6 +774,45 @@ func main() {
 
 	mux.HandleFunc("GET /api/oauth/status", func(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, oa.Status())
+	})
+	mux.HandleFunc("GET /api/connect/keys", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"keys":         gate.ConnectKeys().List(),
+			"openapi_url":  strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/") + "/openapi.yaml",
+			"env_key_set":  strings.TrimSpace(os.Getenv("CONNECT_API_KEY")) != "",
+			"auth_header":  "Authorization: Bearer <key>",
+		})
+	})
+	mux.HandleFunc("POST /api/connect/keys", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Name string `json:"name"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		plain, meta, err := gate.ConnectKeys().Create(body.Name)
+		if err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"key":     plain,
+			"meta":    meta,
+			"note":    "Simpan key ini sekarang — tidak ditampilkan ulang.",
+			"openapi": strings.TrimRight(os.Getenv("PUBLIC_BASE_URL"), "/") + "/openapi.yaml",
+		})
+	})
+	mux.HandleFunc("DELETE /api/connect/keys", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ID) == "" {
+			writeErr(w, http.StatusBadRequest, "id wajib")
+			return
+		}
+		if err := gate.ConnectKeys().Delete(body.ID); err != nil {
+			writeErr(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("GET /api/oauth/threads/start", func(w http.ResponseWriter, r *http.Request) {
 		id := strings.TrimSpace(r.URL.Query().Get("account_id"))
@@ -2436,8 +2497,8 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 func withCORS(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Access-Control-Allow-Origin", "*")
-		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, DELETE, OPTIONS")
-		w.Header().Set("Access-Control-Allow-Headers", "Content-Type")
+		w.Header().Set("Access-Control-Allow-Methods", "GET, POST, PUT, PATCH, DELETE, OPTIONS")
+		w.Header().Set("Access-Control-Allow-Headers", "Content-Type, Authorization")
 		if r.Method == http.MethodOptions {
 			w.WriteHeader(http.StatusNoContent)
 			return

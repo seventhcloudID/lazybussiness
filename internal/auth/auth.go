@@ -26,6 +26,7 @@ type Gate struct {
 	secret []byte
 	secure bool
 	users  *UserStore
+	keys   *ConnectKeyStore
 }
 
 func NewFromEnv() *Gate {
@@ -56,6 +57,19 @@ func (g *Gate) Users() *UserStore {
 		return nil
 	}
 	return g.users
+}
+
+func (g *Gate) SetConnectKeys(s *ConnectKeyStore) {
+	if g != nil {
+		g.keys = s
+	}
+}
+
+func (g *Gate) ConnectKeys() *ConnectKeyStore {
+	if g == nil {
+		return nil
+	}
+	return g.keys
 }
 
 func (g *Gate) Enabled() bool {
@@ -192,6 +206,8 @@ func isPublic(r *http.Request) bool {
 	case p == "/" || p == "/index.html":
 		return true
 	case p == "/privacy" || p == "/privacy.html" || p == "/privacy-policy" || p == "/privacy-policy.html":
+		return true
+	case p == "/openapi.yaml" || p == "/openapi.json" || p == "/openapi":
 		return true
 	case p == "/health":
 		return true

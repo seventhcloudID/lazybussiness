@@ -10,7 +10,7 @@ const TAB_COPY = {
   },
   keys: {
     title: 'API keys workspace',
-    lead: 'Gemini & OpenAI (BYOK) untuk seluruh akun brand di workspace ini.',
+    lead: 'Gemini, OpenAI (BYOK), dan Connect API (OpenAPI / GPT Actions) untuk workspace ini.',
   },
 };
 
@@ -297,8 +297,87 @@ async function loadGemini() {
   }
 }
 
+function renderConnect(st) {
+  const root = document.getElementById('connect-body');
+  if (!root) return;
+  const keys = Array.isArray(st?.keys) ? st.keys : [];
+  const openapi = st?.openapi_url || (location.origin + '/openapi.yaml');
+  const rows = keys.length
+    ? `<ul class="text-sm m-0 pl-4 mb-3">${keys.map((k) => `
+        <li class="mb-2 flex flex-wrap gap-2 items-center">
+          <code class="th-code">${Threads.escapeHtml(k.prefix || k.id)}</code>
+          <span class="text-xs text-muted">${Threads.escapeHtml(k.name || '')}</span>
+          <button type="button" class="th-btn th-btn-ghost text-xs" data-connect-del="${Threads.escapeHtml(k.id)}">Hapus</button>
+        </li>`).join('')}</ul>`
+    : `<p class="text-xs text-muted mb-3">Belum ada Connect key. Buat satu untuk GPT Actions / Hermes.</p>`;
+  root.innerHTML = `
+    <p class="text-sm text-muted mb-2 m-0">Orang / bot connect ke malesngonten lewat OpenAPI + Bearer key.</p>
+    <p class="text-xs mb-3 m-0">Spec: <a class="underline" href="${Threads.escapeHtml(openapi)}" target="_blank" rel="noopener">${Threads.escapeHtml(openapi)}</a>
+    ${st?.env_key_set ? ' · <span class="th-chip th-chip-ok">CONNECT_API_KEY di .env aktif</span>' : ''}</p>
+    ${rows}
+    <div class="flex gap-2 flex-wrap items-end">
+      <div class="flex-1 min-w-[10rem]">
+        <label class="th-label">Nama key</label>
+        <input id="connect-key-name" class="th-input" placeholder="hermes / chatgpt" autocomplete="off">
+      </div>
+      <button type="button" class="th-btn th-btn-primary text-xs" id="btn-connect-create">Buat key</button>
+      <a class="th-btn th-btn-ghost text-xs" href="${Threads.escapeHtml(openapi)}" target="_blank" rel="noopener">Buka OpenAPI</a>
+    </div>
+    <pre id="connect-key-once" class="th-code mt-3 text-xs whitespace-pre-wrap hidden"></pre>
+  `;
+  document.getElementById('btn-connect-create')?.addEventListener('click', createConnectKey);
+  root.querySelectorAll('[data-connect-del]').forEach((btn) => {
+    btn.addEventListener('click', () => deleteConnectKey(btn.getAttribute('data-connect-del')));
+  });
+}
+
+async function createConnectKey() {
+  const name = document.getElementById('connect-key-name')?.value?.trim() || 'default';
+  try {
+    const data = await Threads.api('/api/connect/keys', {
+      method: 'POST',
+      body: JSON.stringify({ name }),
+    });
+    Threads.toast('Connect key dibuat — salin sekarang', true);
+    await loadConnect();
+    const el = document.getElementById('connect-key-once');
+    if (el && data?.key) {
+      el.textContent = data.key + '\n\n' + (data.note || 'Simpan sekarang — tidak ditampilkan ulang.');
+      el.classList.remove('hidden');
+    }
+  } catch (e) {
+    Threads.toast(e.message, false);
+  }
+}
+
+async function deleteConnectKey(id) {
+  if (!id) return;
+  if (!(await Threads.confirm('Hapus Connect API key ini?', { title: 'Hapus key', okLabel: 'Hapus' }))) return;
+  try {
+    await Threads.api('/api/connect/keys', { method: 'DELETE', body: JSON.stringify({ id }) });
+    Threads.toast('Key dihapus', true);
+    await loadConnect();
+  } catch (e) {
+    Threads.toast(e.message, false);
+  }
+}
+
+async function loadConnect() {
+  const root = document.getElementById('connect-body');
+  if (!root) return false;
+  root.innerHTML = `<p class="text-sm text-muted m-0">Memuat…</p>`;
+  try {
+    const st = await Threads.api('/api/connect/keys');
+    renderConnect(st);
+    return true;
+  } catch (e) {
+    root.innerHTML = `<p class="text-sm text-muted m-0">${Threads.escapeHtml(e.message)}</p>`;
+    return false;
+  }
+}
+
 async function loadAllKeys() {
-  const results = await Promise.all([loadGemini(), loadOpenAI()]);
+  const results = await Promise.all([loadGemini(), loadOpenAI(), loadConnect()]);
   return results.every(Boolean);
 }
 
