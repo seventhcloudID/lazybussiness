@@ -333,14 +333,20 @@ function setComposeImageURL(url) {
   const input = document.getElementById('compose-media-url');
   const box = document.getElementById('compose-thumb-box');
   const img = document.getElementById('compose-thumb-img');
+  const hint = document.getElementById('compose-upload-hint');
   if (!url) {
     if (box) box.hidden = true;
+    if (input) input.value = '';
+    if (hint) {
+      hint.hidden = true;
+      hint.textContent = '';
+    }
+    renderPreview();
     return;
   }
   if (input) input.value = url;
   document.getElementById('mt-img')?.click();
   if (box && img) {
-    // Prefer relative path for preview if absolute same-origin
     try {
       const u = new URL(url, location.origin);
       img.src = u.origin === location.origin ? u.pathname : url;
@@ -351,6 +357,86 @@ function setComposeImageURL(url) {
   }
   renderPreview();
 }
+
+async function uploadComposeImage(file) {
+  if (!file) return;
+  if (!file.type.startsWith('image/')) {
+    Threads.toast('Pilih file gambar (jpg/png/webp/gif)', false);
+    return;
+  }
+  const hint = document.getElementById('compose-upload-hint');
+  const btnLabel = document.querySelector('.buat-upload-btn');
+  if (hint) {
+    hint.hidden = false;
+    hint.textContent = 'Mengupload ' + file.name + '…';
+  }
+  if (btnLabel) btnLabel.classList.add('is-busy');
+  try {
+    const fd = new FormData();
+    fd.append('file', file);
+    const res = await fetch('/api/upload/image', {
+      method: 'POST',
+      body: fd,
+      credentials: 'same-origin',
+    });
+    const text = await res.text();
+    let data = null;
+    try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
+    if (!res.ok) {
+      throw new Error(data?.error || text || ('upload gagal ' + res.status));
+    }
+    const url = data.image_url || data.path;
+    if (!url) throw new Error('URL upload kosong');
+    setComposeImageURL(url);
+    if (hint) {
+      hint.hidden = false;
+      hint.textContent = 'Terupload — mode Gambar aktif. Siap publish/jadwalkan.';
+    }
+    Threads.toast('Gambar terupload', true);
+  } catch (e) {
+    if (hint) {
+      hint.hidden = false;
+      hint.textContent = e.message || 'Upload gagal';
+    }
+    Threads.toast(e.message || e, false);
+  } finally {
+    if (btnLabel) btnLabel.classList.remove('is-busy');
+    const input = document.getElementById('compose-upload');
+    if (input) input.value = '';
+  }
+}
+
+document.getElementById('compose-upload')?.addEventListener('change', (e) => {
+  const file = e.target?.files?.[0];
+  uploadComposeImage(file);
+});
+
+document.getElementById('btn-clear-media')?.addEventListener('click', () => {
+  setComposeImageURL('');
+  document.getElementById('mt-text')?.click();
+});
+
+// Drag & drop ke blok media
+(() => {
+  const block = document.getElementById('buat-media-block');
+  if (!block) return;
+  ['dragenter', 'dragover'].forEach((ev) => {
+    block.addEventListener(ev, (e) => {
+      e.preventDefault();
+      block.classList.add('is-drop');
+    });
+  });
+  ['dragleave', 'drop'].forEach((ev) => {
+    block.addEventListener(ev, (e) => {
+      e.preventDefault();
+      block.classList.remove('is-drop');
+    });
+  });
+  block.addEventListener('drop', (e) => {
+    const file = e.dataTransfer?.files?.[0];
+    if (file) uploadComposeImage(file);
+  });
+})();
 
 document.getElementById('btn-gen-thumb').onclick = async () => {
   readPartsFromDOM();

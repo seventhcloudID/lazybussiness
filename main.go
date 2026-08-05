@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"html"
+	"io"
 	"log"
 	"net/http"
 	"net/url"
@@ -1253,6 +1254,8 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "keys": thumbClient.KeysStatus()})
 	})
+
+	mux.HandleFunc("POST /api/upload/image", handleUploadImage)
 
 	mux.HandleFunc("POST /api/ai/thumbnail", func(w http.ResponseWriter, r *http.Request) {
 		if !th().Connected() {
@@ -2587,6 +2590,96 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+func handleUploadImage(w http.ResponseWriter, r *http.Request) {
+	ws := accounts.Active()
+	if ws == nil {
+		writeErr(w, http.StatusBadRequest, "akun tidak siap")
+		return
+	}
+	const maxBytes = 12 << 20 // 12 MB
+	r.Body = http.MaxBytesReader(w, r.Body, maxBytes+512)
+	if err := r.ParseMultipartForm(maxBytes); err != nil {
+		writeErr(w, http.StatusBadRequest, "file terlalu besar atau form tidak valid (maks 12MB)")
+		return
+	}
+	file, hdr, err := r.FormFile("file")
+	if err != nil {
+		file, hdr, err = r.FormFile("image")
+	}
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "field file wajib (multipart)")
+		return
+	}
+	defer file.Close()
+
+	ext := strings.ToLower(filepath.Ext(hdr.Filename))
+	switch ext {
+	case ".jpg", ".jpeg", ".png", ".webp", ".gif":
+	default:
+		// sniff content-type
+		ct := strings.ToLower(hdr.Header.Get("Content-Type"))
+		switch {
+		case strings.Contains(ct, "jpeg"):
+			ext = ".jpg"
+		case strings.Contains(ct, "png"):
+			ext = ".png"
+		case strings.Contains(ct, "webp"):
+			ext = ".webp"
+		case strings.Contains(ct, "gif"):
+			ext = ".gif"
+		default:
+			writeErr(w, http.StatusBadRequest, "format harus jpg/png/webp/gif")
+			return
+		}
+	}
+
+	buf := make([]byte, 512)
+	n, _ := file.Read(buf)
+	head := buf[:n]
+	ct := http.DetectContentType(head)
+	if !strings.HasPrefix(ct, "image/") {
+		writeErr(w, http.StatusBadRequest, "file bukan gambar")
+		return
+	}
+	rest, err := io.ReadAll(io.LimitReader(file, maxBytes))
+	if err != nil {
+		writeErr(w, http.StatusBadRequest, "gagal baca file")
+		return
+	}
+	data := append(head, rest...)
+	if len(data) == 0 {
+		writeErr(w, http.StatusBadRequest, "file kosong")
+		return
+	}
+
+	day := time.Now().Format("20060102")
+	name := fmt.Sprintf("up-%d%s", time.Now().UnixNano(), ext)
+	rel := filepath.ToSlash(filepath.Join("uploads", day, name))
+	dir := filepath.Join(ws.ThumbDir, "uploads", day)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+	path := filepath.Join(dir, name)
+	if err := os.WriteFile(path, data, 0o644); err != nil {
+		writeErr(w, http.StatusInternalServerError, err.Error())
+		return
+	}
+
+	mediaPath := "/media/thumbs/" + rel
+	imageURL := mediaPath
+	if base := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/"); base != "" {
+		imageURL = base + mediaPath
+	}
+	writeJSON(w, http.StatusOK, map[string]any{
+		"ok":        true,
+		"image_url": imageURL,
+		"path":      mediaPath,
+		"bytes":     len(data),
+		"filename":  hdr.Filename,
+	})
 }
 
 // parseScheduleTime accepts RFC3339 or "YYYY-MM-DDTHH:MM" in Asia/Jakarta.

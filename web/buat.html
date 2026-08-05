@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Buat Post — malesngonten</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn78" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=mn79" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -50,15 +50,23 @@
           <div class="buat-media-head">
             <div>
               <label class="th-label m-0" for="compose-media-url">Media bagian 1</label>
-              <p class="buat-hint m-0">URL publik, atau generate thumbnail dari hook.</p>
+              <p class="buat-hint m-0">Upload gambar, tempel URL, atau generate thumbnail AI.</p>
             </div>
-            <button type="button" id="btn-gen-thumb" class="th-btn th-btn-soft text-xs">
-              <i class="bi bi-stars"></i> Thumbnail AI
-            </button>
+            <div class="buat-media-actions">
+              <label class="th-btn th-btn-soft text-xs buat-upload-btn" for="compose-upload">
+                <i class="bi bi-upload"></i> Upload
+              </label>
+              <input id="compose-upload" type="file" accept="image/jpeg,image/png,image/webp,image/gif,.jpg,.jpeg,.png,.webp,.gif" hidden>
+              <button type="button" id="btn-gen-thumb" class="th-btn th-btn-soft text-xs">
+                <i class="bi bi-stars"></i> Thumbnail AI
+              </button>
+            </div>
           </div>
-          <input id="compose-media-url" class="th-input" placeholder="https://…/gambar.jpg">
+          <input id="compose-media-url" class="th-input" placeholder="https://…/gambar.jpg atau hasil upload">
+          <p id="compose-upload-hint" class="buat-hint m-0" hidden></p>
           <div id="compose-thumb-box" class="buat-thumb" hidden>
             <img id="compose-thumb-img" alt="Preview thumbnail">
+            <button type="button" id="btn-clear-media" class="buat-thumb-clear" title="Hapus media"><i class="bi bi-x-lg"></i></button>
           </div>
         </div>
 
@@ -140,7 +148,7 @@
   </div>
 </main>
 <script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn78"></script>
-<script src="/js/pages/buat.js?v=mn78"></script>
+<script src="/js/layout.js?v=mn79"></script>
+<script src="/js/pages/buat.js?v=mn79"></script>
 </body>
 </html>
