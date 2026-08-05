@@ -13,6 +13,7 @@ import (
 	"threads-dashboard/internal/ai"
 	buff "threads-dashboard/internal/buffer"
 	"threads-dashboard/internal/instagram"
+	"threads-dashboard/internal/schedule"
 	"threads-dashboard/internal/threads"
 )
 
@@ -26,6 +27,7 @@ type Deps struct {
 	Memory   *ai.MemoryStore
 	Public   string // PUBLIC_BASE_URL, no trailing slash
 	ThumbDir string // optional per-account thumbs dir
+	Schedule *schedule.Store
 }
 
 func (d *Deps) publicOK() bool {

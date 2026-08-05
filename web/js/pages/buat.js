@@ -220,6 +220,106 @@ document.getElementById('btn-container').onclick = () =>
 document.getElementById('btn-publish').onclick = () =>
   publishChain().catch(e => Threads.toast(e.message, false));
 
+function schedulePayload() {
+  readPartsFromDOM();
+  const cleaned = parts.map((p) => String(p || '').trim()).filter(Boolean);
+  if (!cleaned.length) throw new Error('Isi minimal bagian 1');
+  for (const p of cleaned) {
+    if (charLen(p) > MAX_CHARS) throw new Error('Ada bagian lebih dari 500 karakter');
+  }
+  const runAt = document.getElementById('schedule-at')?.value?.trim();
+  if (!runAt) throw new Error('Pilih tanggal & jam jadwal');
+  const body = {
+    run_at: runAt.length === 16 ? runAt : runAt.slice(0, 16),
+    media_type: mediaType(),
+    parts: cleaned,
+    text: cleaned[0],
+    reply_control: document.getElementById('compose-reply-control').value,
+    reply_to_id: document.getElementById('compose-reply-to').value.trim() || undefined,
+  };
+  const mediaURL = document.getElementById('compose-media-url').value.trim();
+  if (body.media_type === 'IMAGE') body.image_url = mediaURL;
+  if (body.media_type === 'VIDEO') body.video_url = mediaURL;
+  return body;
+}
+
+function fmtRunAt(iso) {
+  try {
+    const d = new Date(iso);
+    if (Number.isNaN(d.getTime())) return iso;
+    return d.toLocaleString('id-ID', { timeZone: 'Asia/Jakarta', dateStyle: 'medium', timeStyle: 'short' });
+  } catch {
+    return iso;
+  }
+}
+
+async function loadScheduleList() {
+  const root = document.getElementById('schedule-list');
+  if (!root) return;
+  try {
+    const data = await Threads.api('/api/schedule?all=1');
+    const posts = Array.isArray(data?.posts) ? data.posts : [];
+    const pending = posts.filter((p) => p.status === 'pending' || p.status === 'running');
+    const recent = posts.filter((p) => p.status !== 'pending' && p.status !== 'running').slice(-5).reverse();
+    const show = [...pending, ...recent];
+    if (!show.length) {
+      root.innerHTML = `<p class="text-sm text-muted m-0">Belum ada jadwal.</p>`;
+      return;
+    }
+    root.innerHTML = show.map((p) => {
+      const preview = Threads.escapeHtml((p.text || p.parts?.[0] || '').slice(0, 80));
+      const st = Threads.escapeHtml(p.status || '');
+      const when = Threads.escapeHtml(fmtRunAt(p.run_at));
+      const canCancel = p.status === 'pending';
+      return `<div class="buat-sched-item mb-3 pb-3 border-b border-line last:border-0 last:mb-0 last:pb-0">
+        <div class="flex justify-between gap-2 items-start">
+          <div class="min-w-0">
+            <p class="text-xs text-muted m-0">${when}</p>
+            <p class="text-sm m-0 mt-0.5 truncate">${preview || '—'}</p>
+            <span class="th-chip text-xs mt-1 inline-flex">${st}</span>
+            ${p.error ? `<p class="text-xs text-danger m-0 mt-1">${Threads.escapeHtml(p.error)}</p>` : ''}
+          </div>
+          ${canCancel ? `<button type="button" class="th-btn th-btn-ghost text-xs" data-cancel-sched="${Threads.escapeHtml(p.id)}">Batal</button>` : ''}
+        </div>
+      </div>`;
+    }).join('');
+    root.querySelectorAll('[data-cancel-sched]').forEach((btn) => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-cancel-sched');
+        try {
+          await Threads.api('/api/schedule/' + encodeURIComponent(id) + '/cancel', { method: 'POST', body: '{}' });
+          Threads.toast('Jadwal dibatalkan', true);
+          loadScheduleList();
+        } catch (e) {
+          Threads.toast(e.message, false);
+        }
+      });
+    });
+  } catch (e) {
+    root.innerHTML = `<p class="text-sm text-muted m-0">${Threads.escapeHtml(e.message)}</p>`;
+  }
+}
+
+document.getElementById('btn-schedule')?.addEventListener('click', async () => {
+  const btn = document.getElementById('btn-schedule');
+  btn.disabled = true;
+  try {
+    const body = schedulePayload();
+    const data = await Threads.api('/api/schedule', { method: 'POST', body: JSON.stringify(body) });
+    Threads.toast('Terjadwal: ' + fmtRunAt(data?.post?.run_at), true);
+    document.getElementById('container-status').textContent =
+      'Terjadwal ' + fmtRunAt(data?.post?.run_at) + ' · id ' + (data?.post?.id || '');
+    loadScheduleList();
+  } catch (e) {
+    Threads.toast(e.message, false);
+  } finally {
+    btn.disabled = false;
+  }
+});
+document.getElementById('btn-schedule-refresh')?.addEventListener('click', () => loadScheduleList());
+loadScheduleList();
+setInterval(loadScheduleList, 60000);
+
 document.getElementById('btn-repost').onclick = async () => {
   const media_id = document.getElementById('repost-id').value.trim();
   if (!media_id) return Threads.toast('Isi ID post', false);

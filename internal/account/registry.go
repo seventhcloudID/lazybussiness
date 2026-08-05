@@ -15,6 +15,7 @@ import (
 	"threads-dashboard/internal/buffer"
 	"threads-dashboard/internal/instagram"
 	"threads-dashboard/internal/lazy"
+	"threads-dashboard/internal/schedule"
 	"threads-dashboard/internal/threads"
 )
 
@@ -45,6 +46,7 @@ type Workspace struct {
 	Buffer   *buffer.Client
 	Memory   *ai.MemoryStore
 	Lazy     *lazy.Store
+	Schedule *schedule.Store
 	Deps     *lazy.Deps
 	Sched    *lazy.Scheduler
 	ThumbDir string
@@ -291,6 +293,7 @@ func (r *Registry) ensureWorkspace(id string) (*Workspace, error) {
 		filepath.Join(dir, "lazy_jobs.json"),
 		filepath.Join(dir, "lazy-media"),
 	)
+	schedStore := schedule.NewStoreAt(filepath.Join(dir, "scheduled_posts.json"))
 	deps := &lazy.Deps{
 		Store:    lz,
 		Threads:  th,
@@ -301,11 +304,12 @@ func (r *Registry) ensureWorkspace(id string) (*Workspace, error) {
 		Memory:   mem,
 		Public:   r.shared.Public,
 		ThumbDir: thumbDir,
+		Schedule: schedStore,
 	}
 	sched := lazy.NewScheduler(deps)
 	ws := &Workspace{
 		Meta: m, Dir: dir,
-		Threads: th, IG: ig, Buffer: buf, Memory: mem, Lazy: lz,
+		Threads: th, IG: ig, Buffer: buf, Memory: mem, Lazy: lz, Schedule: schedStore,
 		Deps: deps, Sched: sched, ThumbDir: thumbDir,
 	}
 	r.workspaces[id] = ws

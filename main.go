@@ -23,6 +23,7 @@ import (
 	"threads-dashboard/internal/lazy"
 	"threads-dashboard/internal/oauth"
 	"threads-dashboard/internal/org"
+	"threads-dashboard/internal/schedule"
 	"threads-dashboard/internal/threads"
 )
 
@@ -1407,6 +1408,93 @@ func main() {
 		proxy(w, func() (json.RawMessage, error) { return th().ManageReply(body.ReplyID, body.Hide) })
 	})
 
+	mux.HandleFunc("GET /api/schedule", func(w http.ResponseWriter, r *http.Request) {
+		ws := accounts.Active()
+		if ws == nil || ws.Schedule == nil {
+			writeErr(w, http.StatusBadRequest, "akun tidak siap")
+			return
+		}
+		all := r.URL.Query().Get("all") == "1" || r.URL.Query().Get("all") == "true"
+		tz := "Asia/Jakarta"
+		if lz() != nil {
+			tz = lz().GetConfig().Timezone
+			if tz == "" {
+				tz = "Asia/Jakarta"
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"posts":      ws.Schedule.List(all),
+			"account_id": ws.Meta.ID,
+			"timezone":   tz,
+		})
+	})
+	mux.HandleFunc("POST /api/schedule", func(w http.ResponseWriter, r *http.Request) {
+		ws := accounts.Active()
+		if ws == nil || ws.Schedule == nil {
+			writeErr(w, http.StatusBadRequest, "akun tidak siap")
+			return
+		}
+		var body struct {
+			RunAt        string   `json:"run_at"`
+			MediaType    string   `json:"media_type"`
+			Text         string   `json:"text"`
+			Parts        []string `json:"parts"`
+			ImageURL     string   `json:"image_url"`
+			VideoURL     string   `json:"video_url"`
+			ReplyControl string   `json:"reply_control"`
+			ReplyToID    string   `json:"reply_to_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		runAt, err := parseScheduleTime(body.RunAt)
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		post, err := ws.Schedule.Create(schedule.CreateInput{
+			RunAt:        runAt,
+			MediaType:    body.MediaType,
+			Text:         body.Text,
+			Parts:        body.Parts,
+			ImageURL:     body.ImageURL,
+			VideoURL:     body.VideoURL,
+			ReplyControl: body.ReplyControl,
+			ReplyToID:    body.ReplyToID,
+		})
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"post": post})
+	})
+	mux.HandleFunc("POST /api/schedule/{id}/cancel", func(w http.ResponseWriter, r *http.Request) {
+		ws := accounts.Active()
+		if ws == nil || ws.Schedule == nil {
+			writeErr(w, http.StatusBadRequest, "akun tidak siap")
+			return
+		}
+		post, err := ws.Schedule.Cancel(r.PathValue("id"))
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"post": post})
+	})
+	mux.HandleFunc("DELETE /api/schedule/{id}", func(w http.ResponseWriter, r *http.Request) {
+		ws := accounts.Active()
+		if ws == nil || ws.Schedule == nil {
+			writeErr(w, http.StatusBadRequest, "akun tidak siap")
+			return
+		}
+		if err := ws.Schedule.Delete(r.PathValue("id")); err != nil {
+			writeErr(w, http.StatusNotFound, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+	})
+
 	mux.HandleFunc("POST /api/publish", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			MediaType    string `json:"media_type"`
@@ -2499,6 +2587,35 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
 	_ = json.NewEncoder(w).Encode(v)
+}
+
+// parseScheduleTime accepts RFC3339 or "YYYY-MM-DDTHH:MM" in Asia/Jakarta.
+func parseScheduleTime(raw string) (time.Time, error) {
+	raw = strings.TrimSpace(raw)
+	if raw == "" {
+		return time.Time{}, fmt.Errorf("run_at wajib")
+	}
+	if t, err := time.Parse(time.RFC3339, raw); err == nil {
+		return t, nil
+	}
+	if t, err := time.Parse(time.RFC3339Nano, raw); err == nil {
+		return t, nil
+	}
+	loc, err := time.LoadLocation("Asia/Jakarta")
+	if err != nil {
+		loc = time.FixedZone("WIB", 7*3600)
+	}
+	for _, layout := range []string{
+		"2006-01-02T15:04",
+		"2006-01-02 15:04",
+		"2006-01-02T15:04:05",
+		"2006-01-02 15:04:05",
+	} {
+		if t, err := time.ParseInLocation(layout, raw, loc); err == nil {
+			return t, nil
+		}
+	}
+	return time.Time{}, fmt.Errorf("run_at format tidak dikenal (pakai RFC3339 atau 2006-01-02T15:04 WIB)")
 }
 
 func withCORS(next http.Handler) http.Handler {

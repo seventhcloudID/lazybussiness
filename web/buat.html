@@ -16,7 +16,7 @@
     <div>
       <p class="th-eyebrow">Konten</p>
       <h1 class="th-title">Buat Post</h1>
-      <p class="th-lead">Tulis satu post atau utas berantai, lalu publish langsung ke Threads.</p>
+      <p class="th-lead">Tulis satu post atau utas berantai — publish sekarang atau jadwalkan.</p>
     </div>
     <div class="th-toolbar flex-wrap items-center gap-2">
       <span class="th-chip" id="parts-meta">1 bagian</span>
@@ -81,6 +81,17 @@
         </details>
       </div>
 
+      <div class="buat-schedule-row border-t border-line pt-3 mt-1">
+        <label class="th-label" for="schedule-at">Jadwalkan (WIB)</label>
+        <div class="flex flex-wrap gap-2 items-center">
+          <input id="schedule-at" type="datetime-local" class="th-input" style="max-width:16rem">
+          <button id="btn-schedule" class="th-btn th-btn-soft" type="button">
+            <i class="bi bi-calendar-plus"></i> Jadwalkan
+          </button>
+        </div>
+        <p class="text-xs text-muted m-0 mt-1">Kosongkan kalau mau publish sekarang. Scheduler cek tiap ~1 menit.</p>
+      </div>
+
       <div class="buat-composer-foot">
         <button id="btn-container" class="th-btn th-btn-ghost" type="button">Buat container saja</button>
         <button id="btn-publish" class="th-btn th-btn-primary" type="button">
@@ -113,6 +124,16 @@
       </section>
 
       <section class="th-panel">
+        <div class="th-panel-head flex items-center justify-between gap-2">
+          <span>Antrian jadwal</span>
+          <button type="button" id="btn-schedule-refresh" class="th-btn th-btn-ghost text-xs"><i class="bi bi-arrow-clockwise"></i></button>
+        </div>
+        <div class="th-panel-body" id="schedule-list">
+          <p class="text-sm text-muted m-0">Memuat…</p>
+        </div>
+      </section>
+
+      <section class="th-panel">
         <div class="th-panel-head">Repost cepat</div>
         <div class="th-panel-body buat-repost">
           <input id="repost-id" class="th-input" placeholder="ID post Threads">
@@ -124,6 +145,6 @@
 </main>
 <script src="/js/api.js?v=mn70"></script>
 <script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/buat.js?v=strand8"></script>
+<script src="/js/pages/buat.js?v=mn77"></script>
 </body>
 </html>

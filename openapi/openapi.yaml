@@ -123,6 +123,74 @@ paths:
           $ref: "#/components/responses/Error"
         "401":
           $ref: "#/components/responses/Unauthorized"
+  /api/schedule:
+    get:
+      operationId: listScheduledPosts
+      summary: Daftar post terjadwal (antrian manual)
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: all
+          in: query
+          schema:
+            type: string
+            enum: ["0", "1", "true", "false"]
+          description: all=1 termasuk done/cancelled
+      responses:
+        "200":
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+    post:
+      operationId: createScheduledPost
+      summary: Jadwalkan post/utas Threads pada run_at
+      security:
+        - BearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ScheduleRequest"
+      responses:
+        "200":
+          description: Scheduled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "400":
+          $ref: "#/components/responses/Error"
+        "401":
+          $ref: "#/components/responses/Unauthorized"
+  /api/schedule/{id}/cancel:
+    post:
+      operationId: cancelScheduledPost
+      summary: Batalkan jadwal pending
+      security:
+        - BearerAuth: []
+      parameters:
+        - name: id
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: Cancelled
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: true
+        "401":
+          $ref: "#/components/responses/Unauthorized"
   /api/container:
     get:
       operationId: getContainer
@@ -352,5 +420,31 @@ components:
           type: boolean
           default: false
           description: true = publish segera setelah container dibuat
+    ScheduleRequest:
+      type: object
+      required: [run_at]
+      properties:
+        run_at:
+          type: string
+          description: RFC3339 atau YYYY-MM-DDTHH:MM (Asia/Jakarta)
+          example: "2026-08-06T15:00"
+        media_type:
+          type: string
+          default: TEXT
+        text:
+          type: string
+        parts:
+          type: array
+          items:
+            type: string
+          description: Utas berantai (opsional; kalau kosong pakai text)
+        image_url:
+          type: string
+        video_url:
+          type: string
+        reply_control:
+          type: string
+        reply_to_id:
+          type: string
 security:
   - BearerAuth: []

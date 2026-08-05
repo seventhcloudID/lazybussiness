@@ -39,6 +39,11 @@ func (s *Scheduler) Start() {
 	if n > 0 {
 		log.Printf("lazy: recover %d job stuck running → pending", n)
 	}
+	if s.deps.Schedule != nil {
+		if sn := s.deps.Schedule.RecoverStuck(); sn > 0 {
+			log.Printf("schedule: recover %d post stuck running → pending", sn)
+		}
+	}
 	go s.loop()
 	log.Println("lazy scheduler aktif (tick 1m)")
 }
@@ -69,6 +74,11 @@ func (s *Scheduler) tick() {
 	}
 	s.busy = true
 	s.mu.Unlock()
+
+	// Manual schedule queue — jalan meski Lazy OFF.
+	if s.deps.Schedule != nil {
+		s.deps.Schedule.ProcessWith(s.deps.Threads)
+	}
 
 	cfg := s.deps.Store.GetConfig()
 	loc := s.deps.Store.Location()

@@ -62,6 +62,11 @@ th{color:var(--soft);font-weight:600;font-size:.8rem;text-transform:uppercase;le
   -H "Authorization: Bearer mn_YOUR_KEY" \
   -H "Content-Type: application/json" \
   -d '{"id":"main"}'</pre>
+  <pre>curl -s https://flowa.tigaawan.com/api/schedule \
+  -H "Authorization: Bearer mn_YOUR_KEY" \
+  -H "Content-Type: application/json" \
+  -d '{"run_at":"2026-08-06T15:00","text":"Post terjadwal","publish":true}'</pre>
+  <p class="text-xs" style="color:var(--soft)"><code>run_at</code>: RFC3339 atau <code>YYYY-MM-DDTHH:MM</code> (WIB). Scheduler cek tiap ~1 menit.</p>
 
   <h2>4. Endpoint utama</h2>
   <table>
@@ -71,7 +76,10 @@ th{color:var(--soft);font-weight:600;font-size:.8rem;text-transform:uppercase;le
       <tr><td>GET</td><td><code>/api/me</code></td><td>Profil Threads</td></tr>
       <tr><td>GET</td><td><code>/api/accounts</code></td><td>Daftar akun brand</td></tr>
       <tr><td>POST</td><td><code>/api/accounts/switch</code></td><td>Ganti akun aktif</td></tr>
-      <tr><td>POST</td><td><code>/api/publish</code></td><td>Publish / buat container Threads</td></tr>
+      <tr><td>POST</td><td><code>/api/publish</code></td><td>Publish / buat container Threads (sekarang)</td></tr>
+      <tr><td>POST</td><td><code>/api/schedule</code></td><td>Jadwalkan post / utas (run_at)</td></tr>
+      <tr><td>GET</td><td><code>/api/schedule</code></td><td>Daftar antrian jadwal</td></tr>
+      <tr><td>POST</td><td><code>/api/schedule/{id}/cancel</code></td><td>Batalkan jadwal pending</td></tr>
       <tr><td>GET</td><td><code>/api/container?id=</code></td><td>Cek status container</td></tr>
       <tr><td>POST</td><td><code>/api/ai/generate</code></td><td>Generate utas (AI)</td></tr>
       <tr><td>POST</td><td><code>/api/ai/carousel</code></td><td>Generate carousel</td></tr>
