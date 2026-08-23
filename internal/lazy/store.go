@@ -24,6 +24,7 @@ type Config struct {
 	TopicHint        string   `json:"topic_hint,omitempty"`
 	ThumbnailEnabled bool     `json:"thumbnail_enabled"`           // legacy field; Threads cover is always enabled
 	CarouselTemplate string   `json:"carousel_template,omitempty"` // noir|paper|ocean|ink|ember|meadow
+	CoverTemplate    string   `json:"cover_template,omitempty"`    // edge-clean|split-roomy|… (sama /app/generate)
 	Channels         []string `json:"channels,omitempty"`          // threads|instagram|tiktok
 }
 
@@ -36,8 +37,12 @@ type Job struct {
 	Parts         []string  `json:"parts,omitempty"`
 	Caption       string    `json:"caption,omitempty"`
 	ThreadsIDs    []string  `json:"threads_ids,omitempty"`
-	ThumbURL      string    `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
-	CoverURL      string    `json:"cover_url,omitempty"` // cover 4:5 untuk Instagram/TikTok (ChatGPT)
+	ThumbURL            string   `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
+	CoverURL            string   `json:"cover_url,omitempty"` // cover 4:5 untuk Instagram/TikTok (ChatGPT)
+	PrefilledParts      []string `json:"prefilled_parts,omitempty"`
+	PrefilledTitle      string   `json:"prefilled_title,omitempty"`
+	PrefilledCoverTitle string   `json:"prefilled_cover_title,omitempty"`
+	PrefilledThumbURL   string   `json:"prefilled_thumb_url,omitempty"`
 	ImageURLs     []string  `json:"image_urls,omitempty"`
 	IGContainer   string    `json:"ig_container,omitempty"`
 	IGMediaID     string    `json:"ig_media_id,omitempty"`      // published IG media id
@@ -55,12 +60,14 @@ type jobFile struct {
 }
 
 type Store struct {
-	mu         sync.Mutex
-	configPath string
-	jobsPath   string
-	mediaDir   string
-	cfg        Config
-	jobs       []Job
+	mu              sync.Mutex
+	configPath      string
+	jobsPath        string
+	handoffPath     string
+	mediaDir        string
+	cfg             Config
+	jobs            []Job
+	pendingHandoff  *ContentHandoff
 }
 
 func NewStore() *Store {
@@ -73,9 +80,10 @@ func NewStore() *Store {
 
 func NewStoreAt(configPath, jobsPath, mediaDir string) *Store {
 	s := &Store{
-		configPath: configPath,
-		jobsPath:   jobsPath,
-		mediaDir:   mediaDir,
+		configPath:  configPath,
+		jobsPath:    jobsPath,
+		handoffPath: handoffPathFor(jobsPath),
+		mediaDir:    mediaDir,
 		cfg: Config{
 			Enabled:          false,
 			PostsPerDay:      5,
@@ -86,6 +94,7 @@ func NewStoreAt(configPath, jobsPath, mediaDir string) *Store {
 		},
 	}
 	s.load()
+	s.loadHandoff()
 	return s
 }
 
@@ -108,6 +117,7 @@ func (s *Store) load() {
 				c.ThumbnailEnabled = true
 			}
 			c.CarouselTemplate = NormalizeTemplate(c.CarouselTemplate)
+			c.CoverTemplate = normalizeCoverTemplate(c.CoverTemplate)
 			if _, ok := raw["channels"]; !ok {
 				c.Channels = []string{"threads", "instagram", "tiktok"}
 			}
@@ -168,6 +178,7 @@ func (s *Store) SetConfig(c Config) (Config, error) {
 		c.Timezone = "Asia/Jakarta"
 	}
 	c.CarouselTemplate = NormalizeTemplate(c.CarouselTemplate)
+	c.CoverTemplate = normalizeCoverTemplate(c.CoverTemplate)
 	c.Channels = normalizeChannels(c.Channels)
 	c.ThumbnailEnabled = true
 	s.cfg = c
@@ -215,6 +226,17 @@ func (s *Store) Location() *time.Location {
 	return loc
 }
 
+func (s *Store) GetJob(id string) (Job, bool) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	for _, j := range s.jobs {
+		if j.ID == id {
+			return j, true
+		}
+	}
+	return Job{}, false
+}
+
 func (s *Store) ListJobs() []Job {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -250,6 +272,7 @@ func (s *Store) AddJobs(jobs []Job) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.jobs = append(s.jobs, jobs...)
+	s.tryApplyPendingHandoffLocked()
 	return s.saveJobsLocked()
 }
 

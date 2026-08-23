@@ -335,6 +335,37 @@ func TestValidateEditorialPackageBadEvidenceID(t *testing.T) {
 	}
 }
 
+func TestSanitizePackageClaimsEvidenceDropsUnknownIDs(t *testing.T) {
+	pkg := GenEditorialPackage{
+		Claims: []GenClaim{
+			{Text: "fakta A", EvidenceIDs: []string{"src_1", "src_5"}},
+			{Text: "tanpa sumber", EvidenceIDs: []string{"src_9"}},
+		},
+	}
+	ev := ResearchEvidence{Sources: []ResearchSource{
+		{ID: "src_1", URL: "https://a.example"},
+		{ID: "src_2", URL: "https://b.example"},
+	}}
+	sanitizePackageClaimsEvidence(&pkg, ev)
+	if len(pkg.Claims) != 2 {
+		t.Fatalf("claims=%+v", pkg.Claims)
+	}
+	if len(pkg.Claims[0].EvidenceIDs) != 1 || pkg.Claims[0].EvidenceIDs[0] != "src_1" {
+		t.Fatalf("evidence_ids=%v", pkg.Claims[0].EvidenceIDs)
+	}
+	if len(pkg.Claims[1].EvidenceIDs) != 0 {
+		t.Fatalf("expected empty evidence on second claim, got %v", pkg.Claims[1].EvidenceIDs)
+	}
+	if errs := ValidateEditorialPackage(GenEditorialPackage{
+		Strategy:        GenStrategy{Angle: "a"},
+		Copy:            GenCopy{Hook: "h", Thread: []string{"1", "2", "3", "4", "5", "6", "7", "8"}},
+		VisualDirection: GenVisualDirection{CoverBrief: "c"},
+		Claims:          pkg.Claims,
+	}, ev); len(errs) != 0 {
+		t.Fatalf("unexpected validation errors: %v", errs)
+	}
+}
+
 func TestPackageResultDoesNotRecycleCaptionAsSecondDraft(t *testing.T) {
 	pkg := GenEditorialPackage{
 		Strategy: GenStrategy{Angle: "angle utama"},

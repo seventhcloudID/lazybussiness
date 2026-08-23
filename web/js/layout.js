@@ -108,7 +108,6 @@ Threads.mountSidebar = function (active) {
     ${group('Buat', `
       ${link('buat',      '/buat',      'pen',     'Tulis post')}
       ${link('generate',  '/generate',  'magic',   'Generate AI')}
-      ${link('gambar',    '/gambar',    'image',   'Generate gambar')}
       ${link('cover-templates', '/cover-templates', 'carousel', 'Template cover')}
       ${link('carousel-templates', '/carousel-templates', 'carousel', 'Template carousel')}
       ${link('chat',      '/chat',      'chat',    'Chat AI')}

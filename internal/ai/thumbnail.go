@@ -264,6 +264,54 @@ func appendThumbnailDeviceGeometryGuard(prompt string) string {
 	return strings.TrimSpace(prompt) + "\n\n" + thumbnailDeviceGeometryGuard
 }
 
+const coverBackgroundOverlayGuard = `OUTPUT RULE — OVERRIDES ALL OTHER LAYOUT DIRECTION:
+The app renders a white panel and title AFTER generation. Output PHOTO BACKGROUND ONLY.
+Do NOT draw any text, letters, numbers, logos, headlines, yellow keywords, panels, cards, borders, shapes, shadows, or graphic overlays on the image.`
+
+func appendCoverBackgroundOverlayGuard(prompt string) string {
+	low := strings.ToLower(prompt)
+	if strings.Contains(low, "photo background only") || strings.Contains(prompt, "FOTO LATAR") {
+		return prompt
+	}
+	if strings.Contains(prompt, coverBackgroundOverlayGuard) {
+		return prompt
+	}
+	return strings.TrimSpace(prompt) + "\n\n" + coverBackgroundOverlayGuard
+}
+
+// BuildCoverBackgroundPrompt asks the image model for a photo-only 4:5 background.
+// Text and the Edge Clean panel are rendered in code via OverlayPanel.
+func BuildCoverBackgroundPrompt(hook, coverBrief string) string {
+	hook = strings.TrimSpace(hook)
+	if hook == "" {
+		hook = "(hook kosong)"
+	}
+	if len(hook) > 2000 {
+		hook = hook[:2000] + "…"
+	}
+	brief := strings.TrimSpace(coverBrief)
+	if brief == "" {
+		brief = "(tentukan adegan editorial aktif dari hook; jangan generik)"
+	}
+	return fmt.Sprintf(`Buat FOTO LATAR editorial portrait 4:5, 1080×1350 untuk cover konten. Aplikasi menambahkan panel putih dan teks SETELAH gambar dibuat — model HANYA menghasilkan foto tanpa tulisan.
+
+Hook/topik: %s
+Ide adegan: %s
+
+WAJIB:
+- Satu foto editorial realistis dengan momen aktif yang relevan hook.
+- Focal point di area atas/tengah; area bawah ~45%% bebas wajah, tangan, dan objek penting (akan ditutup panel).
+- Bright editorial daylight, exposure terang, white balance netral, warna natural hidup.
+
+LARANGAN KERAS:
+- Teks, huruf, angka, logo, watermark, headline, kata kuning, panel, kartu, border, shape, UI, kolase, atau overlay grafis.
+- Orang pasif menatap layar tanpa emosi/aksi kuat.
+- Layar perangkat berisi UI/teks; layar melayang, duplikat, atau transparan.
+- Sepia, vintage, murky, underexposed, faded, atau vignette gelap.
+
+%s`, hook, brief, coverBackgroundOverlayGuard)
+}
+
 func (c *ThumbnailClient) currentKey() string {
 	c.keyMu.Lock()
 	defer c.keyMu.Unlock()
@@ -448,6 +496,9 @@ func (c *ThumbnailClient) GenerateRequest(req ThumbnailRequest) (*ThumbnailResul
 	}
 	if !req.Freeform {
 		prompt = appendThumbnailDeviceGeometryGuard(prompt)
+	}
+	if req.OverlayPanel && !req.Freeform {
+		prompt = appendCoverBackgroundOverlayGuard(prompt)
 	}
 
 	refURL, err := normalizeReferenceImage(req.ReferenceImage)

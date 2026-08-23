@@ -165,6 +165,15 @@ func TestThumbnailDeviceGeometryGuardIsAlwaysAppendedOnce(t *testing.T) {
 	}
 }
 
+func TestBuildCoverBackgroundPromptForbidsOnImageText(t *testing.T) {
+	prompt := BuildCoverBackgroundPrompt("Hook QRIS kecil", "pasangan baru nikah cek rekening")
+	for _, want := range []string{"FOTO LATAR", "tanpa tulisan", "PHOTO BACKGROUND ONLY", "yellow keywords"} {
+		if !strings.Contains(prompt, want) {
+			t.Fatalf("missing %q in prompt: %s", want, prompt)
+		}
+	}
+}
+
 func TestBimoseptCoverDoesNotInjectLegacySeriesHook(t *testing.T) {
 	got := coverHeadlineForHandle("Jangan tawarkan WEBSITE dulu. Satu pertanyaan awal menentukan apakah pemilik toko mau lanjut.", "@bimosept")
 	want := "Jangan tawarkan WEBSITE dulu. Satu pertanyaan awal menentukan apakah pemilik toko mau lanjut."

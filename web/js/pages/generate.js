@@ -304,6 +304,7 @@ function renderDrafts(result) {
             ${n.risk ? `<p class="why"><strong>Risiko:</strong> ${Threads.escapeHtml(n.risk)}</p>` : ''}
             <div class="ai-draft-actions">
               <button type="button" class="th-btn th-btn-primary text-xs" data-use="${i}"><i class="bi bi-pencil-square"></i> Ke Buat Post</button>
+              <button type="button" class="th-btn th-btn-soft text-xs" data-lazy="${i}"><i class="bi bi-lightning-charge"></i> Antre Lazy</button>
               <button type="button" class="th-btn th-btn-soft text-xs" data-carousel="${i}"><i class="bi bi-images"></i> Carousel IG</button>
               <button type="button" class="th-btn th-btn-ghost text-xs" data-copy="${i}"><i class="bi bi-clipboard"></i> Salin</button>
               <button type="button" class="th-btn th-btn-ghost text-xs" data-thumb="${i}" ${thumbEnabled ? '' : 'disabled title="Set AI_API_KEY di .env"'}><i class="bi bi-image"></i> Thumbnail</button>
@@ -715,25 +716,37 @@ function renderSourcesPanel(result) {
     `<li>${Threads.escapeHtml(String(u))}</li>`).join('')}</ul>`;
 }
 
+function friendlyStreamError(e) {
+  const msg = String(e?.message || e || '');
+  if (/input stream|network error|Failed to fetch|Load failed|aborted|NS_BASE_STREAM_CLOSED/i.test(msg)) {
+    return 'Stream generate putus (sering nginx timeout atau 9router error). Cek: journalctl -u lazybussiness -n 50, curl http://127.0.0.1:20128/v1/models, proxy_read_timeout 600s untuk /api/ai/.';
+  }
+  return msg || 'generate gagal';
+}
+
 async function readGenerateSSE(res, onEvent) {
   const reader = res.body.getReader();
   const dec = new TextDecoder();
   let buf = '';
-  while (true) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buf += dec.decode(value, { stream: true });
-    const chunks = buf.split('\n\n');
-    buf = chunks.pop() || '';
-    for (const chunk of chunks) {
-      const line = chunk.split('\n').find((l) => l.startsWith('data: '));
-      if (!line) continue;
-      const raw = line.slice(6).trim();
-      if (!raw || raw === '[DONE]') continue;
-      let ev;
-      try { ev = JSON.parse(raw); } catch { continue; }
-      onEvent(ev);
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buf += dec.decode(value, { stream: true });
+      const chunks = buf.split('\n\n');
+      buf = chunks.pop() || '';
+      for (const chunk of chunks) {
+        const line = chunk.split('\n').find((l) => l.startsWith('data: '));
+        if (!line) continue;
+        const raw = line.slice(6).trim();
+        if (!raw || raw === '[DONE]') continue;
+        let ev;
+        try { ev = JSON.parse(raw); } catch { continue; }
+        onEvent(ev);
+      }
     }
+  } catch (e) {
+    throw new Error(friendlyStreamError(e));
   }
 }
 
@@ -849,9 +862,42 @@ document.getElementById('btn-generate').onclick = async () => {
   }
 };
 
+async function enqueueLazyDraft(i) {
+  const d = lastDrafts[i];
+  if (!d) return;
+  const parts = Array.isArray(d?.parts) && d.parts.length
+    ? d.parts.map(p => String(p || '').replace(/\\n/g, '\n').trim()).filter(Boolean)
+    : draftFullText(d).split(/\n\s*\n/).map(s => s.trim()).filter(Boolean);
+  if (parts.length < 2) {
+    Threads.toast('Utas minimal 2 bagian untuk Lazy', false);
+    return;
+  }
+  const thumb = draftThumbs[i];
+  if (!thumb) {
+    Threads.toast('Generate thumbnail dulu (auto thumbnail atau tombol Thumbnail)', false);
+    return;
+  }
+  try {
+    const data = await Threads.api('/api/lazy/handoff', {
+      method: 'POST',
+      body: JSON.stringify({
+        parts,
+        title: d.title || '',
+        cover_title: draftCoverTitle(d),
+        thumb_url: thumb,
+      }),
+    });
+    Threads.toast(data.message || 'Diantre ke Lazy', true);
+    location.href = '/app/lazy';
+  } catch (e) {
+    Threads.toast(e.message || String(e), false);
+  }
+}
+
 document.getElementById('drafts').addEventListener('click', async e => {
   const copy = e.target.closest('[data-copy]');
   const use = e.target.closest('[data-use]');
+  const lazyBtn = e.target.closest('[data-lazy]');
   const thumb = e.target.closest('[data-thumb]');
   const car = e.target.closest('[data-carousel]');
   const fb = e.target.closest('[data-fb]');
@@ -869,6 +915,10 @@ document.getElementById('drafts').addEventListener('click', async e => {
   }
   if (thumb) {
     await generateThumbnailForDraft(Number(thumb.dataset.thumb));
+    return;
+  }
+  if (lazyBtn) {
+    await enqueueLazyDraft(Number(lazyBtn.dataset.lazy));
     return;
   }
   if (use) {

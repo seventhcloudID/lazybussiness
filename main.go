@@ -17,6 +17,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"threads-dashboard/internal/account"
@@ -212,7 +213,7 @@ func main() {
 			http.Redirect(w, r, "/app/akun", http.StatusFound)
 			return
 		}
-		if page == "rapat" {
+		if page == "rapat" || page == "gambar" {
 			http.Redirect(w, r, "/app/generate", http.StatusFound)
 			return
 		}
@@ -1613,16 +1614,40 @@ func main() {
 		w.Header().Set("X-Accel-Buffering", "no")
 		flusher.Flush()
 
-		writeEv := func(ev ai.GenerateStreamEvent) error {
-			raw, _ := json.Marshal(ev)
-			if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+		var sseMu sync.Mutex
+		writeRaw := func(format string, args ...any) error {
+			sseMu.Lock()
+			defer sseMu.Unlock()
+			if _, err := fmt.Fprintf(w, format, args...); err != nil {
 				return err
 			}
 			flusher.Flush()
 			return nil
 		}
+		writeEv := func(ev ai.GenerateStreamEvent) error {
+			raw, _ := json.Marshal(ev)
+			return writeRaw("data: %s\n\n", raw)
+		}
 
-		result, err := aiClient.GenerateContentEmit(r.Context(), nil, snap, req, writeEv)
+		streamCtx, stopKeepalive := context.WithCancel(r.Context())
+		defer stopKeepalive()
+		go func() {
+			ticker := time.NewTicker(15 * time.Second)
+			defer ticker.Stop()
+			for {
+				select {
+				case <-streamCtx.Done():
+					return
+				case <-ticker.C:
+					if err := writeRaw(": keepalive\n\n"); err != nil {
+						stopKeepalive()
+						return
+					}
+				}
+			}
+		}()
+
+		result, err := aiClient.GenerateContentEmit(streamCtx, nil, snap, req, writeEv)
 		if err != nil {
 			var qe *ai.QuotaError
 			if errors.As(err, &qe) {
@@ -2624,6 +2649,57 @@ func main() {
 			"started": true,
 			"job":     job,
 			"message": "Job jalan di background — pantau antrian (hindari 504)",
+		})
+	})
+	mux.HandleFunc("POST /api/lazy/handoff", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Parts      []string `json:"parts"`
+			Title      string   `json:"title"`
+			CoverTitle string   `json:"cover_title"`
+			ThumbURL   string   `json:"thumb_url"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		store := lz()
+		if store == nil {
+			writeErr(w, http.StatusServiceUnavailable, "workspace Lazy belum siap")
+			return
+		}
+		attachedID, pending, err := store.EnqueueHandoff(lazy.ContentHandoff{
+			Parts:      body.Parts,
+			Title:      body.Title,
+			CoverTitle: body.CoverTitle,
+			ThumbURL:   body.ThumbURL,
+		})
+		if err != nil {
+			writeErr(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		msg := "Utas + cover Edge Clean diantre ke slot Lazy berikutnya"
+		if attachedID != "" {
+			msg = "Utas + cover Edge Clean dilampirkan ke job " + attachedID
+		} else if pending {
+			msg = "Utas + cover Edge Clean menunggu slot Lazy berikutnya"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":               true,
+			"attached_job_id":  attachedID,
+			"pending":          pending,
+			"pending_handoff":  store.PendingHandoff(),
+			"message":          msg,
+		})
+	})
+	mux.HandleFunc("GET /api/lazy/handoff", func(w http.ResponseWriter, r *http.Request) {
+		store := lz()
+		if store == nil {
+			writeErr(w, http.StatusServiceUnavailable, "workspace Lazy belum siap")
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":              true,
+			"pending_handoff": store.PendingHandoff(),
 		})
 	})
 	mux.HandleFunc("POST /api/lazy/replan", func(w http.ResponseWriter, r *http.Request) {

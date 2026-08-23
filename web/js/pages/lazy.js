@@ -63,6 +63,7 @@ function jobRowHTML(j, compact) {
   if (j.buffer_x_post_id) tags.push('X');
   if (j.buffer_post_id) tags.push('TikTok');
   if (j.thumb_url) tags.push('Thumb');
+  if (j.prefilled_thumb_url) tags.push('Cover Generate');
   if (j.threads_ids?.length) tags.push('Threads');
   if (j.ig_container) tags.push('IG');
   const title = j.title || (compact ? 'Slot terjadwal' : j.id);
@@ -111,8 +112,9 @@ function showJobDetail(job) {
   const st = job.status || '';
   document.getElementById('lazy-title').textContent =
     `${job.title || job.id} · ${st} · ${fmtTime(job.scheduled_at)}`;
-  const parts = job.parts || [];
-  const hasVisualCover = !!job.cover_url;
+  const parts = (job.parts?.length ? job.parts : job.prefilled_parts) || [];
+  const queuedCover = job.thumb_url || job.prefilled_thumb_url || '';
+  const hasVisualCover = !!(job.cover_url || job.prefilled_thumb_url);
   document.getElementById('lazy-parts').innerHTML = parts.length
     ? parts.map((p, i) => `
       <button type="button" class="gen-thread-part lazy-part-btn${i + (hasVisualCover ? 1 : 0) === previewIdx ? ' on' : ''}" data-part="${i + (hasVisualCover ? 1 : 0)}">
@@ -125,6 +127,7 @@ function showJobDetail(job) {
           : 'Belum ada teks (gagal sebelum generate?).'
       }</p>`;
   const bits = [];
+  if (job.prefilled_thumb_url && !job.thumb_url) bits.push('Cover Generate (antre): ' + job.prefilled_thumb_url);
   if (job.caption) bits.push('Caption IG:\n' + job.caption);
   if (job.threads_ids?.length) bits.push('Threads IDs: ' + job.threads_ids.join(', '));
   if (job.ig_container) bits.push('IG container: ' + job.ig_container);
@@ -134,12 +137,12 @@ function showJobDetail(job) {
   const thumbBox = document.getElementById('lazy-thumb-box');
   const thumbImg = document.getElementById('lazy-thumb-img');
   if (thumbBox && thumbImg) {
-    if (job.thumb_url) {
+    if (queuedCover) {
       try {
-        const u = new URL(job.thumb_url, location.origin);
-        thumbImg.src = u.origin === location.origin ? u.pathname : job.thumb_url;
+        const u = new URL(queuedCover, location.origin);
+        thumbImg.src = u.origin === location.origin ? u.pathname : queuedCover;
       } catch {
-        thumbImg.src = job.thumb_url;
+        thumbImg.src = queuedCover;
       }
       thumbBox.hidden = false;
     } else {
@@ -420,7 +423,14 @@ async function refresh() {
   try {
     const st = await Threads.api('/api/lazy/status');
     renderStatus(st);
-    showAlert('');
+    let alertMsg = '';
+    try {
+      const handoff = await Threads.api('/api/lazy/handoff');
+      if (handoff.pending_handoff?.parts?.length) {
+        alertMsg = 'Utas + cover Edge Clean dari Generate menunggu slot Lazy berikutnya.';
+      }
+    } catch { /* ignore */ }
+    showAlert(alertMsg);
   } catch (e) {
     showAlert(e.message);
   }

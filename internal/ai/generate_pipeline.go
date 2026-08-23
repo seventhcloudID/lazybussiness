@@ -1068,6 +1068,7 @@ Jawab HANYA satu object JSON valid dengan bentuk persis:
 	}
 	normalizeResearch(&out.Research)
 	normalizeGenPackage(&out.Package)
+	sanitizePackageClaimsEvidence(&out.Package, out.Research)
 	if issues := combinedEditorialCopyIssues(out.Package.Copy, editorialContext.Product); len(issues) > 0 {
 		fixed, repairUsage, repairErr := c.repairEditorialCopy(ctx, out.Package.Copy, issues, editorialContext.Tone.Instructions, editorialContext.Product, editorialContext.Brief)
 		usage = mergeUsage(usage, repairUsage)
@@ -1231,6 +1232,7 @@ Hard rules:
 		}
 	}
 	normalizeGenPackage(&pkg)
+	sanitizePackageClaimsEvidence(&pkg, evidence)
 	if issues := combinedEditorialCopyIssues(pkg.Copy, editorialContext.Product); len(issues) > 0 {
 		fixed, repairUsage, repairErr := c.repairEditorialCopy(ctx, pkg.Copy, issues, editorialContext.Tone.Instructions, editorialContext.Product, editorialContext.Brief)
 		usage = mergeUsage(usage, repairUsage)
@@ -1707,6 +1709,37 @@ Jangan output field "decision" atau "GO".`
 	return rep, usage, nil
 }
 
+func sanitizePackageClaimsEvidence(pkg *GenEditorialPackage, evidence ResearchEvidence) {
+	if pkg == nil {
+		return
+	}
+	srcIDs := map[string]bool{}
+	for _, s := range evidence.Sources {
+		if id := strings.TrimSpace(s.ID); id != "" {
+			srcIDs[id] = true
+		}
+	}
+	if len(srcIDs) == 0 {
+		return
+	}
+	cleaned := make([]GenClaim, 0, len(pkg.Claims))
+	for _, cl := range pkg.Claims {
+		ids := make([]string, 0, len(cl.EvidenceIDs))
+		for _, id := range cl.EvidenceIDs {
+			id = strings.TrimSpace(id)
+			if id != "" && srcIDs[id] {
+				ids = append(ids, id)
+			}
+		}
+		if strings.TrimSpace(cl.Text) == "" && len(ids) == 0 {
+			continue
+		}
+		cl.EvidenceIDs = ids
+		cleaned = append(cleaned, cl)
+	}
+	pkg.Claims = cleaned
+}
+
 // ValidateEditorialPackage = deterministic pre-QC.
 func ValidateEditorialPackage(pkg GenEditorialPackage, evidence ResearchEvidence, products ...ProductProfile) []string {
 	var errs []string
@@ -1774,7 +1807,7 @@ func pipelineHoldResult(req GenerateRequest, mem Memory, pkg GenEditorialPackage
 func pipelineSuccessResult(req GenerateRequest, mem Memory, pkg GenEditorialPackage, evidence ResearchEvidence, crit *GenCriticReport, usage *TokenUsage, meta PipelineMeta, c *Client) *GenerateResult {
 	out := packageToGenerateResult(req, mem, pkg, evidence, crit, meta)
 	out.Usage = usage
-	out.Model = c.model
+	out.Model = c.ChatModel()
 	out.Provider = c.provider
 	if !meta.Go {
 		out.Consideration = "HOLD: " + meta.HoldReason
