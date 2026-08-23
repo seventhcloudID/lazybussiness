@@ -9,14 +9,28 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+	"unicode/utf8"
 )
 
 // earliestInsightsUnix — Meta menolak since/until sebelum 13 Apr 2024.
 const earliestInsightsUnix int64 = 1712991600
+
+// insightsFloorUnix: Meta cuma sediakan metrik 2 tahun terakhir (plus frontier Apr 2024).
+func insightsFloorUnix(now int64) int64 {
+	if now <= 0 {
+		now = time.Now().Unix()
+	}
+	floor := time.Unix(now, 0).UTC().AddDate(-2, 0, 1).Unix()
+	if floor < earliestInsightsUnix {
+		return earliestInsightsUnix
+	}
+	return floor
+}
 
 const BaseURL = "https://graph.threads.net/v1.0"
 
@@ -379,7 +393,7 @@ func (c *Client) GetMe() (json.RawMessage, error) {
 // SnapshotForAI mengemas profil + metrik post untuk dianalisis model AI.
 func (c *Client) SnapshotForAI(limit int) (map[string]any, error) {
 	if limit <= 0 {
-		limit = 12
+		limit = 40
 	}
 	meRaw, err := c.GetMe()
 	if err != nil {
@@ -393,11 +407,20 @@ func (c *Client) SnapshotForAI(limit int) (map[string]any, error) {
 		return nil, err
 	}
 
+	formatMix := map[string]int{}
+	weekdayMix := map[string]int{}
+	hourMix := map[string]int{}
+	var charLens []int
+	var sumER, sumViews, sumEng float64
+	erN := 0
+
 	posts := make([]map[string]any, 0, len(detail.Posts))
 	for i, p := range detail.Posts {
 		text := strings.TrimSpace(p.Text)
-		if len([]rune(text)) > 280 {
-			text = string([]rune(text)[:280]) + "…"
+		chars := utf8.RuneCountInString(text)
+		charLens = append(charLens, chars)
+		if chars > 700 {
+			text = string([]rune(text)[:700]) + "…"
 		}
 		m := p.Metrics
 		views := m["views"]
@@ -405,36 +428,171 @@ func (c *Client) SnapshotForAI(limit int) (map[string]any, error) {
 		var er float64
 		if views > 0 {
 			er = (eng / views) * 100
+			sumER += er
+			erN++
 		}
+		sumViews += views
+		sumEng += eng
+
+		mt := strings.TrimSpace(p.MediaType)
+		if mt == "" {
+			mt = "TEXT"
+		}
+		formatMix[mt]++
+
+		weekday, hour, bucket := "", 0, ""
+		if ts := postTimestampUnix(p.Timestamp); ts > 0 {
+			t := time.Unix(ts, 0).In(time.Local)
+			weekday = t.Weekday().String()
+			hour = t.Hour()
+			switch {
+			case hour < 6:
+				bucket = "dini_hari"
+			case hour < 12:
+				bucket = "pagi"
+			case hour < 17:
+				bucket = "siang"
+			case hour < 21:
+				bucket = "sore"
+			default:
+				bucket = "malam"
+			}
+			weekdayMix[weekday]++
+			hourMix[bucket]++
+		}
+
 		posts = append(posts, map[string]any{
-			"rank":           i + 1,
-			"id":             p.ID,
-			"text":           text,
-			"media_type":     p.MediaType,
-			"timestamp":      p.Timestamp,
-			"views":          m["views"],
-			"likes":          m["likes"],
-			"replies":        m["replies"],
-			"reposts":        m["reposts"],
-			"quotes":         m["quotes"],
-			"score":          p.Score,
-			"engagement":     eng,
+			"rank":            i + 1,
+			"id":              p.ID,
+			"text":            text,
+			"chars":           chars,
+			"media_type":      mt,
+			"timestamp":       p.Timestamp,
+			"weekday":         weekday,
+			"hour":            hour,
+			"daypart":         bucket,
+			"permalink":       p.Permalink,
+			"views":           m["views"],
+			"likes":           m["likes"],
+			"replies":         m["replies"],
+			"reposts":         m["reposts"],
+			"quotes":          m["quotes"],
+			"score":           p.Score,
+			"engagement":      eng,
 			"engagement_rate": er,
 		})
 	}
 
+	avgER := 0.0
+	if erN > 0 {
+		avgER = sumER / float64(erN)
+	}
+	medianChars, meanChars := 0, 0
+	if n := len(charLens); n > 0 {
+		s := 0
+		for _, v := range charLens {
+			s += v
+		}
+		meanChars = s / n
+		cp := append([]int(nil), charLens...)
+		sort.Ints(cp)
+		medianChars = cp[n/2]
+	}
+
+	accountMetrics := map[string]any{}
+	now := time.Now().Unix()
+	since30 := now - 30*24*60*60
+	if floor := insightsFloorUnix(now); since30 < floor {
+		since30 = floor
+	}
+	if raw, err := c.GetInsightsOpts(strconv.FormatInt(since30, 10), strconv.FormatInt(now, 10), true, 0); err == nil {
+		var wrap struct {
+			Metrics map[string]float64 `json:"metrics"`
+			Source  string             `json:"source"`
+		}
+		if json.Unmarshal(raw, &wrap) == nil {
+			accountMetrics["source"] = wrap.Source
+			accountMetrics["last_30d"] = wrap.Metrics
+		}
+	}
+
+	// Ranking & distribusi biar AI tidak tebak buta.
+	type scored struct {
+		ID    string
+		Score float64
+		Views float64
+		ER    float64
+	}
+	ranked := make([]scored, 0, len(posts))
+	var viewsArr []float64
+	var replySum float64
+	for _, p := range posts {
+		id, _ := p["id"].(string)
+		sc, _ := p["score"].(float64)
+		vw, _ := p["views"].(float64)
+		er, _ := p["engagement_rate"].(float64)
+		re, _ := p["replies"].(float64)
+		ranked = append(ranked, scored{ID: id, Score: sc, Views: vw, ER: er})
+		viewsArr = append(viewsArr, vw)
+		replySum += re
+	}
+	sort.Slice(ranked, func(i, j int) bool { return ranked[i].Score > ranked[j].Score })
+	topIDs, bottomIDs := []string{}, []string{}
+	for i := 0; i < len(ranked) && i < 5; i++ {
+		topIDs = append(topIDs, ranked[i].ID)
+	}
+	for i := len(ranked) - 1; i >= 0 && len(bottomIDs) < 5; i-- {
+		bottomIDs = append(bottomIDs, ranked[i].ID)
+	}
+	sort.Float64s(viewsArr)
+	percentile := func(p float64) float64 {
+		if len(viewsArr) == 0 {
+			return 0
+		}
+		idx := int(float64(len(viewsArr)-1) * p)
+		if idx < 0 {
+			idx = 0
+		}
+		if idx >= len(viewsArr) {
+			idx = len(viewsArr) - 1
+		}
+		return viewsArr[idx]
+	}
+	replyPerPost := 0.0
+	if n := len(posts); n > 0 {
+		replyPerPost = replySum / float64(n)
+	}
+
 	return map[string]any{
 		"profile": map[string]any{
-			"username":   me["username"],
-			"name":       me["name"],
-			"biography":  me["threads_biography"],
+			"username":  me["username"],
+			"name":      me["name"],
+			"biography": me["threads_biography"],
 		},
-		"totals": detail.Totals,
-		"posts":  posts,
+		"account_metrics": accountMetrics,
+		"sample": map[string]any{
+			"post_count":       len(posts),
+			"totals":           detail.Totals,
+			"avg_er_pct":       avgER,
+			"sum_views":        sumViews,
+			"sum_engagement":   sumEng,
+			"format_mix":       formatMix,
+			"weekday_mix":      weekdayMix,
+			"daypart_mix":      hourMix,
+			"median_chars":     medianChars,
+			"mean_chars":       meanChars,
+			"views_p25":        percentile(0.25),
+			"views_p50":        percentile(0.50),
+			"views_p75":        percentile(0.75),
+			"avg_replies":      replyPerPost,
+			"top_score_ids":    topIDs,
+			"bottom_score_ids": bottomIDs,
+		},
+		"posts": posts,
 	}, nil
 }
 
-func (c *Client) GetThreads(since, until string) (json.RawMessage, error) {
+func threadsListQuery(since, until string) url.Values {
 	q := url.Values{
 		"fields": {"id,media_type,media_url,thumbnail_url,text,permalink,timestamp,shortcode,has_replies,username,is_reply,replied_to,root_post"},
 		"limit":  {"50"},
@@ -445,7 +603,19 @@ func (c *Client) GetThreads(since, until string) (json.RawMessage, error) {
 	if until != "" {
 		q.Set("until", until)
 	}
-	return c.Do(http.MethodGet, "/me/threads", q, nil)
+	return q
+}
+
+func (c *Client) GetThreads(since, until string) (json.RawMessage, error) {
+	return c.Do(http.MethodGet, "/me/threads", threadsListQuery(since, until), nil)
+}
+
+// GetThreadsPaged mengikuti paging Graph sampai maxPages (atau habis).
+func (c *Client) GetThreadsPaged(since, until string, maxPages int) (json.RawMessage, error) {
+	if maxPages <= 0 {
+		maxPages = 8
+	}
+	return c.DoPaged("/me/threads", threadsListQuery(since, until), maxPages)
 }
 
 func (c *Client) GetInsights(since, until string) (json.RawMessage, error) {
@@ -508,63 +678,109 @@ func (c *Client) fetchInsightsOpts(since, until string, aggregate bool, postLimi
 	var posts []postInsightRow
 	totals := map[string]float64{}
 
+	valueOf := func(it metricItem) float64 {
+		if it.TotalValue != nil {
+			return toFloat(it.TotalValue.Value)
+		}
+		var sum float64
+		for _, v := range it.Values {
+			sum += toFloat(v.Value)
+		}
+		return sum
+	}
+	hasEngagementItems := func() bool {
+		for _, it := range items {
+			if it.Name != "" && it.Name != "followers_count" {
+				return true
+			}
+		}
+		return false
+	}
+
 	if aggregate {
 		// Clamp ke frontier Meta + isi default "semua" kalau kosong (bukan 2 hari Meta).
 		since, until = normalizeInsightRange(since, until)
-		q := url.Values{"metric": {"views,likes,replies,reposts,quotes,clicks"}}
-		if since != "" {
-			q.Set("since", since)
-		}
-		if until != "" {
-			q.Set("until", until)
-		}
-		if engRaw, engErr := c.Do(http.MethodGet, "/me/threads_insights", q, nil); engErr == nil {
+		fetch := func(metric, s, u string) ([]metricItem, error) {
+			q := url.Values{"metric": {metric}}
+			if s != "" {
+				q.Set("since", s)
+			}
+			if u != "" {
+				q.Set("until", u)
+			}
+			raw, err := c.Do(http.MethodGet, "/me/threads_insights", q, nil)
+			if err != nil {
+				q.Set("period", "day")
+				raw, err = c.Do(http.MethodGet, "/me/threads_insights", q, nil)
+				if err != nil {
+					return nil, err
+				}
+			}
 			var e envelope
-			if json.Unmarshal(engRaw, &e) == nil {
-				items = append(items, e.Data...)
-				source = "account"
+			if json.Unmarshal(raw, &e) != nil {
+				return nil, fmt.Errorf("gagal parse threads_insights")
 			}
-		} else {
-			accountErr = engErr.Error()
-			if apiErr, ok := engErr.(*APIError); ok {
-				var parsed struct {
-					Error struct {
-						UserMsg   string `json:"error_user_msg"`
-						UserTitle string `json:"error_user_title"`
-						Message   string `json:"message"`
-					} `json:"error"`
-				}
-				if json.Unmarshal(apiErr.Body, &parsed) == nil {
-					if parsed.Error.UserMsg != "" {
-						accountErr = parsed.Error.UserMsg
-					} else if parsed.Error.UserTitle != "" {
-						accountErr = parsed.Error.UserTitle
-					} else if parsed.Error.Message != "" {
-						accountErr = parsed.Error.Message
-					}
-				}
+			return e.Data, nil
+		}
+		fetchRange := func(metric string) ([]metricItem, error) {
+			got, err := fetch(metric, since, until)
+			if err == nil {
+				return got, nil
 			}
+			chunks := insightRangeChunks(since, until)
+			if len(chunks) <= 1 {
+				return nil, err
+			}
+			var all []metricItem
+			for _, ch := range chunks {
+				part, perr := fetch(metric, ch[0], ch[1])
+				if perr != nil {
+					return nil, err
+				}
+				all = append(all, part...)
+			}
+			return all, nil
+		}
+		appendMetrics := func(metric string) {
+			got, err := fetchRange(metric)
+			if err != nil {
+				if accountErr == "" {
+					accountErr = threadsInsightUserMsg(err)
+				}
+				return
+			}
+			items = append(items, got...)
+		}
+
+		// Meta menolak campur time-series (views), total value, dan clicks dalam 1 request.
+		appendMetrics("likes,replies,reposts,quotes")
+		if !hasEngagementItems() {
+			appendMetrics("likes,replies,reposts")
+		}
+		appendMetrics("views")
+		appendMetrics("clicks")
+		if hasEngagementItems() {
+			source = "account"
+			accountErr = ""
 		}
 
 		// Breakdown post mengikuti rentang since/until.
 		if postLimit < 0 {
-			postLimit = 40
+			postLimit = 100
 		}
 		if postLimit > 0 {
 			detail, err := c.collectPostInsights(postLimit, since, until)
 			if err == nil {
 				posts = detail.Posts
 				totals = detail.Totals
-				hasEngagement := false
-				for _, it := range items {
-					if it.Name != "followers_count" {
-						hasEngagement = true
-						break
-					}
-				}
+				hasEngagement := hasEngagementItems()
 				if !hasEngagement {
 					source = "posts_aggregate"
-					accountErr = "Insight engagement level-akun dari Meta tidak tersedia; menampilkan agregasi dari post terbaru."
+					if accountErr == "" {
+						accountErr = "Insight engagement level-akun dari Meta tidak tersedia; menampilkan agregasi dari post terbaru."
+					} else {
+						accountErr = accountErr + " — menampilkan agregasi dari post."
+					}
 					for _, name := range []string{"views", "likes", "replies", "reposts", "quotes"} {
 						items = append(items, metricItem{
 							Name:   name,
@@ -586,15 +802,45 @@ func (c *Client) fetchInsightsOpts(since, until string, aggregate bool, postLimi
 		}
 	}
 
+	// Satukan metrik sejenis (chunk 30 hari / time-series views).
+	{
+		order := make([]string, 0, len(items))
+		sum := map[string]float64{}
+		title := map[string]string{}
+		period := map[string]string{}
+		seen := map[string]bool{}
+		for _, it := range items {
+			name := strings.TrimSpace(it.Name)
+			if name == "" {
+				continue
+			}
+			if !seen[name] {
+				seen[name] = true
+				order = append(order, name)
+			}
+			sum[name] += valueOf(it)
+			if it.Title != "" {
+				title[name] = it.Title
+			}
+			if it.Period != "" {
+				period[name] = it.Period
+			}
+		}
+		merged := make([]metricItem, 0, len(order))
+		for _, name := range order {
+			it := metricItem{Name: name, Period: period[name], Title: title[name]}
+			v := sum[name]
+			it.Values = []struct {
+				Value any `json:"value"`
+			}{{Value: v}}
+			merged = append(merged, it)
+		}
+		items = merged
+	}
+
 	metrics := map[string]float64{}
 	for _, it := range items {
-		var val float64
-		if it.TotalValue != nil {
-			val = toFloat(it.TotalValue.Value)
-		} else if len(it.Values) > 0 {
-			val = toFloat(it.Values[0].Value)
-		}
-		metrics[it.Name] = val
+		metrics[it.Name] = valueOf(it)
 	}
 	if len(totals) == 0 {
 		totals = metrics
@@ -691,16 +937,14 @@ type postInsightDetail struct {
 // until tidak boleh > now — Meta menolak timestamp masa depan (mis. akhir hari lokal).
 func normalizeInsightRange(since, until string) (string, string) {
 	now := time.Now().Unix()
+	floor := insightsFloorUnix(now)
 	s := parseUnixBound(since)
 	u := parseUnixBound(until)
 	if s <= 0 && u <= 0 {
-		return strconv.FormatInt(earliestInsightsUnix, 10), strconv.FormatInt(now, 10)
+		return strconv.FormatInt(floor, 10), strconv.FormatInt(now, 10)
 	}
-	if s <= 0 {
-		s = earliestInsightsUnix
-	}
-	if s < earliestInsightsUnix {
-		s = earliestInsightsUnix
+	if s <= 0 || s < floor {
+		s = floor
 	}
 	if u <= 0 || u > now {
 		u = now
@@ -709,6 +953,59 @@ func normalizeInsightRange(since, until string) (string, string) {
 		u = s
 	}
 	return strconv.FormatInt(s, 10), strconv.FormatInt(u, 10)
+}
+
+func insightRangeChunks(since, until string) [][2]string {
+	s := parseUnixBound(since)
+	u := parseUnixBound(until)
+	if s <= 0 || u <= 0 || u <= s {
+		return nil
+	}
+	const maxSpan = int64(30 * 24 * 60 * 60)
+	if u-s <= maxSpan {
+		return nil
+	}
+	var chunks [][2]string
+	for cur := s; cur < u; {
+		end := cur + maxSpan
+		if end > u {
+			end = u
+		}
+		chunks = append(chunks, [2]string{
+			strconv.FormatInt(cur, 10),
+			strconv.FormatInt(end, 10),
+		})
+		cur = end
+	}
+	return chunks
+}
+
+func threadsInsightUserMsg(err error) string {
+	if err == nil {
+		return ""
+	}
+	var apiErr *APIError
+	if errors.As(err, &apiErr) {
+		var parsed struct {
+			Error struct {
+				UserMsg   string `json:"error_user_msg"`
+				UserTitle string `json:"error_user_title"`
+				Message   string `json:"message"`
+			} `json:"error"`
+		}
+		if json.Unmarshal(apiErr.Body, &parsed) == nil {
+			if parsed.Error.UserMsg != "" {
+				return parsed.Error.UserMsg
+			}
+			if parsed.Error.UserTitle != "" {
+				return parsed.Error.UserTitle
+			}
+			if parsed.Error.Message != "" {
+				return parsed.Error.Message
+			}
+		}
+	}
+	return err.Error()
 }
 
 func parseUnixBound(s string) int64 {
@@ -744,13 +1041,20 @@ func (c *Client) collectPostInsights(limit int, since, until string) (postInsigh
 		},
 	}
 	if limit <= 0 {
-		limit = 12
+		limit = 100
 	}
 	since, until = normalizeInsightRange(since, until)
-	threadsRaw, err := c.GetThreads(since, until)
+	maxPages := limit/25 + 4
+	if maxPages < 6 {
+		maxPages = 6
+	}
+	if maxPages > 20 {
+		maxPages = 20
+	}
+	threadsRaw, err := c.GetThreadsPaged(since, until, maxPages)
 	if err != nil {
 		// Fallback: ambil tanpa filter API, filter tanggal di sisi kita
-		threadsRaw, err = c.GetThreads("", "")
+		threadsRaw, err = c.GetThreadsPaged("", "", maxPages)
 		if err != nil {
 			return out, err
 		}
@@ -993,6 +1297,168 @@ func (c *Client) GetConversation(mediaID string) (json.RawMessage, error) {
 		"reverse": {"false"},
 		"limit":   {"50"},
 	}, 20)
+}
+
+// GetMedia fetches a single Threads media object.
+func (c *Client) GetMedia(mediaID string) (json.RawMessage, error) {
+	return c.Do(http.MethodGet, "/"+mediaID, url.Values{
+		"fields": {"id,text,username,timestamp,permalink,is_reply,replied_to,root_post,has_replies,media_type"},
+	}, nil)
+}
+
+// ThreadParts is root + owned reply chain (utas) as ordered texts.
+type ThreadParts struct {
+	RootID string   `json:"root_id"`
+	Parts  []string `json:"parts"`
+	IDs    []string `json:"ids,omitempty"`
+	Count  int      `json:"count"`
+}
+
+// GetOwnedThreadParts returns root post text + semua balasan milik sendiri
+// (bagian utas), urut waktu — cocok untuk carousel / compose.
+func (c *Client) GetOwnedThreadParts(mediaID string) (ThreadParts, error) {
+	mediaID = strings.TrimSpace(mediaID)
+	if mediaID == "" {
+		return ThreadParts{}, fmt.Errorf("media_id wajib")
+	}
+
+	raw, err := c.GetMedia(mediaID)
+	if err != nil {
+		return ThreadParts{}, err
+	}
+	var media struct {
+		ID       string `json:"id"`
+		Text     string `json:"text"`
+		IsReply  bool   `json:"is_reply"`
+		RootPost *struct {
+			ID string `json:"id"`
+		} `json:"root_post"`
+	}
+	if err := json.Unmarshal(raw, &media); err != nil {
+		return ThreadParts{}, err
+	}
+
+	rootID := media.ID
+	if media.IsReply && media.RootPost != nil && media.RootPost.ID != "" {
+		rootID = media.RootPost.ID
+		rootRaw, err := c.GetMedia(rootID)
+		if err != nil {
+			return ThreadParts{}, err
+		}
+		if err := json.Unmarshal(rootRaw, &media); err != nil {
+			return ThreadParts{}, err
+		}
+	}
+
+	out := ThreadParts{RootID: rootID}
+	rootText := strings.TrimSpace(media.Text)
+	if rootText != "" {
+		out.Parts = append(out.Parts, rootText)
+		out.IDs = append(out.IDs, rootID)
+	}
+
+	convRaw, convErr := c.GetConversation(rootID)
+	if convErr != nil {
+		// Tanpa conversation, kembalikan root saja.
+		out.Count = len(out.Parts)
+		return out, nil
+	}
+	var env struct {
+		Data []struct {
+			ID               string `json:"id"`
+			Text             string `json:"text"`
+			Username         string `json:"username"`
+			Timestamp        string `json:"timestamp"`
+			IsReplyOwnedByMe bool   `json:"is_reply_owned_by_me"`
+			RepliedTo        *struct {
+				ID string `json:"id"`
+			} `json:"replied_to"`
+		} `json:"data"`
+	}
+	if json.Unmarshal(convRaw, &env) != nil || len(env.Data) == 0 {
+		out.Count = len(out.Parts)
+		return out, nil
+	}
+
+	c.mu.RLock()
+	me := strings.ToLower(c.username)
+	c.mu.RUnlock()
+
+	type node struct {
+		id, text, parent, ts string
+	}
+	var owned []node
+	seen := map[string]bool{rootID: true}
+	for _, it := range env.Data {
+		id := strings.TrimSpace(it.ID)
+		if id == "" || seen[id] {
+			continue
+		}
+		mine := it.IsReplyOwnedByMe
+		if !mine && me != "" && strings.ToLower(it.Username) == me {
+			mine = true
+		}
+		if !mine {
+			continue
+		}
+		text := strings.TrimSpace(it.Text)
+		if text == "" {
+			continue
+		}
+		parent := ""
+		if it.RepliedTo != nil {
+			parent = it.RepliedTo.ID
+		}
+		owned = append(owned, node{id: id, text: text, parent: parent, ts: it.Timestamp})
+		seen[id] = true
+	}
+
+	// Utas berantai: ikuti reply_to milik sendiri dari root.
+	byParent := map[string][]node{}
+	for _, n := range owned {
+		byParent[n.parent] = append(byParent[n.parent], n)
+	}
+	for p := range byParent {
+		sort.Slice(byParent[p], func(i, j int) bool {
+			return byParent[p][i].ts < byParent[p][j].ts
+		})
+	}
+
+	current := rootID
+	chained := map[string]bool{}
+	for len(out.Parts) < 20 {
+		kids := byParent[current]
+		if len(kids) == 0 {
+			break
+		}
+		next := kids[0]
+		if chained[next.id] {
+			break
+		}
+		out.Parts = append(out.Parts, next.text)
+		out.IDs = append(out.IDs, next.id)
+		chained[next.id] = true
+		current = next.id
+	}
+
+	// Fallback: kalau belum kebawa semua milik sendiri (reply flat ke root),
+	// tambahkan sisanya urut waktu.
+	if len(chained) < len(owned) {
+		sort.Slice(owned, func(i, j int) bool { return owned[i].ts < owned[j].ts })
+		for _, n := range owned {
+			if chained[n.id] {
+				continue
+			}
+			out.Parts = append(out.Parts, n.text)
+			out.IDs = append(out.IDs, n.id)
+			if len(out.Parts) >= 20 {
+				break
+			}
+		}
+	}
+
+	out.Count = len(out.Parts)
+	return out, nil
 }
 
 // GetMyReplies returns replies authored by the connected account.
@@ -1275,13 +1741,13 @@ func (c *Client) ListPendingInbox(maxPosts, maxItems int) (json.RawMessage, erro
 	}
 	var list struct {
 		Data []struct {
-			ID        string `json:"id"`
-			Text      string `json:"text"`
-			Timestamp string `json:"timestamp"`
-			MediaType string `json:"media_type"`
-			HasReplies bool  `json:"has_replies"`
-			IsReply   bool   `json:"is_reply"`
-			RepliedTo *struct {
+			ID         string `json:"id"`
+			Text       string `json:"text"`
+			Timestamp  string `json:"timestamp"`
+			MediaType  string `json:"media_type"`
+			HasReplies bool   `json:"has_replies"`
+			IsReply    bool   `json:"is_reply"`
+			RepliedTo  *struct {
 				ID string `json:"id"`
 			} `json:"replied_to"`
 			Permalink string `json:"permalink"`

@@ -7,6 +7,7 @@ let detailJob = null;
 let previewIdx = 0;
 let previewBlobUrl = '';
 let renderSeq = 0;
+let workspaceAccounts = [];
 let activeTemplate = 'noir';
 const TEMPLATE_NAMES = {
   noir: 'Noir', ink: 'Ink', ocean: 'Ocean', ember: 'Ember', paper: 'Kertas',
@@ -80,7 +81,7 @@ function jobRowHTML(j, compact) {
         ${!compact && snip ? `<div class="lazy-job-snip">${Threads.escapeHtml(snip)}${(j.parts?.[0] || '').length > 90 ? '…' : ''}</div>` : ''}
         ${tags.length ? `<div class="lazy-job-tags">${tags.map(t => `<span class="lazy-tag">${t}</span>`).join('')}</div>` : ''}
         ${j.buffer_x_error ? `<div class="lazy-job-err">Buffer X: ${Threads.escapeHtml(j.buffer_x_error)}</div>` : ''}
-        ${j.buffer_error ? `<div class="lazy-job-err">Buffer TikTok: ${Threads.escapeHtml(j.buffer_error)}</div>` : ''}
+        ${j.buffer_error ? `<div class="lazy-job-err">TikTok: ${Threads.escapeHtml(j.buffer_error)}</div>` : ''}
         ${j.error ? `<div class="lazy-job-err">${Threads.escapeHtml(j.error)}</div>` : ''}
       </div>
     </button>`;
@@ -92,7 +93,7 @@ function statusBadge(st) {
     running: ['Jalan', 'run'],
     done: ['Selesai', 'ok'],
     failed: ['Gagal', 'bad'],
-    skipped_ig: ['IG skip', 'warn'],
+    skipped_ig: ['Sebagian', 'warn'],
   };
   const [label, cls] = map[st] || [st, ''];
   return `<span class="lazy-badge ${cls}">${Threads.escapeHtml(label)}</span>`;
@@ -111,9 +112,10 @@ function showJobDetail(job) {
   document.getElementById('lazy-title').textContent =
     `${job.title || job.id} · ${st} · ${fmtTime(job.scheduled_at)}`;
   const parts = job.parts || [];
+  const hasVisualCover = !!job.cover_url;
   document.getElementById('lazy-parts').innerHTML = parts.length
     ? parts.map((p, i) => `
-      <button type="button" class="gen-thread-part lazy-part-btn${i === previewIdx ? ' on' : ''}" data-part="${i}">
+      <button type="button" class="gen-thread-part lazy-part-btn${i + (hasVisualCover ? 1 : 0) === previewIdx ? ' on' : ''}" data-part="${i + (hasVisualCover ? 1 : 0)}">
         <div class="gen-thread-n">${i + 1}</div>
         <div class="gen-thread-text"><p>${Threads.escapeHtml(p)}</p></div>
       </button>`).join('')
@@ -126,7 +128,8 @@ function showJobDetail(job) {
   if (job.caption) bits.push('Caption IG:\n' + job.caption);
   if (job.threads_ids?.length) bits.push('Threads IDs: ' + job.threads_ids.join(', '));
   if (job.ig_container) bits.push('IG container: ' + job.ig_container);
-  if (job.thumb_url) bits.push('Thumbnail Threads: ' + job.thumb_url);
+  if (job.thumb_url) bits.push('Cover Threads 4:5: ' + job.thumb_url);
+  if (job.cover_url) bits.push('Cover visual IG/TikTok: ' + job.cover_url);
   if (job.image_urls?.length) bits.push('Slide images: ' + job.image_urls.length);
   const thumbBox = document.getElementById('lazy-thumb-box');
   const thumbImg = document.getElementById('lazy-thumb-img');
@@ -146,8 +149,8 @@ function showJobDetail(job) {
   }
   if (job.buffer_x_post_id) bits.push('Buffer X (shareNow): ' + job.buffer_x_post_id);
   if (job.buffer_x_error) bits.push('Buffer X: ' + job.buffer_x_error);
-  if (job.buffer_post_id) bits.push('Buffer TikTok (Notify Me): ' + job.buffer_post_id);
-  if (job.buffer_error) bits.push('Buffer TikTok: ' + job.buffer_error);
+  if (job.buffer_post_id) bits.push('TikTok schedule: ' + job.buffer_post_id);
+  if (job.buffer_error) bits.push('TikTok: ' + job.buffer_error);
   if (job.error) bits.push('⚠️ ' + job.error);
   document.getElementById('lazy-caption').textContent = bits.join('\n\n');
 
@@ -176,12 +179,14 @@ function clearCarouselPreview() {
 
 function renderCarouselPreview() {
   const parts = detailJob?.parts || [];
-  if (!parts.length) {
+  const published = detailJob?.image_urls || [];
+  const slides = published.length ? published : parts;
+  if (!slides.length) {
     clearCarouselPreview();
     return;
   }
-  if (previewIdx < 0) previewIdx = parts.length - 1;
-  if (previewIdx >= parts.length) previewIdx = 0;
+  if (previewIdx < 0) previewIdx = slides.length - 1;
+  if (previewIdx >= slides.length) previewIdx = 0;
 
   const brand = (document.getElementById('brand')?.value || '').trim().replace(/^@+/, '');
   const handle = document.getElementById('lazy-preview-handle');
@@ -190,16 +195,43 @@ function renderCarouselPreview() {
   if (avatar) avatar.textContent = (brand || '?').charAt(0).toUpperCase();
 
   document.getElementById('lazy-preview-meta').textContent =
-    `${String(previewIdx + 1).padStart(2, '0')} / ${String(parts.length).padStart(2, '0')}`;
-  document.getElementById('lazy-preview-dots').innerHTML = parts.map((_, i) =>
+    `${String(previewIdx + 1).padStart(2, '0')} / ${String(slides.length).padStart(2, '0')}`;
+  document.getElementById('lazy-preview-dots').innerHTML = slides.map((_, i) =>
     `<button type="button" class="${i === previewIdx ? 'on' : ''}" data-dot="${i}" aria-label="Slide ${i + 1}"></button>`
   ).join('');
 
   document.querySelectorAll('.lazy-part-btn').forEach((el, i) => {
-    el.classList.toggle('on', i === previewIdx);
+    el.classList.toggle('on', Number(el.dataset.part) === previewIdx);
   });
 
-  schedulePng(parts[previewIdx], brand, previewIdx, parts.length);
+  if (published.length) {
+    showPublishedSlide(published[previewIdx]);
+  } else {
+    schedulePng(parts[previewIdx], brand, previewIdx, parts.length);
+  }
+}
+
+function showPublishedSlide(url) {
+  const img = document.getElementById('lazy-preview-png');
+  const loading = document.getElementById('lazy-preview-loading');
+  if (!img || !url) return;
+  renderSeq += 1;
+  if (previewBlobUrl) {
+    URL.revokeObjectURL(previewBlobUrl);
+    previewBlobUrl = '';
+  }
+  try {
+    const parsed = new URL(url, location.origin);
+    img.src = parsed.origin === location.origin ? parsed.pathname + parsed.search : url;
+  } catch {
+    img.src = url;
+  }
+  img.onload = () => loading?.classList.remove('show');
+  img.onerror = () => {
+    loading?.classList.remove('show');
+    Threads.toast('Cover/slide tersimpan tidak bisa dimuat.', false);
+  };
+  loading?.classList.add('show');
 }
 
 let renderTimer = null;
@@ -229,7 +261,7 @@ async function renderPng(text, brand, index, total) {
     });
     if (seq !== renderSeq) return;
     if (res.status === 401) {
-      location.replace('/app/login.html?next=' + encodeURIComponent(location.pathname));
+      location.replace('/app/login?next=' + encodeURIComponent(location.pathname));
       return;
     }
     if (!res.ok) throw new Error(await res.text());
@@ -256,15 +288,17 @@ function renderStatus(st) {
   const on = !!cfg.enabled;
   document.getElementById('enabled').checked = on;
   document.getElementById('enabled-label').textContent = on ? 'ON' : 'OFF';
-  const thumbOn = cfg.thumbnail_enabled !== false;
-  document.getElementById('thumb-enabled').checked = thumbOn;
-  document.getElementById('thumb-label').textContent = thumbOn ? 'ON' : 'OFF';
+  const thumbOn = true;
   if (cfg.carousel_template) {
     activeTemplate = cfg.carousel_template;
     const nameEl = document.getElementById('tpl-current-name');
     if (nameEl) nameEl.textContent = TEMPLATE_NAMES[activeTemplate] || activeTemplate;
   }
   document.getElementById('posts-per-day').value = cfg.posts_per_day || 5;
+  const channels = Array.isArray(cfg.channels) ? cfg.channels : ['threads', 'instagram', 'tiktok'];
+  document.querySelectorAll('[data-lazy-channel]').forEach((el) => {
+    el.checked = channels.includes(el.dataset.lazyChannel);
+  });
   if (cfg.topic_hint != null && document.getElementById('topic').dataset.dirty !== '1') {
     document.getElementById('topic').value = cfg.topic_hint || '';
   }
@@ -290,14 +324,15 @@ function renderStatus(st) {
 
   const ch = document.getElementById('lazy-channels');
   if (ch) {
-    ch.innerHTML = [
-      channelPill(!!st.threads_ok, 'bi-at', 'Threads'),
-      channelPill(!!st.instagram_ok, 'bi-instagram', 'Instagram'),
-      channelPill(!!st.buffer_ok, 'bi-broadcast', 'Buffer'),
-      channelPill(!!st.ai_ok, 'bi-stars', 'Gemini'),
-      channelPill(thumbOn && !!st.thumb_ok, 'bi-image', thumbOn ? 'Thumbnail' : 'Thumb OFF'),
+    const channelStates = [
+      channels.includes('threads') ? channelPill(!!st.threads_ok, 'bi-at', 'Threads') : '',
+      channels.includes('instagram') ? channelPill(!!st.instagram_ok, 'bi-instagram', 'Instagram') : '',
+      channels.includes('tiktok') ? channelPill(!!st.tiktok_ok, 'bi-tiktok', 'TikTok') : '',
+      channelPill(!!st.ai_ok, 'bi-stars', 'AI'),
+      channels.includes('threads') ? channelPill(thumbOn && !!st.thumb_ok, 'bi-image', 'Cover Threads') : '',
       channelPill(!!st.public_ok, 'bi-link-45deg', 'Public URL'),
-    ].join('');
+    ];
+    ch.innerHTML = channelStates.filter(Boolean).join('');
   }
 
   const warns = st.warnings || [];
@@ -391,14 +426,50 @@ async function refresh() {
   }
 }
 
+function workspaceAccountLabel(ws) {
+  const byId = new Map((workspaceAccounts.repliz_accounts || []).map((a) => [a.id || a._id || a.accountId, a]));
+  const label = (id, fallback) => {
+    const a = byId.get(id);
+    return a?.username ? '@' + String(a.username).replace(/^@/, '') : (id ? fallback : 'belum dipilih');
+  };
+  return `Threads ${label(ws.repliz_threads_id, 'terhubung')} · Instagram ${label(ws.repliz_instagram_id, 'terhubung')} · TikTok ${label(ws.repliz_tiktok_id, 'terhubung')}`;
+}
+
+async function loadWorkspaces() {
+  const data = await Threads.api('/api/accounts');
+  workspaceAccounts = data;
+  const select = document.getElementById('lazy-workspace');
+  select.innerHTML = (data.accounts || []).map((ws) => `<option value="${Threads.escapeHtml(ws.id)}"${ws.id === data.active_id ? ' selected' : ''}>${Threads.escapeHtml(ws.name || ws.id)}</option>`).join('');
+  const active = (data.accounts || []).find((ws) => ws.id === (select.value || data.active_id));
+  document.getElementById('lazy-workspace-accounts').textContent = active ? workspaceAccountLabel(active) : 'Belum ada workspace.';
+}
+
+async function loadWorkspaceContext() {
+  try {
+    const mem = await Threads.api('/api/ai/memory');
+    document.getElementById('brand').value = mem?.brand || '';
+  } catch {}
+  try {
+    const tpl = await Threads.api('/api/ig/carousel/templates');
+    activeTemplate = tpl.active || 'noir';
+    const nameEl = document.getElementById('tpl-current-name');
+    if (nameEl) nameEl.textContent = TEMPLATE_NAMES[activeTemplate] || activeTemplate;
+  } catch {}
+}
+
+document.getElementById('lazy-workspace')?.addEventListener('change', async (e) => {
+  try {
+    await Threads.api('/api/accounts/switch', { method: 'POST', body: JSON.stringify({ id: e.currentTarget.value }) });
+    await loadWorkspaces();
+    await loadWorkspaceContext();
+    await refresh();
+    Threads.toast('Workspace Lazy diganti', true);
+  } catch (err) { Threads.toast(err.message, false); }
+});
+
 document.getElementById('enabled').addEventListener('change', () => {
   document.getElementById('enabled-label').textContent =
     document.getElementById('enabled').checked ? 'ON' : 'OFF';
-});
-
-document.getElementById('thumb-enabled').addEventListener('change', () => {
-  document.getElementById('thumb-label').textContent =
-    document.getElementById('thumb-enabled').checked ? 'ON' : 'OFF';
 });
 
 document.getElementById('topic').addEventListener('input', () => {
@@ -439,14 +510,14 @@ document.getElementById('lazy-preview-dots').addEventListener('click', e => {
 });
 
 document.getElementById('lazy-prev').onclick = () => {
-  const n = detailJob?.parts?.length || 0;
+  const n = detailJob?.image_urls?.length || detailJob?.parts?.length || 0;
   if (!n) return;
   previewIdx = (previewIdx - 1 + n) % n;
   renderCarouselPreview();
 };
 
 document.getElementById('lazy-next').onclick = () => {
-  const n = detailJob?.parts?.length || 0;
+  const n = detailJob?.image_urls?.length || detailJob?.parts?.length || 0;
   if (!n) return;
   previewIdx = (previewIdx + 1) % n;
   renderCarouselPreview();
@@ -467,8 +538,9 @@ document.getElementById('btn-save').onclick = async () => {
         enabled: document.getElementById('enabled').checked,
         posts_per_day: posts,
         topic_hint: document.getElementById('topic').value.trim(),
-        thumbnail_enabled: document.getElementById('thumb-enabled').checked,
+        thumbnail_enabled: true,
         carousel_template: activeTemplate,
+        channels: [...document.querySelectorAll('[data-lazy-channel]:checked')].map((el) => el.dataset.lazyChannel),
       }),
     });
     delete document.getElementById('topic').dataset.dirty;
@@ -479,6 +551,10 @@ document.getElementById('btn-save').onclick = async () => {
     Threads.toast(e.message, false);
   }
 };
+
+document.getElementById('btn-save-top')?.addEventListener('click', () => {
+  document.getElementById('btn-save')?.click();
+});
 
 document.getElementById('btn-run-now').onclick = async () => {
   showAlert('');
@@ -523,6 +599,7 @@ document.getElementById('btn-replan').onclick = async () => {
 };
 
 (async () => {
+  try { await loadWorkspaces(); } catch (e) { showAlert(e.message); }
   try {
     const tpl = await Threads.api('/api/ig/carousel/templates');
     activeTemplate = tpl.active || 'noir';

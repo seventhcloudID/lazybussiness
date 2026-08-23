@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>IG Profil — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=ns9" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -16,16 +16,19 @@
     <div>
       <p class="th-eyebrow">Instagram</p>
       <h1 class="th-title">IG Profil</h1>
-      <p class="th-lead">Akun Instagram yang terhubung lewat token sendiri.</p>
+      <p class="th-lead">Akun Instagram yang terhubung di Repliz.</p>
+    </div>
+    <div class="th-toolbar">
+      <select id="ig-account" class="hidden max-w-[240px] rounded-lg border border-line bg-surface px-2.5 py-2 text-[12.5px] text-ink" aria-label="Akun Instagram Repliz"></select>
     </div>
   </header>
 
   <div id="ig-empty" class="th-panel hidden">
     <div class="th-empty">
       <div class="th-empty-icon"><i class="bi bi-instagram"></i></div>
-      <p class="font-semibold text-ink mb-1">Belum ada token Instagram</p>
-      <p class="text-sm text-muted mb-5">Hubungkan token IG di halaman IG Token (terpisah dari Threads).</p>
-      <a href="/app/ig-token.html" class="th-btn th-btn-primary">Buka IG Token</a>
+      <p class="font-semibold text-ink mb-1">Belum ada akun Instagram Repliz</p>
+      <p class="text-sm text-muted mb-5">Hubungkan Instagram di Akun, atau pilih akun IG di dropdown.</p>
+      <a href="/app/akun" class="th-btn th-btn-primary">Buka Akun Repliz</a>
     </div>
   </div>
 
@@ -35,6 +38,8 @@
       <div class="min-w-0 flex-1">
         <h2 id="profile-name" class="font-display text-xl font-bold tracking-tight m-0">—</h2>
         <div id="profile-username" class="text-accent font-semibold mt-1">@—</div>
+        <div id="profile-bio" class="text-sm text-muted mt-2 max-w-xl leading-relaxed whitespace-pre-wrap"></div>
+        <div id="profile-website" class="text-sm mt-2"></div>
         <div id="profile-meta" class="text-sm text-muted mt-2"></div>
       </div>
       <div class="text-left sm:text-right">
@@ -42,24 +47,36 @@
         <code id="profile-id" class="th-code text-xs break-all">—</code>
       </div>
     </div>
-    <div class="grid grid-cols-3 gap-4 border-t border-line mt-5 pt-5 px-5 pb-5 sm:px-6">
+    <div class="grid grid-cols-2 gap-4 border-t border-line mt-5 pt-5 px-5 pb-5 sm:grid-cols-3 lg:grid-cols-6 sm:px-6">
       <div>
-        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Followers</div>
-        <div id="stat-followers" class="text-lg font-bold mt-1">—</div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Reach</div>
+        <div id="stat-reach" class="text-lg font-bold mt-1">—</div>
       </div>
       <div>
-        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Following</div>
-        <div id="stat-follows" class="text-lg font-bold mt-1">—</div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Views</div>
+        <div id="stat-views" class="text-lg font-bold mt-1">—</div>
       </div>
       <div>
-        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Media</div>
-        <div id="stat-media" class="text-lg font-bold mt-1">—</div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Likes</div>
+        <div id="stat-likes" class="text-lg font-bold mt-1">—</div>
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Komentar</div>
+        <div id="stat-comments" class="text-lg font-bold mt-1">—</div>
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Shares</div>
+        <div id="stat-shares" class="text-lg font-bold mt-1">—</div>
+      </div>
+      <div>
+        <div class="text-[11px] uppercase tracking-widest text-muted font-semibold">Simpan</div>
+        <div id="stat-saves" class="text-lg font-bold mt-1">—</div>
       </div>
     </div>
   </div>
 </main>
-<script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/ig-profil.js?v=strand11"></script>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/ig-profil.js?v=ns14"></script>
 </body>
 </html>

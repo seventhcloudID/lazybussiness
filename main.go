@@ -2,6 +2,8 @@ package main
 
 import (
 	"bufio"
+	"context"
+	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -25,6 +27,7 @@ import (
 	"threads-dashboard/internal/lazy"
 	"threads-dashboard/internal/oauth"
 	"threads-dashboard/internal/org"
+	"threads-dashboard/internal/repliz"
 	"threads-dashboard/internal/schedule"
 	"threads-dashboard/internal/threads"
 )
@@ -47,42 +50,38 @@ func main() {
 
 	aiClient := ai.NewFromEnv()
 	thumbClient := ai.NewThumbnailFromEnv()
+	replizCli = repliz.NewFromEnv()
 	if aiClient.Enabled() {
-		log.Printf("AI insight siap (%s / %s, %d key)", aiClient.Provider(), aiClient.Model(), aiClient.KeyCount())
+		log.Printf("AI insight siap (%s / %s, chat %s, %d key)", aiClient.Provider(), aiClient.Model(), aiClient.ChatModel(), aiClient.KeyCount())
 	} else {
 		log.Println("AI insight nonaktif — set AI_API_KEY di .env atau API keys workspace")
 	}
 	if thumbClient.Enabled() {
-		log.Printf("Thumbnail ChatGPT siap (%s)", thumbClient.Model())
+		log.Printf("Thumbnail siap (%s @ %s)", thumbClient.Model(), os.Getenv("AI_BASE_URL"))
 	} else {
-		log.Println("Thumbnail ChatGPT nonaktif — set key di API keys workspace atau OPENAI_API_KEY di .env")
+		log.Println("Thumbnail nonaktif — set AI_API_KEY + OPENAI_IMAGE_MODEL (default cx/gpt-5.5-image)")
+	}
+	if replizCli.Ready() {
+		log.Println("Repliz siap — insight memakai API Repliz")
+	} else {
+		log.Println("Repliz belum diset — set REPLIZ_ACCESS_KEY dan REPLIZ_SECRET_KEY")
 	}
 
 	publicBase := strings.TrimRight(strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")), "/")
 	accountShared = account.Shared{
-		AI: aiClient, Thumb: thumbClient, Public: publicBase,
+		AI: aiClient, Thumb: thumbClient, Public: publicBase, Publisher: replizPub{},
 	}
 
 	accounts, err = account.OpenAt(orgCtx.WorkspaceDir, accountShared)
 	if err != nil {
 		log.Fatal("accounts: ", err)
 	}
+	replizActive = repliz.NewActiveStore(orgCtx.WorkspaceDir)
+
 	if b := buf(); b != nil && b.Enabled() {
 		log.Printf("Buffer akun aktif (%s) siap — TikTok Notify Me + X shareNow", accounts.ActiveID())
 	} else {
 		log.Println("Buffer akun aktif belum ada key — isi di Akun → Kelola")
-	}
-	if t := os.Getenv("THREADS_ACCESS_TOKEN"); t != "" {
-		th().SetToken(t)
-		log.Println("token dimuat dari THREADS_ACCESS_TOKEN → akun aktif")
-	} else if th().Connected() {
-		log.Printf("token Threads akun aktif (%s) terhubung", accounts.ActiveID())
-	}
-	if t := os.Getenv("INSTAGRAM_ACCESS_TOKEN"); t != "" {
-		igc().SetToken(t)
-		log.Println("token Instagram dimuat dari INSTAGRAM_ACCESS_TOKEN → akun aktif")
-	} else if igc().Connected() {
-		log.Printf("token Instagram akun aktif (%s) terhubung", accounts.ActiveID())
 	}
 	if tz := strings.TrimSpace(os.Getenv("LAZY_TIMEZONE")); tz != "" {
 		cfg := lz().GetConfig()
@@ -92,25 +91,7 @@ func main() {
 		}
 	}
 	accounts.StartSchedulers()
-	// Isi username dari token yang sudah ada (kalau metadata masih kosong).
-	for _, ws := range accounts.All() {
-		if ws.Threads.Connected() && ws.Meta.ThreadsUsername == "" {
-			if raw, err := ws.Threads.GetMe(); err == nil {
-				var profile struct {
-					Username string `json:"username"`
-				}
-				if json.Unmarshal(raw, &profile) == nil && profile.Username != "" {
-					_ = accounts.UpdateMeta(ws.Meta.ID, func(m *account.Meta) {
-						m.ThreadsUsername = profile.Username
-						if m.Name == "" || m.Name == m.ID || m.Name == "main" {
-							m.Name = profile.Username
-						}
-					})
-				}
-			}
-		}
-	}
-	log.Printf("akun aktif: %s (%d akun dalam workspace)", accounts.ActiveID(), len(accounts.List()))
+	log.Printf("akun aktif: %s (%d workspace lokal; identitas dashboard = Repliz)", accounts.ActiveID(), len(accounts.List()))
 
 	users, err := auth.OpenUsers(".data")
 	if err != nil {
@@ -183,10 +164,16 @@ func main() {
 	mux.HandleFunc("GET /api-docs", serveAPIDocs)
 	mux.HandleFunc("GET /docs.html", serveAPIDocs)
 	mux.HandleFunc("GET /app", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
+		http.Redirect(w, r, "/app/ringkasan", http.StatusFound)
 	})
 	mux.HandleFunc("GET /app/{$}", func(w http.ResponseWriter, r *http.Request) {
-		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
+		http.Redirect(w, r, "/app/ringkasan", http.StatusFound)
+	})
+	mux.HandleFunc("GET /auth/repliz/{platform}", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join("web", "akun.html"))
+	})
+	mux.HandleFunc("GET /auth/repliz/{platform}/{id}", func(w http.ResponseWriter, r *http.Request) {
+		http.ServeFile(w, r, filepath.Join("web", "akun.html"))
 	})
 	mux.HandleFunc("GET /core", func(w http.ResponseWriter, r *http.Request) {
 		http.Redirect(w, r, "/core/", http.StatusFound)
@@ -196,38 +183,71 @@ func main() {
 	})
 	mux.HandleFunc("GET /login.html", func(w http.ResponseWriter, r *http.Request) {
 		q := r.URL.RawQuery
-		target := "/app/login.html"
+		target := "/app/login"
 		if q != "" {
 			target += "?" + q
 		}
 		http.Redirect(w, r, target, http.StatusFound)
 	})
-	// Customer dashboard
-	mux.Handle("GET /app/", http.StripPrefix("/app/", http.FileServer(http.Dir("web"))))
+	// Customer dashboard — serve /app/<page> from web/<page>.html (no .html in URL)
+	mux.HandleFunc("GET /app/{page...}", func(w http.ResponseWriter, r *http.Request) {
+		page := r.PathValue("page")
+		// Strip trailing slash
+		page = strings.TrimSuffix(page, "/")
+		if page == "" {
+			http.Redirect(w, r, "/app/ringkasan", http.StatusFound)
+			return
+		}
+		// If URL already ends in .html, strip it and redirect
+		if strings.HasSuffix(page, ".html") {
+			http.Redirect(w, r, "/app/"+strings.TrimSuffix(page, ".html"), http.StatusMovedPermanently)
+			return
+		}
+		// Static assets (css, js, images inside /app/) — pass through
+		if strings.Contains(page, ".") {
+			http.ServeFile(w, r, "web/"+page)
+			return
+		}
+		if page == "token" || page == "ig-token" {
+			http.Redirect(w, r, "/app/akun", http.StatusFound)
+			return
+		}
+		if page == "rapat" {
+			http.Redirect(w, r, "/app/generate", http.StatusFound)
+			return
+		}
+		// Serve the corresponding .html file
+		http.ServeFile(w, r, "web/"+page+".html")
+	})
 	// Operator console (separate tree from customer dashboard)
 	mux.Handle("GET /core/", http.StripPrefix("/core/", http.FileServer(http.Dir("core"))))
 	// Shared assets (absolute /css /js used by both portals)
 	mux.Handle("GET /css/", http.StripPrefix("/css/", http.FileServer(http.Dir("web/css"))))
 	mux.Handle("GET /js/", http.StripPrefix("/js/", http.FileServer(http.Dir("web/js"))))
-	// Legacy bookmarks: /ringkasan.html → /app/ringkasan.html
+	// Legacy bookmarks: /ringkasan → /app/ringkasan
 	mux.HandleFunc("GET /{page}", func(w http.ResponseWriter, r *http.Request) {
 		page := r.PathValue("page")
-		if !strings.HasSuffix(page, ".html") || strings.Contains(page, "/") {
+		if strings.Contains(page, "/") {
 			http.NotFound(w, r)
 			return
 		}
+		// Strip .html if present
+		page = strings.TrimSuffix(page, ".html")
 		http.Redirect(w, r, "/app/"+page, http.StatusFound)
 	})
 	mux.HandleFunc("GET /health", func(w http.ResponseWriter, r *http.Request) {
+		thAcc, igAcc, thOK, igOK := replizConnectedPair(r.Context())
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":           true,
-			"connected":    th().Connected(),
-			"ig_connected": igc().Connected(),
+			"connected":    thOK,
+			"ig_connected": igOK,
 			"tenant_id":    orgCtx.Tenant.ID,
 			"workspace_id": orgCtx.Workspace.ID,
-			"account_id":   accounts.ActiveID(),
+			"account_id":   thAcc.AccountID(),
+			"ig_user_id":   igAcc.AccountID(),
 			"ai":           aiClient.Enabled(),
 			"auth":         gate.Enabled(),
+			"repliz":       replizCli != nil && replizCli.Ready(),
 		})
 	})
 	mux.HandleFunc("GET /api/org", func(w http.ResponseWriter, r *http.Request) {
@@ -251,9 +271,9 @@ func main() {
 		sess := gate.SessionFromRequest(r)
 		authed := sess != nil && (!gate.Enabled() || gate.Valid(r))
 		out := map[string]any{
-			"enabled":           gate.Enabled(),
-			"authenticated":     authed,
-			"active_tenant_id":  orgCtx.Tenant.ID,
+			"enabled":            gate.Enabled(),
+			"authenticated":      authed,
+			"active_tenant_id":   orgCtx.Tenant.ID,
 			"active_tenant_name": orgCtx.Tenant.Name,
 		}
 		if sess != nil && authed {
@@ -333,15 +353,15 @@ func main() {
 				dir := filepath.Join(".data", "tenants", t.ID, "workspaces", ws.ID)
 				peek := account.PeekWorkspaceDir(dir, ws.ID, ws.Name)
 				workspaces = append(workspaces, map[string]any{
-					"id":             peek.ID,
-					"name":           peek.Name,
-					"account_count":  peek.AccountCount,
-					"threads_n":      peek.ThreadsN,
-					"instagram_n":    peek.InstagramN,
-					"buffer_n":       peek.BufferN,
-					"gemini_keys":    peek.GeminiKeys,
-					"openai_keys":    peek.OpenAIKeys,
-					"accounts":       peek.Accounts,
+					"id":            peek.ID,
+					"name":          peek.Name,
+					"account_count": peek.AccountCount,
+					"threads_n":     peek.ThreadsN,
+					"instagram_n":   peek.InstagramN,
+					"buffer_n":      peek.BufferN,
+					"gemini_keys":   peek.GeminiKeys,
+					"openai_keys":   peek.OpenAIKeys,
+					"accounts":      peek.Accounts,
 				})
 				accountsN += peek.AccountCount
 				threadsN += peek.ThreadsN
@@ -585,35 +605,60 @@ func main() {
 	})
 
 	mux.HandleFunc("GET /api/status", func(w http.ResponseWriter, r *http.Request) {
-		ws := accounts.Active()
+		thAcc, igAcc, thOK, igOK := replizConnectedPair(r.Context())
+		rzID := ""
+		if replizActive != nil {
+			rzID = replizActive.Get()
+		}
+		if rzID == "" {
+			rzID = thAcc.AccountID()
+		}
+		name := strings.TrimSpace(thAcc.Username)
+		if name == "" {
+			name = strings.TrimSpace(thAcc.Name)
+		}
+		if name == "" {
+			name = strings.TrimSpace(igAcc.Username)
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"connected":      th().Connected(),
-			"user_id":        th().UserID(),
-			"ig_connected":   igc().Connected(),
-			"ig_user_id":     igc().UserID(),
-			"tenant_id":      orgCtx.Tenant.ID,
-			"tenant_name":    orgCtx.Tenant.Name,
-			"workspace_id":   orgCtx.Workspace.ID,
-			"workspace_name": orgCtx.Workspace.Name,
-			"account_id":     accounts.ActiveID(),
-			"account_name":   ws.Meta.Name,
+			"connected":         thOK,
+			"user_id":           thAcc.AccountID(),
+			"ig_connected":      igOK,
+			"ig_user_id":        igAcc.AccountID(),
+			"tenant_id":         orgCtx.Tenant.ID,
+			"tenant_name":       orgCtx.Tenant.Name,
+			"workspace_id":      orgCtx.Workspace.ID,
+			"workspace_name":    orgCtx.Workspace.Name,
+			"account_id":        rzID,
+			"account_name":      name,
+			"repliz":            replizCli != nil && replizCli.Ready(),
+			"repliz_account_id": rzID,
+			"source":            "repliz",
 		})
 	})
 
 	mux.HandleFunc("GET /api/accounts", func(w http.ResponseWriter, r *http.Request) {
 		list := accounts.List()
+		replizAccounts := []repliz.Account{}
+		if replizCli != nil && replizCli.Ready() {
+			replizAccounts, _ = replizCli.ListAccounts(r.Context())
+		}
 		items := make([]map[string]any, 0, len(list))
 		for _, m := range list {
 			ws, err := accounts.Get(m.ID)
 			row := map[string]any{
-				"id":                 m.ID,
-				"name":               m.Name,
-				"threads_username":   m.ThreadsUsername,
-				"instagram_username": m.InstagramUsername,
-				"active":             m.ID == accounts.ActiveID(),
-				"threads_connected":  false,
+				"id":                  m.ID,
+				"name":                m.Name,
+				"threads_username":    m.ThreadsUsername,
+				"instagram_username":  m.InstagramUsername,
+				"tiktok_username":     m.TikTokUsername,
+				"repliz_threads_id":   m.ReplizThreadsID,
+				"repliz_instagram_id": m.ReplizInstagramID,
+				"repliz_tiktok_id":    m.ReplizTikTokID,
+				"active":              m.ID == accounts.ActiveID(),
+				"threads_connected":   false,
 				"instagram_connected": false,
-				"lazy_enabled":       false,
+				"lazy_enabled":        false,
 			}
 			if err == nil && ws != nil {
 				row["threads_connected"] = ws.Threads.Connected()
@@ -624,8 +669,11 @@ func main() {
 			items = append(items, row)
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"active_id": accounts.ActiveID(),
-			"accounts":  items,
+			"active_id":       accounts.ActiveID(),
+			"accounts":        items,
+			"repliz_accounts": replizAccounts,
+			"identity":        "workspace",
+			"note":            "Satu workspace mengikat akun Threads, Instagram, dan TikTok dari Repliz.",
 		})
 	})
 
@@ -656,32 +704,93 @@ func main() {
 		}
 		th().InvalidateReplyCaches()
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":         true,
-			"active_id":  accounts.ActiveID(),
-			"account":    accounts.Active().Meta,
-			"connected":  th().Connected(),
-			"ig_connected": igc().Connected(),
+			"ok":           true,
+			"active_id":    accounts.ActiveID(),
+			"account":      accounts.Active().Meta,
+			"connected":    false,
+			"ig_connected": false,
+			"note":         "Workspace aktif dipakai oleh Generate, Insight, Balasan, dan Lazy Business.",
 		})
 	})
 
 	mux.HandleFunc("PATCH /api/accounts/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
 		var body struct {
-			Name string `json:"name"`
+			Name              string  `json:"name"`
+			ReplizThreadsID   *string `json:"repliz_threads_id"`
+			ReplizInstagramID *string `json:"repliz_instagram_id"`
+			ReplizTikTokID    *string `json:"repliz_tiktok_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
 			return
 		}
+		var threadsName, instagramName, tiktokName string
+		bindings := []struct {
+			value    *string
+			platform string
+			username *string
+		}{
+			{body.ReplizThreadsID, "threads", &threadsName},
+			{body.ReplizInstagramID, "instagram", &instagramName},
+			{body.ReplizTikTokID, "tiktok", &tiktokName},
+		}
+		for _, binding := range bindings {
+			if binding.value == nil || strings.TrimSpace(*binding.value) == "" {
+				continue
+			}
+			acc, err := replizAccountForID(r.Context(), *binding.value, binding.platform)
+			if err != nil || !replizAccountLive(acc) {
+				if err == nil {
+					err = fmt.Errorf("akun %s belum terhubung", binding.platform)
+				}
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			*binding.username = strings.TrimSpace(acc.Username)
+		}
+		for _, other := range accounts.List() {
+			if other.ID == id {
+				continue
+			}
+			checks := []struct {
+				value *string
+				used  string
+				label string
+			}{
+				{body.ReplizThreadsID, other.ReplizThreadsID, "Threads"},
+				{body.ReplizInstagramID, other.ReplizInstagramID, "Instagram"},
+				{body.ReplizTikTokID, other.ReplizTikTokID, "TikTok"},
+			}
+			for _, check := range checks {
+				if check.value != nil && strings.TrimSpace(*check.value) != "" && strings.TrimSpace(*check.value) == strings.TrimSpace(check.used) {
+					writeErr(w, http.StatusConflict, fmt.Sprintf("akun %s itu sudah dipakai workspace %s", check.label, other.Name))
+					return
+				}
+			}
+		}
 		if err := accounts.UpdateMeta(id, func(m *account.Meta) {
 			if strings.TrimSpace(body.Name) != "" {
 				m.Name = strings.TrimSpace(body.Name)
+			}
+			if body.ReplizThreadsID != nil {
+				m.ReplizThreadsID = strings.TrimSpace(*body.ReplizThreadsID)
+				m.ThreadsUsername = threadsName
+			}
+			if body.ReplizInstagramID != nil {
+				m.ReplizInstagramID = strings.TrimSpace(*body.ReplizInstagramID)
+				m.InstagramUsername = instagramName
+			}
+			if body.ReplizTikTokID != nil {
+				m.ReplizTikTokID = strings.TrimSpace(*body.ReplizTikTokID)
+				m.TikTokUsername = tiktokName
 			}
 		}); err != nil {
 			writeErr(w, http.StatusBadRequest, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		ws, _ := accounts.Get(id)
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "account": ws.Meta})
 	})
 
 	mux.HandleFunc("DELETE /api/accounts/{id}", func(w http.ResponseWriter, r *http.Request) {
@@ -694,90 +803,19 @@ func main() {
 
 	// Set tokens on a specific account (or active if id empty / "active").
 	mux.HandleFunc("POST /api/accounts/{id}/threads-token", func(w http.ResponseWriter, r *http.Request) {
-		ws, err := accountByParam(r.PathValue("id"))
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		var body struct {
-			Token string `json:"token"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Token) == "" {
-			writeErr(w, http.StatusBadRequest, "token wajib diisi")
-			return
-		}
-		ws.Threads.SetToken(body.Token)
-		me, err := ws.Threads.GetMe()
-		if err != nil {
-			ws.Threads.ClearToken()
-			writeAPIErr(w, err)
-			return
-		}
-		var profile struct {
-			Username string `json:"username"`
-		}
-		_ = json.Unmarshal(me, &profile)
-		_ = accounts.UpdateMeta(ws.Meta.ID, func(m *account.Meta) {
-			if profile.Username != "" {
-				m.ThreadsUsername = profile.Username
-				if m.Name == "" || m.Name == m.ID || m.Name == "main" {
-					m.Name = profile.Username
-				}
-			}
-		})
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "me": json.RawMessage(me)})
+		writeGoneMeta(w, "Token Threads Meta tidak dipakai. Sambungkan akun lewat Repliz di /app/akun.")
 	})
 
 	mux.HandleFunc("POST /api/accounts/{id}/ig-token", func(w http.ResponseWriter, r *http.Request) {
-		ws, err := accountByParam(r.PathValue("id"))
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		var body struct {
-			Token string `json:"token"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Token) == "" {
-			writeErr(w, http.StatusBadRequest, "token wajib diisi")
-			return
-		}
-		ws.IG.SetToken(body.Token)
-		me, err := ws.IG.GetMe()
-		if err != nil {
-			ws.IG.ClearToken()
-			writeAPIErr(w, err)
-			return
-		}
-		var profile struct {
-			Username string `json:"username"`
-		}
-		_ = json.Unmarshal(me, &profile)
-		_ = accounts.UpdateMeta(ws.Meta.ID, func(m *account.Meta) {
-			if profile.Username != "" {
-				m.InstagramUsername = profile.Username
-			}
-		})
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "me": json.RawMessage(me)})
+		writeGoneMeta(w, "Token Instagram Meta tidak dipakai. Sambungkan akun lewat Repliz di /app/akun.")
 	})
 
 	mux.HandleFunc("DELETE /api/accounts/{id}/threads-token", func(w http.ResponseWriter, r *http.Request) {
-		ws, err := accountByParam(r.PathValue("id"))
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		ws.Threads.ClearToken()
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		writeGoneMeta(w, "Token Threads Meta tidak dipakai. Kelola akun di /app/akun.")
 	})
 
 	mux.HandleFunc("DELETE /api/accounts/{id}/ig-token", func(w http.ResponseWriter, r *http.Request) {
-		ws, err := accountByParam(r.PathValue("id"))
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		ws.IG.ClearToken()
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		writeGoneMeta(w, "Token Instagram Meta tidak dipakai. Kelola akun di /app/akun.")
 	})
 
 	mux.HandleFunc("GET /api/oauth/status", func(w http.ResponseWriter, r *http.Request) {
@@ -825,38 +863,10 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 	})
 	mux.HandleFunc("GET /api/oauth/threads/start", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimSpace(r.URL.Query().Get("account_id"))
-		if id == "" {
-			id = "active"
-		}
-		ws, err := accountByParam(id)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		u, err := oa.ThreadsAuthorizeURL(ws.Meta.ID)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"url": u, "redirect_uri": oa.ThreadsRedirectURI()})
+		writeGoneMeta(w, "OAuth Meta tidak dipakai. Sambungkan Threads lewat Repliz di /app/akun.")
 	})
 	mux.HandleFunc("GET /api/oauth/instagram/start", func(w http.ResponseWriter, r *http.Request) {
-		id := strings.TrimSpace(r.URL.Query().Get("account_id"))
-		if id == "" {
-			id = "active"
-		}
-		ws, err := accountByParam(id)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		u, err := oa.InstagramAuthorizeURL(ws.Meta.ID)
-		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"url": u, "redirect_uri": oa.InstagramRedirectURI()})
+		writeGoneMeta(w, "OAuth Meta tidak dipakai. Sambungkan Instagram lewat Repliz di /app/akun.")
 	})
 	mux.HandleFunc("GET /auth/threads/callback", func(w http.ResponseWriter, r *http.Request) {
 		handleOAuthCallback(w, r, oa, "threads")
@@ -882,88 +892,272 @@ func main() {
 	mux.HandleFunc("GET /auth/meta/data-deletion-status", handleMetaDataDeletionStatus)
 
 	mux.HandleFunc("POST /api/token", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Token string `json:"token"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Token) == "" {
-			writeErr(w, http.StatusBadRequest, "token wajib diisi")
-			return
-		}
-		th().SetToken(body.Token)
-		me, err := th().GetMe()
-		if err != nil {
-			th().ClearToken()
-			writeAPIErr(w, err)
-			return
-		}
-		var profile struct {
-			Username string `json:"username"`
-		}
-		_ = json.Unmarshal(me, &profile)
-		_ = accounts.UpdateMeta(accounts.ActiveID(), func(m *account.Meta) {
-			if profile.Username != "" {
-				m.ThreadsUsername = profile.Username
-				if m.Name == "" || m.Name == m.ID || m.Name == "main" {
-					m.Name = profile.Username
-				}
-			}
-		})
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "me": json.RawMessage(me)})
+		writeGoneMeta(w, "Token Meta tidak dipakai. Sambungkan akun lewat Repliz di /app/akun.")
 	})
 
 	mux.HandleFunc("POST /api/token/refresh", func(w http.ResponseWriter, r *http.Request) {
-		raw, err := th().RefreshToken()
+		writeGoneMeta(w, "Token Meta tidak dipakai. Sambungkan akun lewat Repliz di /app/akun.")
+	})
+
+	mux.HandleFunc("DELETE /api/token", func(w http.ResponseWriter, r *http.Request) {
+		writeGoneMeta(w, "Token Meta tidak dipakai. Kelola akun di /app/akun.")
+	})
+
+	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
+		acc, err := pickReplizByType(r.Context(), r.URL.Query().Get("account_id"), "threads")
+		if err != nil {
+			acc, err = pickReplizByType(r.Context(), r.URL.Query().Get("account_id"), "")
+		}
 		if err != nil {
 			writeAPIErr(w, err)
 			return
 		}
-		writeJSON(w, http.StatusOK, json.RawMessage(raw))
-	})
-
-	mux.HandleFunc("DELETE /api/token", func(w http.ResponseWriter, r *http.Request) {
-		th().ClearToken()
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
-	})
-
-	mux.HandleFunc("GET /api/me", func(w http.ResponseWriter, r *http.Request) {
-		proxy(w, func() (json.RawMessage, error) { return th().GetMe() })
-	})
-
-	mux.HandleFunc("GET /api/threads", func(w http.ResponseWriter, r *http.Request) {
-		proxy(w, func() (json.RawMessage, error) {
-			return th().GetThreads(r.URL.Query().Get("since"), r.URL.Query().Get("until"))
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":                          acc.AccountID(),
+			"username":                    acc.Username,
+			"name":                        acc.Name,
+			"threads_profile_picture_url": acc.Picture,
+			"is_connected":                acc.IsConnected,
+			"type":                        acc.Type,
+			"source":                      "repliz",
 		})
 	})
 
+	mux.HandleFunc("GET /api/threads", func(w http.ResponseWriter, r *http.Request) {
+		if strings.EqualFold(r.URL.Query().Get("source"), "meta") {
+			writeGoneMeta(w, "Feed Threads memakai Repliz, bukan Meta Graph.")
+			return
+		}
+		accountID, err := resolveReplizID(r.Context(), r.URL.Query().Get("account_id"))
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		limit := 40
+		if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		raw, err := replizCli.Feed(r.Context(), r.URL.Query().Get("since"), r.URL.Query().Get("until"), accountID, limit)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
+	})
+
+	mux.HandleFunc("GET /api/repliz/accounts", func(w http.ResponseWriter, r *http.Request) {
+		if !replizCli.Ready() {
+			writeErr(w, http.StatusBadRequest, "Repliz belum disambungkan")
+			return
+		}
+		list, err := replizCli.ListAccounts(r.Context())
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		activeID := strings.TrimSpace(r.URL.Query().Get("account_id"))
+		if activeID == "" {
+			activeID = replizActive.Get()
+		}
+		if _, ok := repliz.FindAccount(list, activeID); !ok {
+			picked, err := repliz.PickConnected(list)
+			if err != nil {
+				writeAPIErr(w, err)
+				return
+			}
+			activeID = picked.AccountID()
+			_ = replizActive.Set(activeID)
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"accounts":  list,
+			"active_id": activeID,
+		})
+	})
+
+	mux.HandleFunc("POST /api/repliz/accounts/switch", func(w http.ResponseWriter, r *http.Request) {
+		if !replizCli.Ready() {
+			writeErr(w, http.StatusBadRequest, "Repliz belum disambungkan")
+			return
+		}
+		var body struct {
+			ID string `json:"id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.ID) == "" {
+			writeErr(w, http.StatusBadRequest, "id akun Repliz wajib")
+			return
+		}
+		acc, err := replizCli.GetAccount(r.Context(), body.ID)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		id := acc.AccountID()
+		if err := replizActive.Set(id); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "active_id": id, "account": acc})
+	})
+
+	mux.HandleFunc("GET /api/repliz/authorize", func(w http.ResponseWriter, r *http.Request) {
+		if replizCli == nil || !replizCli.Ready() {
+			writeErr(w, http.StatusBadRequest, "Repliz belum disambungkan")
+			return
+		}
+		platform := r.URL.Query().Get("platform")
+		redirect := r.URL.Query().Get("redirect")
+		if !oauthRedirectOK(r, redirect) {
+			writeErr(w, http.StatusBadRequest, "Redirect OAuth harus ke aplikasi ini")
+			return
+		}
+		authURL, err := replizCli.AuthorizeURL(r.Context(), platform, redirect)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"url": authURL, "platform": platform})
+	})
+
+	mux.HandleFunc("POST /api/repliz/connect", func(w http.ResponseWriter, r *http.Request) {
+		if replizCli == nil || !replizCli.Ready() {
+			writeErr(w, http.StatusBadRequest, "Repliz belum disambungkan")
+			return
+		}
+		var in struct {
+			Platform  string `json:"platform"`
+			Code      string `json:"code"`
+			AccountID string `json:"account_id"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&in); err != nil {
+			writeErr(w, http.StatusBadRequest, "JSON tidak valid")
+			return
+		}
+		id, err := replizCli.ConnectCode(r.Context(), in.Platform, in.Code, in.AccountID)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		if id != "" && replizActive != nil {
+			_ = replizActive.Set(id)
+		}
+		list, err := replizCli.ListAccounts(r.Context())
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "active_id": id, "accounts": list})
+	})
+
+	mux.HandleFunc("DELETE /api/repliz/accounts/{id}", func(w http.ResponseWriter, r *http.Request) {
+		if replizCli == nil || !replizCli.Ready() {
+			writeErr(w, http.StatusBadRequest, "Repliz belum disambungkan")
+			return
+		}
+		id := strings.TrimSpace(r.PathValue("id"))
+		if id == "" {
+			writeErr(w, http.StatusBadRequest, "account id kosong")
+			return
+		}
+		if err := replizCli.DeleteAccount(r.Context(), id); err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		if replizActive != nil && replizActive.Get() == id {
+			_ = replizActive.Set("")
+		}
+		list, err := replizCli.ListAccounts(r.Context())
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		activeID := ""
+		if replizActive != nil {
+			activeID = replizActive.Get()
+		}
+		if _, ok := repliz.FindAccount(list, activeID); !ok {
+			if picked, err := repliz.PickConnected(list); err == nil {
+				activeID = picked.AccountID()
+				_ = replizActive.Set(activeID)
+			}
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "active_id": activeID, "accounts": list})
+	})
+
 	mux.HandleFunc("GET /api/insights", func(w http.ResponseWriter, r *http.Request) {
-		aggregate := r.URL.Query().Get("aggregate") == "1" || r.URL.Query().Get("aggregate") == "true"
 		postLimit := -1
 		if v := strings.TrimSpace(r.URL.Query().Get("posts")); v != "" {
 			if n, err := strconv.Atoi(v); err == nil {
 				postLimit = n
 			}
 		}
-		proxy(w, func() (json.RawMessage, error) {
-			return th().GetInsightsOpts(r.URL.Query().Get("since"), r.URL.Query().Get("until"), aggregate, postLimit)
-		})
+		accountID, err := resolveReplizID(r.Context(), r.URL.Query().Get("account_id"))
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		raw, err := replizCli.Insights(r.Context(), r.URL.Query().Get("since"), r.URL.Query().Get("until"), postLimit, accountID)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
 	})
 
 	mux.HandleFunc("POST /api/insights/ai", func(w http.ResponseWriter, r *http.Request) {
-		if !th().Connected() {
-			writeErr(w, http.StatusUnauthorized, "hubungkan token dulu")
+		if replizCli == nil || !replizCli.Ready() {
+			writeErr(w, http.StatusBadRequest, "AI Insight memakai API Repliz — set REPLIZ_ACCESS_KEY")
 			return
 		}
 		if !aiClient.Enabled() {
 			writeErr(w, http.StatusServiceUnavailable, "AI belum dikonfigurasi — set AI_API_KEY di .env")
 			return
 		}
-		snapshot, err := th().SnapshotForAI(12)
+		var body struct {
+			AccountID string `json:"account_id"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		accountID, err := resolveReplizID(r.Context(), body.AccountID)
 		if err != nil {
 			writeAPIErr(w, err)
 			return
 		}
+		snapshot, err := replizCli.SnapshotForAI(r.Context(), accountID, 24)
+		if err != nil {
+			log.Printf("ai insight snapshot: %v", err)
+			writeAPIErr(w, err)
+			return
+		}
+		if accountID != "" && replizActive != nil {
+			_ = replizActive.Set(accountID)
+		}
+		if mstore := mem(); mstore != nil {
+			m := mstore.Get()
+			prof, _ := snapshot["profile"].(map[string]any)
+			uname, _ := prof["username"].(string)
+			name, _ := prof["name"].(string)
+			if m.FitsAccount(uname, name) {
+				instr := m.Instructions
+				if rns := []rune(instr); len(rns) > 1200 {
+					instr = string(rns[:1200]) + "…"
+				}
+				snapshot["brand_context"] = map[string]any{
+					"brand":        m.Brand,
+					"niche":        m.Niche,
+					"niches":       m.Niches,
+					"instructions": instr,
+					"lessons":      m.Lessons,
+				}
+			}
+		}
 		result, err := aiClient.AnalyzeThreads(snapshot)
 		if err != nil {
+			log.Printf("ai insight analyze: %v", err)
 			var qe *ai.QuotaError
 			if errors.As(err, &qe) {
 				writeJSON(w, http.StatusTooManyRequests, map[string]any{
@@ -976,10 +1170,24 @@ func main() {
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
-		writeJSON(w, http.StatusOK, result)
+		out := map[string]any{
+			"insight":        result,
+			"repliz_account": snapshot["profile"],
+			"source":         "repliz",
+		}
+		// flatten InsightResult fields for existing UI
+		b, _ := json.Marshal(result)
+		_ = json.Unmarshal(b, &out)
+		out["repliz_account"] = snapshot["profile"]
+		out["source"] = "repliz"
+		writeJSON(w, http.StatusOK, out)
 	})
 
 	mux.HandleFunc("GET /api/ai/status", func(w http.ResponseWriter, r *http.Request) {
+		chatReasoning := strings.ToLower(strings.TrimSpace(os.Getenv("AI_CHAT_REASONING")))
+		if chatReasoning == "" {
+			chatReasoning = "high"
+		}
 		out := map[string]any{
 			"enabled":      aiClient.Enabled(),
 			"provider":     aiClient.Provider(),
@@ -988,42 +1196,32 @@ func main() {
 			"keys":         aiClient.KeysStatus(),
 			"thumbnail": map[string]any{
 				"enabled":  thumbClient.Enabled(),
-				"provider": "openai",
+				"provider": aiClient.Provider(),
 				"model":    thumbClient.Model(),
 			},
 		}
 		if aiClient.Enabled() {
 			out["quota"] = aiClient.Quota()
 		}
+		out["chat"] = map[string]any{
+			"streaming": true,
+			"vision":    true,
+			"image":     thumbClient.Enabled(),
+			"search":    true,
+			"model":     aiClient.ChatModel(),
+			"route":     "9router/responses",
+			"reasoning": chatReasoning,
+		}
 		writeJSON(w, http.StatusOK, out)
 	})
 
 	mux.HandleFunc("POST /api/ai/chat", func(w http.ResponseWriter, r *http.Request) {
-		if !aiClient.Enabled() {
-			writeErr(w, http.StatusServiceUnavailable, "AI belum dikonfigurasi — set AI_API_KEY / Gemini keys")
-			return
-		}
-		var req ai.ChatRequest
-		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
-			writeErr(w, http.StatusBadRequest, "body tidak valid")
-			return
-		}
-		result, err := aiClient.Chat(req)
-		if err != nil {
-			var qe *ai.QuotaError
-			if errors.As(err, &qe) {
-				writeJSON(w, http.StatusTooManyRequests, map[string]any{
-					"error": qe.Message,
-					"kind":  qe.Kind,
-					"quota": aiClient.Quota(),
-				})
-				return
-			}
-			writeErr(w, http.StatusBadGateway, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, result)
+		handleAIChat(w, r, aiClient, thumbClient, wantsChatStream(r))
 	})
+	mux.HandleFunc("POST /api/ai/chat/stream", func(w http.ResponseWriter, r *http.Request) {
+		handleAIChat(w, r, aiClient, thumbClient, true)
+	})
+	mux.HandleFunc("GET /api/ai/chat/context", handleChatContext)
 
 	// Gemini / AI API keys — simpan di .data/ai_keys.json (bukan edit .env).
 	mux.HandleFunc("GET /api/ai/keys", func(w http.ResponseWriter, r *http.Request) {
@@ -1114,6 +1312,47 @@ func main() {
 	mux.HandleFunc("PUT /api/ai/instructions", saveAIInstructions)
 	mux.HandleFunc("POST /api/ai/instructions", saveAIInstructions)
 
+	mux.HandleFunc("GET /api/ai/editorial-prompt", func(w http.ResponseWriter, r *http.Request) {
+		m := mem().Get()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"prompt":  ai.EffectiveEditorialPrompt(m, ai.GenerateRequest{}),
+			"custom":  strings.TrimSpace(m.EditorialPrompt) != "",
+			"default": ai.DefaultEditableEditorialPrompt,
+		})
+	})
+	mux.HandleFunc("PUT /api/ai/editorial-prompt", func(w http.ResponseWriter, r *http.Request) {
+		var body struct {
+			Prompt string `json:"prompt"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		if err := mem().SetEditorialPrompt(body.Prompt); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		m := mem().Get()
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":     true,
+			"prompt": ai.EffectiveEditorialPrompt(m, ai.GenerateRequest{}),
+			"custom": strings.TrimSpace(m.EditorialPrompt) != "",
+		})
+	})
+
+	mux.HandleFunc("PUT /api/ai/product", func(w http.ResponseWriter, r *http.Request) {
+		var body ai.ProductProfile
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		if err := mem().SetProductProfile(body); err != nil {
+			writeErr(w, http.StatusInternalServerError, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "memory": mem().Get()})
+	})
+
 	saveAINiche := func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
 			Niche  string   `json:"niche"`
@@ -1156,11 +1395,16 @@ func main() {
 	mux.HandleFunc("POST /api/ai/brand", saveAIBrand)
 
 	mux.HandleFunc("POST /api/ai/memory/refresh", func(w http.ResponseWriter, r *http.Request) {
-		if !th().Connected() {
-			writeErr(w, http.StatusUnauthorized, "hubungkan token dulu")
+		if replizCli == nil || !replizCli.Ready() {
+			writeErr(w, http.StatusBadRequest, "memakai API Repliz")
 			return
 		}
-		snapshot, err := th().SnapshotForAI(12)
+		id, err := resolveReplizID(r.Context(), "")
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		snapshot, err := replizCli.SnapshotForAI(r.Context(), id, 12)
 		if err != nil {
 			writeAPIErr(w, err)
 			return
@@ -1259,12 +1503,8 @@ func main() {
 	mux.HandleFunc("POST /api/upload/image", handleUploadImage)
 
 	mux.HandleFunc("POST /api/ai/thumbnail", func(w http.ResponseWriter, r *http.Request) {
-		if !th().Connected() {
-			writeErr(w, http.StatusUnauthorized, "hubungkan token dulu")
-			return
-		}
 		if !thumbClient.Enabled() {
-			writeErr(w, http.StatusServiceUnavailable, "Thumbnail ChatGPT belum dikonfigurasi — isi OpenAI key di Kelola akun")
+			writeErr(w, http.StatusServiceUnavailable, "Thumbnail belum dikonfigurasi — set AI_API_KEY")
 			return
 		}
 		var req ai.ThumbnailRequest
@@ -1277,34 +1517,36 @@ func main() {
 			writeErr(w, http.StatusBadGateway, err.Error())
 			return
 		}
-		name, err := ai.SaveThumbnailPNG(ai.DefaultThumbMediaDir(), result.PNG)
+		dir := ai.DefaultThumbMediaDir()
+		if ws := accounts.Active(); ws != nil && strings.TrimSpace(ws.ThumbDir) != "" {
+			dir = ws.ThumbDir
+		}
+		name, err := ai.SaveThumbnailPNG(dir, result.PNG)
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
 			return
 		}
 		rel := "/media/thumbs/" + name
-		imageURL := rel
-		if publicBase != "" {
-			imageURL = publicBase + rel
+		// Preview UI harus path relatif (localhost). Absolute URL publik hanya untuk publish.
+		out := map[string]any{
+			"ok":         true,
+			"image_url":  rel,
+			"path":       rel,
+			"local_path": rel,
+			"width":      result.Width,
+			"height":     result.Height,
+			"model":      result.Model,
+			"size":       result.Size,
+			"prompt":     result.Prompt,
+			"note":       "Untuk utas Threads (bagian 1 IMAGE). Bukan untuk carousel igc().",
 		}
-		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":        true,
-			"image_url": imageURL,
-			"path":      rel,
-			"width":     result.Width,
-			"height":    result.Height,
-			"model":     result.Model,
-			"size":      result.Size,
-			"prompt":    result.Prompt,
-			"note":      "Untuk utas Threads (bagian 1 IMAGE). Bukan untuk carousel igc().",
-		})
+		if publicBase != "" {
+			out["public_url"] = publicBase + rel
+		}
+		writeJSON(w, http.StatusOK, out)
 	})
 
 	mux.HandleFunc("POST /api/ai/generate", func(w http.ResponseWriter, r *http.Request) {
-		if !th().Connected() {
-			writeErr(w, http.StatusUnauthorized, "hubungkan token dulu")
-			return
-		}
 		if !aiClient.Enabled() {
 			writeErr(w, http.StatusServiceUnavailable, "AI belum dikonfigurasi — set AI_API_KEY di .env")
 			return
@@ -1313,66 +1555,117 @@ func main() {
 		_ = json.NewDecoder(r.Body).Decode(&req)
 
 		snap := mem().Get()
-		result, err := aiClient.GenerateContent(nil, snap, req)
+		finish := func(result *ai.GenerateResult) {
+			if result == nil {
+				return
+			}
+			if result.DailyFocus != nil {
+				if req.IgnoreNiche {
+					result.DailyFocus.Focus = ""
+				} else if niches := ai.NicheList(snap); len(niches) > 0 {
+					result.DailyFocus.Focus = strings.Join(niches, " · ")
+				} else {
+					result.DailyFocus.Focus = ""
+				}
+				if !req.IgnoreNiche {
+					_ = mem().SetDaily(*result.DailyFocus)
+				}
+			}
+			if len(result.Drafts) > 0 {
+				_ = mem().RecordGeneration(ai.GenHistory{
+					Topic:         req.Topic,
+					Instructions:  firstNonEmpty(req.Instructions, snap.EditorialPrompt, snap.Instructions),
+					Drafts:        result.Drafts,
+					Consideration: result.Consideration,
+				})
+			}
+		}
+
+		stream := wantsChatStream(r)
+		if !stream {
+			result, err := aiClient.GenerateContent(nil, snap, req)
+			if err != nil {
+				var qe *ai.QuotaError
+				if errors.As(err, &qe) {
+					writeJSON(w, http.StatusTooManyRequests, map[string]any{
+						"error": qe.Message,
+						"kind":  qe.Kind,
+						"quota": aiClient.Quota(),
+					})
+					return
+				}
+				writeErr(w, http.StatusBadGateway, err.Error())
+				return
+			}
+			finish(result)
+			writeJSON(w, http.StatusOK, result)
+			return
+		}
+
+		flusher, ok := w.(http.Flusher)
+		if !ok {
+			writeErr(w, http.StatusInternalServerError, "stream tidak didukung")
+			return
+		}
+		w.Header().Set("Content-Type", "text/event-stream")
+		w.Header().Set("Cache-Control", "no-cache")
+		w.Header().Set("Connection", "keep-alive")
+		w.Header().Set("X-Accel-Buffering", "no")
+		flusher.Flush()
+
+		writeEv := func(ev ai.GenerateStreamEvent) error {
+			raw, _ := json.Marshal(ev)
+			if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+				return err
+			}
+			flusher.Flush()
+			return nil
+		}
+
+		result, err := aiClient.GenerateContentEmit(r.Context(), nil, snap, req, writeEv)
 		if err != nil {
 			var qe *ai.QuotaError
 			if errors.As(err, &qe) {
-				writeJSON(w, http.StatusTooManyRequests, map[string]any{
-					"error": qe.Message,
-					"kind":  qe.Kind,
-					"quota": aiClient.Quota(),
-				})
+				_ = writeEv(ai.GenerateStreamEvent{Type: "error", Error: qe.Message})
 				return
 			}
-			writeErr(w, http.StatusBadGateway, err.Error())
+			if errors.Is(err, context.Canceled) || errors.Is(err, context.DeadlineExceeded) {
+				log.Printf("generate aborted: %v", err)
+				_ = writeEv(ai.GenerateStreamEvent{Type: "error", Error: "generate dibatalkan"})
+				return
+			}
+			log.Printf("generate stream error: %v", err)
+			_ = writeEv(ai.GenerateStreamEvent{Type: "error", Error: err.Error()})
 			return
 		}
-		if result.DailyFocus != nil {
-			// Niche ditentukan user — jangan biarkan AI overwrite fokus dari data.
-			if niches := ai.NicheList(snap); len(niches) > 0 {
-				result.DailyFocus.Focus = strings.Join(niches, " · ")
-			} else {
-				result.DailyFocus.Focus = ""
-			}
-			_ = mem().SetDaily(*result.DailyFocus)
-		}
-		_ = mem().RecordGeneration(ai.GenHistory{
-			Topic:         req.Topic,
-			Instructions:  firstNonEmpty(req.Instructions, snap.Instructions),
-			Drafts:        result.Drafts,
-			Consideration: result.Consideration,
-		})
-		writeJSON(w, http.StatusOK, result)
+		finish(result)
 	})
 
 	mux.HandleFunc("GET /api/quota", func(w http.ResponseWriter, r *http.Request) {
-		proxy(w, func() (json.RawMessage, error) { return th().GetQuota() })
+		writeJSON(w, http.StatusOK, map[string]any{
+			"source": "repliz",
+			"note":   "Kuota posting Meta Graph tidak tersedia. Publikasi memakai jadwal Repliz.",
+			"data":   []any{},
+			"repliz": replizCli != nil && replizCli.Ready(),
+		})
 	})
 
 	mux.HandleFunc("GET /api/mentions", func(w http.ResponseWriter, r *http.Request) {
-		proxy(w, func() (json.RawMessage, error) { return th().GetMentions() })
+		writeGoneMeta(w, "Mention Threads (Graph) tidak tersedia di Repliz Public API. Tidak ada fallback Meta.")
 	})
 
 	mux.HandleFunc("GET /api/permissions", func(w http.ResponseWriter, r *http.Request) {
-		if !th().Connected() {
-			writeJSON(w, http.StatusOK, map[string]any{"connected": false, "scopes": map[string]any{}})
-			return
-		}
+		_, _, thOK, _ := replizConnectedPair(r.Context())
 		writeJSON(w, http.StatusOK, map[string]any{
-			"connected": true,
-			"scopes":    th().ProbePermissions(),
+			"connected": thOK,
+			"source":    "repliz",
+			"scopes":    map[string]any{},
+			"note":      "Izin Meta tidak dipakai. Sambungkan akun di /app/akun.",
 		})
 	})
 
 	mux.HandleFunc("GET /api/search", func(w http.ResponseWriter, r *http.Request) {
-		q := r.URL.Query().Get("q")
-		if q == "" {
-			writeErr(w, http.StatusBadRequest, "parameter q wajib")
-			return
-		}
-		proxy(w, func() (json.RawMessage, error) {
-			return th().KeywordSearch(q, r.URL.Query().Get("search_type"))
-		})
+		writeGoneMeta(w, "Pencarian kata kunci Threads (Graph) tidak tersedia di Repliz Public API.")
 	})
 
 	mux.HandleFunc("GET /api/replies", func(w http.ResponseWriter, r *http.Request) {
@@ -1381,35 +1674,31 @@ func main() {
 			writeErr(w, http.StatusBadRequest, "media_id wajib")
 			return
 		}
-		proxy(w, func() (json.RawMessage, error) {
-			if r.URL.Query().Get("raw") == "1" {
-				return th().GetReplies(id)
-			}
-			deep := r.URL.Query().Get("deep") == "1"
-			refresh := r.URL.Query().Get("refresh") == "1"
-			return th().GetRepliesEnriched(id, deep, refresh)
-		})
+		acc, err := pickReplizByType(r.Context(), r.URL.Query().Get("account_id"), "threads")
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		raw, err := replizCli.RepliesAsFeed(r.Context(), id, acc.AccountID(), acc.Username)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
 	})
 
-	// Inbox: semua komentar masuk yang belum dibalas (dari post terbaru).
 	mux.HandleFunc("GET /api/replies/pending", func(w http.ResponseWriter, r *http.Request) {
-		maxPosts, _ := strconv.Atoi(r.URL.Query().Get("posts"))
-		maxItems, _ := strconv.Atoi(r.URL.Query().Get("limit"))
-		proxy(w, func() (json.RawMessage, error) {
-			return th().ListPendingInbox(maxPosts, maxItems)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"data":   []any{},
+			"source": "repliz",
+			"note":   "Inbox pending Graph tidak tersedia. Buka Balasan dan pilih post Repliz.",
 		})
 	})
 
 	mux.HandleFunc("POST /api/replies/manage", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			ReplyID string `json:"reply_id"`
-			Hide    bool   `json:"hide"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.ReplyID == "" {
-			writeErr(w, http.StatusBadRequest, "reply_id wajib")
-			return
-		}
-		proxy(w, func() (json.RawMessage, error) { return th().ManageReply(body.ReplyID, body.Hide) })
+		writeGoneMeta(w, "Sembunyikan balasan (Graph) tidak tersedia di Repliz Public API.")
 	})
 
 	mux.HandleFunc("GET /api/calendar", func(w http.ResponseWriter, r *http.Request) {
@@ -1439,25 +1728,25 @@ func main() {
 		monthKey := start.Format("2006-01")
 
 		type calEvent struct {
-			ID           string    `json:"id"`
-			Source       string    `json:"source"` // lazy | manual
-			Title        string    `json:"title"`
-			Status       string    `json:"status"`
-			At           time.Time `json:"at"`
-			Day          string    `json:"day"`
-			Preview      string    `json:"preview,omitempty"`
-			Text         string    `json:"text,omitempty"`
-			Parts        []string  `json:"parts,omitempty"`
-			Caption      string    `json:"caption,omitempty"`
-			MediaType    string    `json:"media_type,omitempty"`
-			ImageURL     string    `json:"image_url,omitempty"`
-			ThumbURL     string    `json:"thumb_url,omitempty"`
-			Error        string    `json:"error,omitempty"`
-			PartsN       int       `json:"parts_n,omitempty"`
-			ThreadsIDs   []string  `json:"threads_ids,omitempty"`
-			IGMediaID    string    `json:"ig_media_id,omitempty"`
-			BufferPostID string    `json:"buffer_post_id,omitempty"`
-			BufferXPostID string   `json:"buffer_x_post_id,omitempty"`
+			ID            string    `json:"id"`
+			Source        string    `json:"source"` // lazy | manual
+			Title         string    `json:"title"`
+			Status        string    `json:"status"`
+			At            time.Time `json:"at"`
+			Day           string    `json:"day"`
+			Preview       string    `json:"preview,omitempty"`
+			Text          string    `json:"text,omitempty"`
+			Parts         []string  `json:"parts,omitempty"`
+			Caption       string    `json:"caption,omitempty"`
+			MediaType     string    `json:"media_type,omitempty"`
+			ImageURL      string    `json:"image_url,omitempty"`
+			ThumbURL      string    `json:"thumb_url,omitempty"`
+			Error         string    `json:"error,omitempty"`
+			PartsN        int       `json:"parts_n,omitempty"`
+			ThreadsIDs    []string  `json:"threads_ids,omitempty"`
+			IGMediaID     string    `json:"ig_media_id,omitempty"`
+			BufferPostID  string    `json:"buffer_post_id,omitempty"`
+			BufferXPostID string    `json:"buffer_x_post_id,omitempty"`
 		}
 		var events []calEvent
 
@@ -1484,15 +1773,15 @@ func main() {
 				events = append(events, calEvent{
 					ID: j.ID, Source: "lazy", Title: title, Status: j.Status,
 					At: at, Day: at.Format("2006-01-02"),
-					Preview: firstLine(preview, 120),
-					Text:    preview,
-					Parts:   append([]string(nil), j.Parts...),
-					Caption: strings.TrimSpace(j.Caption),
+					Preview:  firstLine(preview, 120),
+					Text:     preview,
+					Parts:    append([]string(nil), j.Parts...),
+					Caption:  strings.TrimSpace(j.Caption),
 					ThumbURL: img,
-					Error:   j.Error, PartsN: len(j.Parts),
-					ThreadsIDs: append([]string(nil), j.ThreadsIDs...),
-					IGMediaID: strings.TrimSpace(j.IGMediaID),
-					BufferPostID: strings.TrimSpace(j.BufferPostID),
+					Error:    j.Error, PartsN: len(j.Parts),
+					ThreadsIDs:    append([]string(nil), j.ThreadsIDs...),
+					IGMediaID:     strings.TrimSpace(j.IGMediaID),
+					BufferPostID:  strings.TrimSpace(j.BufferPostID),
 					BufferXPostID: strings.TrimSpace(j.BufferXPostID),
 				})
 			}
@@ -1510,9 +1799,9 @@ func main() {
 				events = append(events, calEvent{
 					ID: p.ID, Source: "manual", Title: "Manual", Status: p.Status,
 					At: at, Day: at.Format("2006-01-02"),
-					Preview: firstLine(preview, 120),
-					Text:    preview,
-					Parts:   append([]string(nil), p.Parts...),
+					Preview:   firstLine(preview, 120),
+					Text:      preview,
+					Parts:     append([]string(nil), p.Parts...),
 					MediaType: strings.TrimSpace(p.MediaType),
 					ImageURL:  strings.TrimSpace(p.ImageURL),
 					Error:     p.Error, PartsN: len(p.Parts),
@@ -1633,168 +1922,229 @@ func main() {
 
 	mux.HandleFunc("POST /api/publish", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			MediaType    string `json:"media_type"`
-			Text         string `json:"text"`
-			ImageURL     string `json:"image_url"`
-			VideoURL     string `json:"video_url"`
-			ReplyControl string `json:"reply_control"`
-			ReplyToID    string `json:"reply_to_id"`
-			Publish      bool   `json:"publish"`
+			MediaType string   `json:"media_type"`
+			Text      string   `json:"text"`
+			Parts     []string `json:"parts"`
+			ImageURL  string   `json:"image_url"`
+			VideoURL  string   `json:"video_url"`
+			ReplyToID string   `json:"reply_to_id"`
+			ParentID  string   `json:"parent_id"`
+			Publish   bool     `json:"publish"`
+			ContentID string   `json:"content_id"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
 			return
 		}
-		if body.MediaType == "" {
-			body.MediaType = "TEXT"
+		parts := body.Parts
+		if len(parts) == 0 && strings.TrimSpace(body.Text) != "" {
+			parts = []string{body.Text}
 		}
-
-		form := url.Values{"media_type": {body.MediaType}}
-		if body.Text != "" {
-			form.Set("text", body.Text)
+		if len(parts) == 0 {
+			writeErr(w, http.StatusBadRequest, "teks wajib")
+			return
 		}
-		if body.ImageURL != "" {
-			form.Set("image_url", body.ImageURL)
-		}
-		if body.VideoURL != "" {
-			form.Set("video_url", body.VideoURL)
-		}
-		if body.ReplyControl != "" {
-			form.Set("reply_control", body.ReplyControl)
-		}
-		if body.ReplyToID != "" {
-			form.Set("reply_to_id", body.ReplyToID)
-		}
-
-		container, err := th().CreateContainer(form)
+		acc, err := pickReplizByType(r.Context(), "", "threads")
 		if err != nil {
 			writeAPIErr(w, err)
 			return
 		}
-		var created struct {
-			ID string `json:"id"`
+		if !replizAccountLive(acc) {
+			writeErr(w, http.StatusUnauthorized, "akun Repliz Threads belum terhubung — sambungkan di /app/akun")
+			return
 		}
-		_ = json.Unmarshal(container, &created)
-
-		out := map[string]any{"container": json.RawMessage(container)}
-		if body.Publish && created.ID != "" {
-			pub, err := th().Publish(created.ID)
+		replyTo := strings.TrimSpace(body.ReplyToID)
+		contentID := strings.TrimSpace(body.ContentID)
+		if contentID == "" {
+			contentID = strings.TrimSpace(body.ParentID)
+		}
+		if replyTo != "" {
+			if contentID == "" {
+				contentID = replyTo
+			}
+			parent := ""
+			if replyTo != contentID {
+				parent = replyTo
+			}
+			id, err := replizCli.CreateComment(r.Context(), contentID, acc.AccountID(), parts[0], parent)
 			if err != nil {
 				writeAPIErr(w, err)
 				return
 			}
-			out["published"] = json.RawMessage(pub)
-			if body.ReplyToID != "" {
-				th().InvalidateReplyCaches()
-			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"ok":        true,
+				"source":    "repliz",
+				"published": map[string]any{"id": id},
+			})
+			return
 		}
-		writeJSON(w, http.StatusOK, out)
+		ids, err := publishReplizParts(r.Context(), "threads", parts, body.ImageURL, body.VideoURL, time.Now().Add(25*time.Second))
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		id := ""
+		if len(ids) > 0 {
+			id = ids[0]
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":        true,
+			"source":    "repliz",
+			"schedule":  ids,
+			"published": map[string]any{"id": id},
+			"note":      "Dijadwalkan lewat Repliz (bukan Meta Graph).",
+		})
 	})
 
 	mux.HandleFunc("GET /api/container", func(w http.ResponseWriter, r *http.Request) {
-		id := r.URL.Query().Get("id")
-		if id == "" {
-			writeErr(w, http.StatusBadRequest, "id wajib")
-			return
-		}
-		proxy(w, func() (json.RawMessage, error) { return th().GetContainerStatus(id) })
+		writeGoneMeta(w, "Container Meta tidak dipakai. Publikasi langsung lewat jadwal Repliz.")
 	})
 
 	mux.HandleFunc("POST /api/repost", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			MediaID string `json:"media_id"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.MediaID == "" {
-			writeErr(w, http.StatusBadRequest, "media_id wajib")
-			return
-		}
-		proxy(w, func() (json.RawMessage, error) { return th().Repost(body.MediaID) })
+		writeGoneMeta(w, "Repost Threads (Graph) tidak tersedia di Repliz Public API.")
 	})
 
 	mux.HandleFunc("DELETE /api/media/{id}", func(w http.ResponseWriter, r *http.Request) {
-		id := r.PathValue("id")
-		proxy(w, func() (json.RawMessage, error) { return th().DeleteMedia(id) })
+		writeGoneMeta(w, "Hapus post terpublish tidak tersedia di Repliz Public API. Batalkan jadwal di Kalender jika belum terkirim.")
 	})
 
 	mux.HandleFunc("GET /api/media/{id}/insights", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
-		proxy(w, func() (json.RawMessage, error) { return th().GetMediaInsights(id) })
+		acc, err := pickReplizByType(r.Context(), r.URL.Query().Get("account_id"), "")
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		stats, err := replizCli.GetContentStatistic(r.Context(), id, acc.AccountID())
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"data": stats, "source": "repliz"})
+	})
+
+	mux.HandleFunc("GET /api/media/{id}/thread", func(w http.ResponseWriter, r *http.Request) {
+		writeJSON(w, http.StatusOK, map[string]any{
+			"id":     r.PathValue("id"),
+			"parts":  []string{},
+			"ids":    []string{},
+			"source": "repliz",
+			"note":   "Utas Graph tidak dibaca. Isi slide carousel secara manual atau dari teks post Repliz.",
+		})
 	})
 
 	// ——— Instagram (token terpisah) ———
 	mux.HandleFunc("GET /api/ig/status", func(w http.ResponseWriter, r *http.Request) {
+		if replizCli != nil && replizCli.Ready() {
+			acc, err := pickReplizByType(r.Context(), r.URL.Query().Get("account_id"), "instagram")
+			if err != nil {
+				writeJSON(w, http.StatusOK, map[string]any{
+					"connected": false,
+					"source":    "repliz",
+					"error":     err.Error(),
+				})
+				return
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"connected":  acc.IsConnected || acc.Username != "",
+				"user_id":    acc.AccountID(),
+				"username":   acc.Username,
+				"name":       acc.Name,
+				"picture":    acc.Picture,
+				"type":       acc.Type,
+				"source":     "repliz",
+				"account_id": acc.AccountID(),
+			})
+			return
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"connected": igc().Connected(),
-			"user_id":   igc().UserID(),
+			"connected": false,
+			"source":    "repliz",
+			"error":     "Repliz belum disambungkan",
 		})
 	})
 
 	mux.HandleFunc("POST /api/ig/token", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Token string `json:"token"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Token) == "" {
-			writeErr(w, http.StatusBadRequest, "token Instagram wajib diisi")
-			return
-		}
-		igc().SetToken(body.Token)
-		me, err := igc().GetMe()
-		if err != nil {
-			igc().ClearToken()
-			writeAPIErr(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "me": json.RawMessage(me)})
+		writeGoneMeta(w, "Token Instagram Meta tidak dipakai. Sambungkan lewat Repliz di /app/akun.")
 	})
-
 	mux.HandleFunc("POST /api/ig/token/refresh", func(w http.ResponseWriter, r *http.Request) {
-		raw, err := igc().RefreshToken()
-		if err != nil {
-			writeAPIErr(w, err)
-			return
-		}
-		writeJSON(w, http.StatusOK, json.RawMessage(raw))
+		writeGoneMeta(w, "Token Instagram Meta tidak dipakai. Sambungkan lewat Repliz di /app/akun.")
 	})
-
 	mux.HandleFunc("POST /api/ig/token/exchange", func(w http.ResponseWriter, r *http.Request) {
-		var body struct {
-			Token string `json:"token"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&body); err != nil || strings.TrimSpace(body.Token) == "" {
-			writeErr(w, http.StatusBadRequest, "short-lived token wajib")
-			return
-		}
-		secret := os.Getenv("INSTAGRAM_APP_SECRET")
-		if secret == "" {
-			writeErr(w, http.StatusBadRequest, "set INSTAGRAM_APP_SECRET di .env untuk exchange long-lived")
-			return
-		}
-		raw, err := igc().ExchangeLongLived(body.Token, secret)
-		if err != nil {
-			writeAPIErr(w, err)
-			return
-		}
-		me, meErr := igc().GetMe()
-		if meErr != nil {
-			writeJSON(w, http.StatusOK, map[string]any{"ok": true, "token": json.RawMessage(raw)})
-			return
-		}
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "token": json.RawMessage(raw), "me": json.RawMessage(me)})
+		writeGoneMeta(w, "Token Instagram Meta tidak dipakai. Sambungkan lewat Repliz di /app/akun.")
 	})
-
 	mux.HandleFunc("DELETE /api/ig/token", func(w http.ResponseWriter, r *http.Request) {
-		igc().ClearToken()
-		writeJSON(w, http.StatusOK, map[string]any{"ok": true})
+		writeGoneMeta(w, "Token Instagram Meta tidak dipakai. Kelola akun di /app/akun.")
 	})
 
 	mux.HandleFunc("GET /api/ig/me", func(w http.ResponseWriter, r *http.Request) {
-		proxy(w, func() (json.RawMessage, error) { return igc().GetMe() })
+		if replizCli != nil && replizCli.Ready() {
+			acc, err := pickReplizByType(r.Context(), r.URL.Query().Get("account_id"), "instagram")
+			if err != nil {
+				writeErr(w, http.StatusBadRequest, err.Error())
+				return
+			}
+			stat, err := replizCli.GetAccountStatistic(r.Context(), acc.AccountID())
+			if err != nil {
+				stat = map[string]any{}
+			}
+			views := repliz.AsFloat(stat["views"])
+			if views == 0 {
+				views = repliz.AsFloat(stat["videoViews"])
+			}
+			if views == 0 {
+				views = repliz.AsFloat(stat["impressions"])
+			}
+			likes := repliz.AsFloat(stat["likes"])
+			if likes == 0 {
+				likes = repliz.AsFloat(stat["totalLikes"])
+			}
+			writeJSON(w, http.StatusOK, map[string]any{
+				"id":                  acc.AccountID(),
+				"user_id":             acc.AccountID(),
+				"username":            acc.Username,
+				"name":                acc.Name,
+				"account_type":        acc.Type,
+				"profile_picture_url": acc.Picture,
+				"followers_count":     repliz.AsFloat(stat["followersCount"]),
+				"follows_count":       repliz.AsFloat(stat["followingCount"]),
+				"media_count":         repliz.AsFloat(stat["videosCount"]),
+				"biography":           "",
+				"website":             "",
+				"source":              "repliz",
+				"views":               views,
+				"likes":               likes,
+				"reach":               repliz.AsFloat(stat["reach"]),
+				"comments":            repliz.AsFloat(stat["comments"]),
+				"saves":               repliz.AsFloat(stat["saves"]),
+				"shares":              repliz.AsFloat(stat["shares"]),
+				"accounts_engaged":    repliz.AsFloat(stat["accountsEngaged"]),
+			})
+			return
+		}
+		writeGoneMeta(w, "Profil Instagram memakai Repliz. Set REPLIZ_ACCESS_KEY.")
 	})
 
 	mux.HandleFunc("GET /api/ig/media", func(w http.ResponseWriter, r *http.Request) {
-		proxy(w, func() (json.RawMessage, error) {
-			return igc().GetMedia(r.URL.Query().Get("limit"))
-		})
+		acc, err := pickReplizByType(r.Context(), r.URL.Query().Get("account_id"), "instagram")
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		limit := 24
+		if v := strings.TrimSpace(r.URL.Query().Get("limit")); v != "" {
+			if n, err := strconv.Atoi(v); err == nil && n > 0 {
+				limit = n
+			}
+		}
+		raw, err := replizCli.Feed(r.Context(), "", "", acc.AccountID(), limit)
+		if err != nil {
+			writeAPIErr(w, err)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(raw)
 	})
 
 	mux.HandleFunc("POST /api/ai/carousel", func(w http.ResponseWriter, r *http.Request) {
@@ -1822,10 +2172,51 @@ func main() {
 		writeJSON(w, http.StatusOK, result)
 	})
 
+	// Caption IG saja (dari slide/utas yang sudah ada).
+	mux.HandleFunc("POST /api/ai/caption", func(w http.ResponseWriter, r *http.Request) {
+		if !aiClient.Enabled() {
+			writeErr(w, http.StatusServiceUnavailable, "AI belum dikonfigurasi — set AI_API_KEY di .env")
+			return
+		}
+		var body struct {
+			Parts []string `json:"parts"`
+			Brand string   `json:"brand"`
+			Text  string   `json:"text"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			writeErr(w, http.StatusBadRequest, "body tidak valid")
+			return
+		}
+		parts := body.Parts
+		if len(parts) == 0 && strings.TrimSpace(body.Text) != "" {
+			parts = []string{body.Text}
+		}
+		snap := mem().Get()
+		cap, usage, err := aiClient.GenerateIGCaption(snap, parts, body.Brand)
+		if err != nil {
+			var qe *ai.QuotaError
+			if errors.As(err, &qe) {
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{
+					"error": qe.Message,
+					"kind":  qe.Kind,
+					"quota": aiClient.Quota(),
+				})
+				return
+			}
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		out := map[string]any{"caption": cap}
+		if usage != nil {
+			out["usage"] = usage
+		}
+		writeJSON(w, http.StatusOK, out)
+	})
+
 	// Auto-reply: generate draf balasan sesuai intent (preview di UI, kirim via /api/publish).
 	mux.HandleFunc("POST /api/ai/replies", func(w http.ResponseWriter, r *http.Request) {
-		if !th().Connected() {
-			writeErr(w, http.StatusUnauthorized, "hubungkan token dulu")
+		if replizCli == nil || !replizCli.Ready() {
+			writeErr(w, http.StatusUnauthorized, "akun Repliz belum terhubung — sambungkan di /app/akun")
 			return
 		}
 		if !aiClient.Enabled() {
@@ -1846,35 +2237,39 @@ func main() {
 			return
 		}
 		intent := strings.TrimSpace(body.Intent)
-		if intent == "" {
-			writeErr(w, http.StatusBadRequest, "intent (arah balasan) wajib")
-			return
-		}
 		mediaID := strings.TrimSpace(body.MediaID)
 		postText := strings.TrimSpace(body.PostText)
 		incoming := body.Incoming
 
 		if mediaID != "" {
 			if postText == "" {
-				if raw, err := th().GetThreads("", ""); err == nil {
-					var list struct {
-						Data []struct {
-							ID   string `json:"id"`
-							Text string `json:"text"`
-						} `json:"data"`
-					}
-					if json.Unmarshal(raw, &list) == nil {
-						for _, p := range list.Data {
-							if p.ID == mediaID {
-								postText = p.Text
-								break
+				if accID, err := resolveReplizID(r.Context(), ""); err == nil {
+					raw, err := replizCli.Feed(r.Context(), "", "", accID, 40)
+					if err == nil {
+						var list struct {
+							Data []struct {
+								ID   string `json:"id"`
+								Text string `json:"text"`
+							} `json:"data"`
+						}
+						if json.Unmarshal(raw, &list) == nil {
+							for _, p := range list.Data {
+								if p.ID == mediaID {
+									postText = p.Text
+									break
+								}
 							}
 						}
 					}
 				}
 			}
 			if len(incoming) == 0 {
-				enriched, err := th().GetRepliesEnriched(mediaID, false, true)
+				acc, aerr := pickReplizByType(r.Context(), "", "threads")
+				if aerr != nil {
+					writeAPIErr(w, aerr)
+					return
+				}
+				enriched, err := replizCli.RepliesAsFeed(r.Context(), mediaID, acc.AccountID(), acc.Username)
 				if err != nil {
 					writeAPIErr(w, err)
 					return
@@ -2074,8 +2469,8 @@ func main() {
 	})
 
 	mux.HandleFunc("POST /api/ig/carousel/publish", func(w http.ResponseWriter, r *http.Request) {
-		if !igc().Connected() {
-			writeErr(w, http.StatusUnauthorized, "hubungkan token Instagram dulu")
+		if _, err := pickReplizByType(r.Context(), "", "instagram"); err != nil {
+			writeErr(w, http.StatusUnauthorized, "akun Repliz Instagram belum terhubung — sambungkan di /app/akun")
 			return
 		}
 		var body struct {
@@ -2118,15 +2513,22 @@ func main() {
 			return
 		}
 
-		out, err := igc().PublishCarousel(urls, body.Caption)
+		accountID := accounts.PlatformAccountID(accounts.ActiveID(), "instagram")
+		if accountID == "" {
+			if picked, pickErr := pickReplizByType(r.Context(), "", "instagram"); pickErr == nil {
+				accountID = picked.AccountID()
+			}
+		}
+		id, err := (replizPub{}).PublishIGCarousel(accountID, urls, body.Caption)
 		if err != nil {
 			writeAPIErr(w, err)
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":        true,
+			"ok":         true,
 			"image_urls": urls,
-			"result":    out,
+			"result":     map[string]any{"id": id, "source": "repliz"},
+			"container":  id,
 		})
 	})
 
@@ -2135,25 +2537,38 @@ func main() {
 	})
 	mux.HandleFunc("PUT /api/lazy/config", func(w http.ResponseWriter, r *http.Request) {
 		var body struct {
-			Enabled          bool    `json:"enabled"`
-			PostsPerDay      int     `json:"posts_per_day"`
-			Timezone         string  `json:"timezone"`
-			TopicHint        string  `json:"topic_hint"`
-			ThumbnailEnabled *bool   `json:"thumbnail_enabled"`
-			CarouselTemplate *string `json:"carousel_template"`
+			Enabled          bool     `json:"enabled"`
+			PostsPerDay      int      `json:"posts_per_day"`
+			Timezone         string   `json:"timezone"`
+			TopicHint        string   `json:"topic_hint"`
+			ThumbnailEnabled *bool    `json:"thumbnail_enabled"`
+			CarouselTemplate *string  `json:"carousel_template"`
+			Channels         []string `json:"channels"`
 		}
 		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
 			return
 		}
+		if body.Enabled && len(body.Channels) == 0 {
+			writeErr(w, http.StatusBadRequest, "pilih minimal satu akun tujuan")
+			return
+		}
+		if body.Enabled {
+			for _, channel := range body.Channels {
+				channel = strings.ToLower(strings.TrimSpace(channel))
+				if channel == "ig" {
+					channel = "instagram"
+				}
+				if accounts.PlatformAccountID(accounts.ActiveID(), channel) == "" {
+					writeErr(w, http.StatusBadRequest, fmt.Sprintf("pilih akun %s di workspace sebelum menyalakan automasi", channel))
+					return
+				}
+			}
+		}
 		cur := lz().GetConfig()
 		tz := strings.TrimSpace(body.Timezone)
 		if tz == "" {
 			tz = cur.Timezone
-		}
-		thumb := cur.ThumbnailEnabled
-		if body.ThumbnailEnabled != nil {
-			thumb = *body.ThumbnailEnabled
 		}
 		tpl := cur.CarouselTemplate
 		if body.CarouselTemplate != nil {
@@ -2164,8 +2579,9 @@ func main() {
 			PostsPerDay:      body.PostsPerDay,
 			Timezone:         tz,
 			TopicHint:        body.TopicHint,
-			ThumbnailEnabled: thumb,
+			ThumbnailEnabled: true,
 			CarouselTemplate: tpl,
+			Channels:         body.Channels,
 		})
 		if err != nil {
 			writeErr(w, http.StatusInternalServerError, err.Error())
@@ -2175,9 +2591,9 @@ func main() {
 		if cfg.Enabled {
 			loc := lz().Location()
 			now := time.Now().In(loc)
-			_ = lzs().EnsureDayPlan(now, cfg.PostsPerDay, th())
+			_ = lzs().EnsureDayPlan(now, cfg.PostsPerDay, nil)
 			tom := time.Date(now.Year(), now.Month(), now.Day()+1, 12, 0, 0, 0, loc)
-			_ = lzs().EnsureDayPlan(tom, cfg.PostsPerDay, th())
+			_ = lzs().EnsureDayPlan(tom, cfg.PostsPerDay, nil)
 		}
 		writeJSON(w, http.StatusOK, cfg)
 	})
@@ -2186,7 +2602,7 @@ func main() {
 	})
 	mux.HandleFunc("GET /api/lazy/track", func(w http.ResponseWriter, r *http.Request) {
 		withMetrics := r.URL.Query().Get("metrics") != "0"
-		writeJSON(w, http.StatusOK, lazy.BuildTrackReport(lz(), th(), igc(), withMetrics))
+		writeJSON(w, http.StatusOK, lazy.BuildTrackReport(lz(), nil, nil, withMetrics))
 	})
 	mux.HandleFunc("GET /api/lazy/jobs/{id}", func(w http.ResponseWriter, r *http.Request) {
 		id := r.PathValue("id")
@@ -2425,8 +2841,8 @@ func main() {
 			writeErr(w, http.StatusServiceUnavailable, "Buffer key akun aktif belum di-set — isi di Workspace → Kelola")
 			return
 		}
-		if !igc().Connected() {
-			writeErr(w, http.StatusUnauthorized, "hubungkan token Instagram dulu")
+		if _, err := pickReplizByType(r.Context(), "", "instagram"); err != nil {
+			writeErr(w, http.StatusUnauthorized, "akun Repliz Instagram belum terhubung — sambungkan di /app/akun")
 			return
 		}
 		if publicBase == "" {
@@ -2442,25 +2858,49 @@ func main() {
 			writeErr(w, http.StatusBadRequest, "body tidak valid")
 			return
 		}
-		media, err := igc().GetMediaByID(body.MediaID)
+		acc, err := pickReplizByType(r.Context(), "", "instagram")
 		if err != nil {
 			writeAPIErr(w, err)
 			return
 		}
-		srcURLs, err := instagram.ImageURLsFromMedia(media)
+		posts, err := replizCli.ListContentUpTo(r.Context(), acc.AccountID(), 40)
 		if err != nil {
-			writeErr(w, http.StatusBadRequest, err.Error())
+			writeAPIErr(w, err)
 			return
 		}
+		var srcURLs []string
 		caption := strings.TrimSpace(body.Caption)
-		if caption == "" {
-			caption = strings.TrimSpace(media.Caption)
+		foundID := strings.TrimSpace(body.MediaID)
+		for _, p := range posts {
+			if p.PostID() != foundID {
+				continue
+			}
+			if caption == "" {
+				caption = strings.TrimSpace(p.Description)
+				if caption == "" {
+					caption = strings.TrimSpace(p.Title)
+				}
+			}
+			for _, m := range p.Medias {
+				u := strings.TrimSpace(m.URL)
+				if u == "" {
+					u = strings.TrimSpace(m.Thumbnail)
+				}
+				if u != "" {
+					srcURLs = append(srcURLs, u)
+				}
+			}
+			break
+		}
+		if len(srcURLs) == 0 {
+			writeErr(w, http.StatusBadRequest, "media Repliz tidak ditemukan atau tanpa gambar")
+			return
 		}
 		title := strings.TrimSpace(body.Title)
 		if title == "" {
 			title = firstLine(caption, 80)
 		}
-		key := "ig-import/" + media.ID
+		key := "ig-import/" + foundID
 		mirrored, err := buffer.MirrorPublicURLs(lz().MediaDir(), publicBase, key, srcURLs)
 		if err != nil {
 			writeErr(w, http.StatusBadGateway, "mirror: "+err.Error())
@@ -2473,8 +2913,8 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":          true,
-			"ig_media_id": media.ID,
-			"media_type":  media.MediaType,
+			"ig_media_id": foundID,
+			"media_type":  "IMAGE",
 			"slides":      len(mirrored),
 			"buffer":      res,
 			"image_urls":  mirrored,
@@ -2725,6 +3165,207 @@ func writeJSON(w http.ResponseWriter, status int, v any) {
 	_ = json.NewEncoder(w).Encode(v)
 }
 
+func wantsChatStream(r *http.Request) bool {
+	if r.URL.Query().Get("stream") == "1" {
+		return true
+	}
+	return strings.Contains(r.Header.Get("Accept"), "text/event-stream")
+}
+
+func handleAIChat(w http.ResponseWriter, r *http.Request, aiClient *ai.Client, thumbClient *ai.ThumbnailClient, stream bool) {
+	if !aiClient.Enabled() {
+		writeErr(w, http.StatusServiceUnavailable, "AI belum dikonfigurasi — set AI_API_KEY")
+		return
+	}
+	var req ai.ChatRequest
+	r.Body = http.MaxBytesReader(w, r.Body, 25<<20)
+	if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+		writeErr(w, http.StatusBadRequest, "body tidak valid")
+		return
+	}
+	if len(req.Messages) == 0 || len(req.Messages) > 200 {
+		writeErr(w, http.StatusBadRequest, "jumlah pesan harus 1–200")
+		return
+	}
+	if len([]rune(req.System)) > 12000 {
+		writeErr(w, http.StatusBadRequest, "instruksi sistem terlalu panjang")
+		return
+	}
+	if len(req.PreviousResponseID) > 512 || len(req.ConversationKey) > 64 {
+		writeErr(w, http.StatusBadRequest, "state percakapan tidak valid")
+		return
+	}
+	switch strings.ToLower(strings.TrimSpace(req.Reasoning)) {
+	case "", "auto", "fast", "low", "medium", "deep", "high":
+	default:
+		writeErr(w, http.StatusBadRequest, "mode reasoning tidak valid")
+		return
+	}
+	for _, message := range req.Messages {
+		if len([]rune(message.Text)) > 200000 {
+			writeErr(w, http.StatusBadRequest, "isi pesan terlalu panjang")
+			return
+		}
+		if len(message.Images) > 4 {
+			writeErr(w, http.StatusBadRequest, "maksimal 4 gambar per pesan")
+			return
+		}
+		for _, image := range message.Images {
+			if len(image) > 12<<20 {
+				writeErr(w, http.StatusBadRequest, "ukuran gambar terlalu besar")
+				return
+			}
+		}
+	}
+	hydrateChatImages(&req)
+
+	if !stream {
+		attachAccountToChat(&req)
+		result, err := aiClient.ChatContext(r.Context(), req)
+		if err != nil {
+			var qe *ai.QuotaError
+			if errors.As(err, &qe) {
+				writeJSON(w, http.StatusTooManyRequests, map[string]any{
+					"error": qe.Message,
+					"kind":  qe.Kind,
+					"quota": aiClient.Quota(),
+				})
+				return
+			}
+			writeErr(w, http.StatusBadGateway, err.Error())
+			return
+		}
+		if urls := generateChatImages(thumbClient, req); len(urls) > 0 {
+			result.Images = urls
+		}
+		writeJSON(w, http.StatusOK, result)
+		return
+	}
+
+	flusher, ok := w.(http.Flusher)
+	if !ok {
+		writeErr(w, http.StatusInternalServerError, "stream tidak didukung")
+		return
+	}
+	w.Header().Set("Content-Type", "text/event-stream")
+	w.Header().Set("Cache-Control", "no-cache")
+	w.Header().Set("Connection", "keep-alive")
+	w.Header().Set("X-Accel-Buffering", "no")
+	flusher.Flush()
+
+	writeEv := func(ev ai.ChatStreamEvent) error {
+		raw, _ := json.Marshal(ev)
+		if _, err := fmt.Fprintf(w, "data: %s\n\n", raw); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+	if chatNeedsAccountContext(req.Messages) {
+		_ = writeEv(ai.ChatStreamEvent{Type: "status", Delta: "Membaca data akun…"})
+		attachAccountToChat(&req)
+	}
+
+	err := aiClient.ChatStream(r.Context(), req, writeEv)
+	if err != nil {
+		var qe *ai.QuotaError
+		if errors.As(err, &qe) {
+			_ = writeEv(ai.ChatStreamEvent{Type: "error", Error: qe.Message})
+			return
+		}
+		_ = writeEv(ai.ChatStreamEvent{Type: "error", Error: err.Error()})
+		return
+	}
+	if req.WantsImage() && thumbClient.Enabled() {
+		_ = writeEv(ai.ChatStreamEvent{Type: "status", Delta: "Menggambar…"})
+		for _, u := range generateChatImages(thumbClient, req) {
+			_ = writeEv(ai.ChatStreamEvent{Type: "image", Image: u})
+		}
+	}
+}
+
+func hydrateChatImages(req *ai.ChatRequest) {
+	if req == nil {
+		return
+	}
+	for i := len(req.Messages) - 1; i >= 0; i-- {
+		role := strings.ToLower(strings.TrimSpace(req.Messages[i].Role))
+		if role != "user" && role != "" {
+			continue
+		}
+		for j, img := range req.Messages[i].Images {
+			if resolved := chatImageToDataURL(img); resolved != "" {
+				req.Messages[i].Images[j] = resolved
+			}
+		}
+		break
+	}
+}
+
+func chatImageToDataURL(img string) string {
+	img = strings.TrimSpace(img)
+	if img == "" {
+		return ""
+	}
+	if strings.HasPrefix(img, "data:") {
+		return img
+	}
+	rel := img
+	if i := strings.Index(rel, "/media/thumbs/"); i >= 0 {
+		rel = rel[i:]
+	}
+	rel = strings.TrimPrefix(rel, "/media/thumbs/")
+	rel = strings.TrimPrefix(rel, "/")
+	path := accounts.FindThumbMedia(rel)
+	if path == "" {
+		return img
+	}
+	b, err := os.ReadFile(path)
+	if err != nil || len(b) == 0 {
+		return img
+	}
+	mime := http.DetectContentType(b)
+	if !strings.HasPrefix(mime, "image/") {
+		mime = "image/png"
+	}
+	return "data:" + mime + ";base64," + base64.StdEncoding.EncodeToString(b)
+}
+
+func generateChatImages(thumb *ai.ThumbnailClient, req ai.ChatRequest) []string {
+	if thumb == nil || !thumb.Enabled() || !req.WantsImage() {
+		return nil
+	}
+	ref := ""
+	if imgs := lastChatUserImages(req.Messages); len(imgs) > 0 {
+		ref = imgs[0]
+	}
+	result, err := thumb.GenerateFreeform(req.ImagePrompt(), ref)
+	if err != nil {
+		log.Printf("chat image: %v", err)
+		return nil
+	}
+	dir := ai.DefaultThumbMediaDir()
+	if ws := accounts.Active(); ws != nil && strings.TrimSpace(ws.ThumbDir) != "" {
+		dir = ws.ThumbDir
+	}
+	name, err := ai.SaveThumbnailPNG(dir, result.PNG)
+	if err != nil {
+		log.Printf("chat image save: %v", err)
+		return nil
+	}
+	return []string{"/media/thumbs/" + name}
+}
+
+func lastChatUserImages(msgs []ai.ChatMessage) []string {
+	for i := len(msgs) - 1; i >= 0; i-- {
+		role := strings.ToLower(strings.TrimSpace(msgs[i].Role))
+		if role == "user" || role == "" {
+			return msgs[i].Images
+		}
+	}
+	return nil
+}
+
 func handleUploadImage(w http.ResponseWriter, r *http.Request) {
 	ws := accounts.Active()
 	if ws == nil {
@@ -2922,6 +3563,30 @@ func clearBufferKey(w http.ResponseWriter, ws *account.Workspace) {
 		"enabled": ws.Buffer.Enabled(),
 		"status":  st,
 	})
+}
+
+func oauthRedirectOK(r *http.Request, redirect string) bool {
+	u, err := url.Parse(strings.TrimSpace(redirect))
+	if err != nil || u.Host == "" {
+		return false
+	}
+	if u.Scheme != "http" && u.Scheme != "https" {
+		return false
+	}
+	reqHost := r.Host
+	if u.Host == reqHost {
+		return true
+	}
+	if pub := strings.TrimSpace(os.Getenv("PUBLIC_BASE_URL")); pub != "" {
+		if p, e := url.Parse(pub); e == nil && p.Host != "" && u.Host == p.Host {
+			return true
+		}
+	}
+	h := strings.ToLower(u.Hostname())
+	if h == "localhost" || h == "127.0.0.1" || strings.HasSuffix(h, ".sslip.io") || strings.HasSuffix(h, ".nip.io") {
+		return true
+	}
+	return false
 }
 
 func env(k, def string) string {

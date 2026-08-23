@@ -12,6 +12,7 @@ type GenerateRequest struct {
 	Topic        string `json:"topic"`
 	Instructions string `json:"instructions"` // override one-shot; else use memory
 	Count        int    `json:"count"`
+	IgnoreNiche  bool   `json:"ignore_niche"` // true = brief-only, skip memory niche
 }
 
 type GenerateResult struct {
@@ -23,27 +24,21 @@ type GenerateResult struct {
 	Provider      string           `json:"provider"`
 	Usage         *TokenUsage      `json:"usage,omitempty"`
 	Quota         *QuotaStatus     `json:"quota,omitempty"`
+
+	// Pipeline v2 extras (optional for backward-compatible clients)
+	Pipeline     *PipelineMeta        `json:"pipeline,omitempty"`
+	Package      *GenEditorialPackage `json:"package,omitempty"`
+	Research     *ResearchEvidence    `json:"research,omitempty"`
+	CoverBrief   string               `json:"cover_brief,omitempty"`
+	CoverTitle   string               `json:"cover_title,omitempty"`
+	Sources      []string             `json:"sources,omitempty"`
+	StrategyView *StrategyView        `json:"strategy,omitempty"`
+	Critic       *GenCriticReport     `json:"critic,omitempty"`
 }
 
-func (c *Client) GenerateContent(_ map[string]any, mem Memory, req GenerateRequest) (*GenerateResult, error) {
-	if !c.Enabled() {
-		return nil, fmt.Errorf("AI belum dikonfigurasi — set AI_API_KEY di .env")
-	}
-	if c.quota != nil {
-		if err := c.quota.check(); err != nil {
-			return nil, err
-		}
-	}
-	if req.Count <= 0 {
-		req.Count = 2
-	}
-	if req.Count > 4 {
-		req.Count = 4
-	}
-	return c.generateUtasDrafts(mem, req)
-}
+// GenerateContent moved to generate_pipeline.go (v2 hybrid pipeline).
 
-func (c *Client) generateUtasDrafts(mem Memory, req GenerateRequest) (*GenerateResult, error) {
+func (c *Client) generateUtasDrafts(snapshot map[string]any, mem Memory, req GenerateRequest) (*GenerateResult, error) {
 	instructions := strings.TrimSpace(req.Instructions)
 	if instructions == "" {
 		instructions = strings.TrimSpace(mem.Instructions)
@@ -55,6 +50,10 @@ func (c *Client) generateUtasDrafts(mem Memory, req GenerateRequest) (*GenerateR
 	if nicheLine == "" {
 		nicheLine = "(belum diisi user — minta topik umum sesuai instruksi, JANGAN menebak niche)"
 	}
+	if req.IgnoreNiche {
+		niches = nil
+		nicheLine = "(abaikan niche akun — ikuti topic_hint + user_instructions saja)"
+	}
 
 	payloadMap := map[string]any{
 		"user_niches":         niches,
@@ -64,6 +63,10 @@ func (c *Client) generateUtasDrafts(mem Memory, req GenerateRequest) (*GenerateR
 		"draft_count":         req.Count,
 		"recent_drafts_avoid": recentDraftHints(mem.History, 6),
 		"user_feedback":       trimFeedback(mem.Feedback, 8),
+		"ignore_niche":        req.IgnoreNiche,
+	}
+	if compact := compactGenerateSnapshot(snapshot); compact != nil {
+		payloadMap["connected_account"] = compact
 	}
 
 	payload, err := json.MarshalIndent(payloadMap, "", "  ")
@@ -72,7 +75,11 @@ func (c *Client) generateUtasDrafts(mem Memory, req GenerateRequest) (*GenerateR
 	}
 
 	system := buildGenerateSystemPrompt(nicheLine, instructions, req.Count)
-	user := "Generate utas Threads yang BERPOTENSI VIRAL (bukan filler). Niche + instruksi user; jangan mengulang draf lama:\n\n" + string(payload)
+	userLead := "Generate utas Threads yang BERPOTENSI VIRAL (bukan filler). Niche + instruksi user; jangan mengulang draf lama:\n\n"
+	if req.IgnoreNiche {
+		userLead = "Generate utas Threads dari TOPIK + instruksi user saja. ABAIKAN niche akun. Jangan mengulang draf lama:\n\n"
+	}
+	user := userLead + string(payload)
 
 	var content string
 	var usage *TokenUsage
@@ -461,6 +468,47 @@ func recentDraftHints(history []GenHistory, n int) []map[string]string {
 				return out
 			}
 		}
+	}
+	return out
+}
+
+func compactGenerateSnapshot(snapshot map[string]any) map[string]any {
+	if snapshot == nil {
+		return nil
+	}
+	out := map[string]any{
+		"source":  snapshot["source"],
+		"profile": snapshot["profile"],
+		"metrics": snapshot["account_metrics"],
+		"sample":  snapshot["sample"],
+	}
+	var rows []map[string]any
+	switch t := snapshot["posts"].(type) {
+	case []map[string]any:
+		rows = t
+	case []any:
+		for _, item := range t {
+			if m, ok := item.(map[string]any); ok {
+				rows = append(rows, m)
+			}
+		}
+	}
+	const max = 8
+	if len(rows) > max {
+		rows = rows[:max]
+	}
+	posts := make([]map[string]any, 0, len(rows))
+	for _, p := range rows {
+		posts = append(posts, map[string]any{
+			"text":    p["text"],
+			"views":   p["views"],
+			"likes":   p["likes"],
+			"replies": p["replies"],
+			"score":   p["score"],
+		})
+	}
+	if len(posts) > 0 {
+		out["recent_posts"] = posts
 	}
 	return out
 }

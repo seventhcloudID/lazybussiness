@@ -18,15 +18,115 @@ type MemoryStore struct {
 }
 
 type Memory struct {
-	Instructions string          `json:"instructions"`
-	Niche        string          `json:"niche"`  // legacy / joined display
-	Niches       []string        `json:"niches"` // preferred: multi niche
-	Brand        string          `json:"brand"`  // nama brand di carousel/IG
-	UpdatedAt    string          `json:"updated_at"`
-	Lessons      Lessons         `json:"lessons"`
-	Daily        []DailyFocus    `json:"daily"`
-	History      []GenHistory    `json:"history"`
-	Feedback     []DraftFeedback `json:"feedback"`
+	Instructions    string          `json:"instructions"` // legacy prompt
+	EditorialPrompt string          `json:"editorial_prompt,omitempty"`
+	Product         ProductProfile  `json:"product,omitempty"`
+	Niche           string          `json:"niche"`  // legacy / joined display
+	Niches          []string        `json:"niches"` // preferred: multi niche
+	Brand           string          `json:"brand"`  // nama brand di carousel/IG
+	UpdatedAt       string          `json:"updated_at"`
+	Lessons         Lessons         `json:"lessons"`
+	Daily           []DailyFocus    `json:"daily"`
+	History         []GenHistory    `json:"history"`
+	Feedback        []DraftFeedback `json:"feedback"`
+}
+
+// ProductProfile is user-owned context for product-led soft-selling. The AI
+// may use these facts as positioning input, but must not invent missing claims.
+type ProductProfile struct {
+	Knowledge   string `json:"knowledge,omitempty"`
+	Name        string `json:"name,omitempty"`
+	Audience    string `json:"audience,omitempty"`
+	Description string `json:"description,omitempty"`
+	Proof       string `json:"proof,omitempty"`
+	CTA         string `json:"cta,omitempty"`
+}
+
+func (p ProductProfile) Empty() bool {
+	return strings.TrimSpace(p.Knowledge+p.Name+p.Description+p.Audience+p.Proof+p.CTA) == ""
+}
+
+// EffectiveName and EffectiveCTA keep one-column product knowledge compatible
+// with the deterministic soft-selling guard. The legacy structured fields are
+// still read so existing workspaces do not lose their settings.
+func (p ProductProfile) EffectiveName() string {
+	if name := strings.TrimSpace(p.Name); name != "" {
+		return name
+	}
+	return productKnowledgeValue(p.Knowledge, "nama produk", "produk")
+}
+
+func (p ProductProfile) EffectiveCTA() string {
+	if cta := strings.TrimSpace(p.CTA); cta != "" {
+		return cta
+	}
+	return productKnowledgeValue(p.Knowledge, "cta lembut", "cta", "ajakan")
+}
+
+// PublicIdentifiers returns brand-like names that must stay out of public
+// soft-selling copy. Product knowledge remains available to the model for
+// factual benefits, while the brand/domain is revealed later through DM.
+func (p ProductProfile) PublicIdentifiers() []string {
+	values := make([]string, 0, 8)
+	if name := strings.TrimSpace(p.Name); name != "" {
+		values = append(values, name)
+	}
+	for _, line := range strings.Split(strings.ReplaceAll(p.Knowledge, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(line, "-*• "))
+		lower := strings.ToLower(line)
+		for _, label := range []string{"nama produk", "nama brand", "brand"} {
+			prefix := label + ":"
+			if strings.HasPrefix(lower, prefix) {
+				values = append(values, strings.TrimSpace(line[len(prefix):]))
+			}
+		}
+		for _, label := range []string{"website", "situs", "domain", "url"} {
+			prefix := label + ":"
+			if !strings.HasPrefix(lower, prefix) {
+				continue
+			}
+			domain := strings.ToLower(strings.TrimSpace(line[len(prefix):]))
+			domain = strings.TrimPrefix(domain, "https://")
+			domain = strings.TrimPrefix(domain, "http://")
+			domain = strings.TrimPrefix(domain, "www.")
+			if cut := strings.IndexAny(domain, "/?# "); cut >= 0 {
+				domain = domain[:cut]
+			}
+			if domain == "" {
+				continue
+			}
+			values = append(values, domain)
+			if root := strings.TrimSpace(strings.Split(domain, ".")[0]); len([]rune(root)) >= 4 {
+				values = append(values, root)
+			}
+		}
+	}
+	seen := map[string]bool{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		key := strings.ToLower(value)
+		if len([]rune(key)) < 3 || seen[key] {
+			continue
+		}
+		seen[key] = true
+		out = append(out, value)
+	}
+	return out
+}
+
+func productKnowledgeValue(knowledge string, labels ...string) string {
+	for _, line := range strings.Split(strings.ReplaceAll(knowledge, "\r\n", "\n"), "\n") {
+		line = strings.TrimSpace(strings.TrimLeft(line, "-*• "))
+		lower := strings.ToLower(line)
+		for _, label := range labels {
+			prefix := strings.ToLower(strings.TrimSpace(label)) + ":"
+			if strings.HasPrefix(lower, prefix) {
+				return strings.TrimSpace(line[len(prefix):])
+			}
+		}
+	}
+	return ""
 }
 
 type Lessons struct {
@@ -133,10 +233,60 @@ func (s *MemoryStore) Get() Memory {
 	return s.data
 }
 
+// FitsAccount is true when saved brand/handle overlaps the Repliz account being analyzed.
+func (m Memory) FitsAccount(username, name string) bool {
+	brand := compactAccountKey(m.Brand)
+	if brand == "" {
+		return false
+	}
+	u := compactAccountKey(username)
+	n := compactAccountKey(name)
+	if u != "" && (strings.Contains(brand, u) || strings.Contains(u, brand)) {
+		return true
+	}
+	if n != "" && len(n) >= 4 && (strings.Contains(brand, n) || strings.Contains(n, brand)) {
+		return true
+	}
+	return false
+}
+
+func compactAccountKey(s string) string {
+	s = strings.ToLower(strings.TrimSpace(s))
+	s = strings.TrimPrefix(s, "@")
+	var b strings.Builder
+	for _, r := range s {
+		if (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9') {
+			b.WriteRune(r)
+		}
+	}
+	return b.String()
+}
+
 func (s *MemoryStore) SetInstructions(text string) error {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	s.data.Instructions = strings.TrimSpace(text)
+	return s.persistLocked()
+}
+
+func (s *MemoryStore) SetEditorialPrompt(text string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data.EditorialPrompt = strings.TrimSpace(text)
+	return s.persistLocked()
+}
+
+func (s *MemoryStore) SetProductProfile(product ProductProfile) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.data.Product = ProductProfile{
+		Knowledge:   clipRunes(strings.TrimSpace(product.Knowledge), 12000),
+		Name:        clipRunes(strings.TrimSpace(product.Name), 160),
+		Audience:    clipRunes(strings.TrimSpace(product.Audience), 500),
+		Description: clipRunes(strings.TrimSpace(product.Description), 2000),
+		Proof:       clipRunes(strings.TrimSpace(product.Proof), 1500),
+		CTA:         clipRunes(strings.TrimSpace(product.CTA), 500),
+	}
 	return s.persistLocked()
 }
 
@@ -352,8 +502,8 @@ func mergeLessons(prefer, rest []LessonItem, max int) []LessonItem {
 func BuildLessonsFromSnapshot(snapshot map[string]any) Lessons {
 	type row struct {
 		ID, Text, MediaType string
-		Score, Views, ER   float64
-		Replies            float64
+		Score, Views, ER    float64
+		Replies             float64
 	}
 	posts := make([]row, 0)
 	add := func(m map[string]any) {

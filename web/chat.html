@@ -1,0 +1,111 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Chat AI — malesngonten</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=ns7" id="app-css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body class="strand-body chat-page">
+<nav id="sidebar"></nav>
+<main class="chat-shell">
+  <aside class="chat-rail" id="chat-rail" aria-label="Riwayat chat">
+    <div class="chat-rail-head">
+      <button type="button" class="chat-new" id="btn-new-chat">
+        <i class="bi bi-plus-lg"></i>
+        Chat baru
+      </button>
+    </div>
+    <div class="chat-rail-search">
+      <i class="bi bi-search" aria-hidden="true"></i>
+      <input id="chat-search" type="search" placeholder="Cari percakapan…" autocomplete="off">
+    </div>
+    <div class="chat-rail-list" id="chat-list"></div>
+  </aside>
+
+  <section class="chat-stage">
+    <header class="chat-top">
+      <button type="button" class="chat-icon-btn chat-app-nav" id="btn-app-nav" aria-label="Menu aplikasi" title="Menu">
+        <i class="bi bi-list"></i>
+      </button>
+      <button type="button" class="chat-icon-btn chat-rail-toggle" id="btn-rail-toggle" aria-label="Riwayat chat" title="Riwayat">
+        <i class="bi bi-layout-sidebar-inset"></i>
+      </button>
+      <div class="chat-top-copy">
+        <h1 class="chat-top-title" id="chat-title" title="Klik dua kali untuk ganti nama">Chat baru</h1>
+        <p class="chat-top-sub" id="chat-sub">AI gateway</p>
+      </div>
+      <div class="chat-top-actions">
+        <button type="button" class="chat-icon-btn" id="btn-sys" aria-label="Instruksi sistem" title="Instruksi sistem">
+          <i class="bi bi-sliders2"></i>
+        </button>
+        <button type="button" class="chat-icon-btn" id="btn-clear-chat" aria-label="Kosongkan chat" title="Kosongkan chat ini">
+          <i class="bi bi-eraser"></i>
+        </button>
+      </div>
+    </header>
+
+    <div class="chat-sys" id="chat-sys" hidden>
+      <label class="th-label" for="chat-system">Instruksi sistem (opsional)</label>
+      <textarea id="chat-system" class="th-textarea chat-sys-input" rows="3" placeholder="Kosong = tanpa persona. Mis. ‘Balas singkat, bahasa Indonesia, nada kasual.’"></textarea>
+      <p class="chat-sys-hint">Berlaku untuk chat ini saja. Tidak dikirim kalau kosong.</p>
+    </div>
+
+    <div class="chat-log" id="chat-log" role="log" aria-live="polite"></div>
+
+    <button type="button" class="chat-jump" id="btn-jump" hidden>
+      <i class="bi bi-arrow-down"></i>
+      Ke pesan terbaru
+    </button>
+
+    <div class="chat-dock">
+      <form class="chat-form" id="chat-form">
+        <div class="chat-attach" id="chat-attach" hidden></div>
+        <div class="chat-box" id="chat-box">
+          <textarea id="chat-input" rows="1" placeholder="Tanya apa saja…" autocomplete="off"></textarea>
+          <div class="chat-box-bar">
+            <input type="file" id="chat-file" accept="image/*" multiple hidden>
+            <button type="button" class="chat-icon-btn chat-attach-btn" id="btn-attach" title="Lampirkan gambar" aria-label="Lampirkan gambar">
+              <i class="bi bi-paperclip"></i>
+            </button>
+            <label class="chat-toggle" id="chat-search-toggle" title="Cari fakta terkini">
+              <input type="checkbox" id="use-search">
+              <i class="bi bi-globe2"></i>
+              <span>Search</span>
+            </label>
+            <label class="chat-toggle" id="chat-image-toggle" title="Generate gambar (GPT image)">
+              <input type="checkbox" id="want-image">
+              <i class="bi bi-image"></i>
+              <span>Gambar</span>
+            </label>
+            <label class="chat-reasoning" title="Auto menyeimbangkan kecepatan dan kedalaman">
+              <i class="bi bi-stars" aria-hidden="true"></i>
+              <select id="chat-reasoning" aria-label="Mode reasoning">
+                <option value="auto">Auto</option>
+                <option value="fast">Cepat</option>
+                <option value="deep">Mendalam</option>
+              </select>
+            </label>
+            <span class="chat-box-meta" id="chat-meta"></span>
+            <button type="button" class="chat-send is-stop" id="btn-stop" hidden title="Berhenti">
+              <i class="bi bi-stop-fill"></i>
+            </button>
+            <button type="submit" class="chat-send" id="btn-send" disabled title="Kirim (Enter)">
+              <i class="bi bi-arrow-up"></i>
+            </button>
+          </div>
+        </div>
+      </form>
+      <p class="chat-legal">GPT · Enter kirim · Shift+Enter baris baru · tempel gambar · Esc berhenti</p>
+    </div>
+  </section>
+  <div class="chat-backdrop" id="chat-backdrop" hidden></div>
+</main>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/chat.js?v=8"></script>
+</body>
+</html>

@@ -83,19 +83,14 @@ function renderGrid() {
     const isToday = key === today;
     const isSel = key === selectedDay;
 
-    const chips = evs.slice(0, 2).map((e) => {
+    const chips = evs.slice(0, 3).map((e) => {
       const m = statusMeta(e.status);
       const src = e.source === 'manual' ? 'manual' : 'lazy';
       const line = previewLine(e);
-      const parts = partsCount(e);
-      const title = `${fmtTime(e.at)} · ${m.label}${parts ? ` · ${parts} bagian` : ''} · ${line}`;
+      const title = `${fmtTime(e.at)} · ${m.label} · ${line}`;
       return `<span class="cal-chip ${m.cls} src-${src}" title="${Threads.escapeHtml(title)}">
-        <span class="cal-chip-head">
-          <span class="cal-chip-dot"></span>
-          <span class="cal-chip-time">${Threads.escapeHtml(fmtTime(e.at))}</span>
-          <span class="cal-chip-status">${Threads.escapeHtml(m.label)}${parts ? ` · ${parts}` : ''}</span>
-        </span>
-        <span class="cal-chip-text">${Threads.escapeHtml(clip(line, 120) || '—')}</span>
+        <span class="cal-chip-time">${Threads.escapeHtml(fmtTime(e.at))}</span>
+        <span class="cal-chip-text">${Threads.escapeHtml(clip(line, 48) || '—')}</span>
       </span>`;
     }).join('');
 
@@ -105,7 +100,7 @@ function renderGrid() {
         ${evs.length ? `<span class="cal-count">${evs.length}</span>` : ''}
       </span>
       <div class="cal-chips">${chips}</div>
-      ${evs.length > 2 ? `<span class="cal-more">+${evs.length - 2} lagi</span>` : ''}
+      ${evs.length > 3 ? `<span class="cal-more">+${evs.length - 3}</span>` : ''}
     </button>`);
   }
   while (cells.length % 7 !== 0) {
@@ -158,7 +153,7 @@ function renderDay() {
     list.innerHTML = `<div class="cal-day-empty">
       <i class="bi bi-calendar-x"></i>
       <p>Tidak ada jadwal di tanggal ini.</p>
-      <a class="th-btn th-btn-soft text-xs" href="/app/buat.html"><i class="bi bi-calendar-plus"></i> Jadwalkan post</a>
+      <a class="th-btn th-btn-soft text-xs" href="/app/buat"><i class="bi bi-calendar-plus"></i> Jadwalkan post</a>
     </div>`;
     return;
   }
@@ -198,10 +193,10 @@ function renderDay() {
       </div>
       ${img ? `<div class="cal-card-media"><img src="${Threads.escapeHtml(imgSrc)}" alt="Media post"></div>` : ''}
       <div class="cal-card-foot">
-        ${ids.length ? `<a class="th-btn th-btn-ghost text-xs" href="/app/posts.html"><i class="bi bi-box-arrow-up-right"></i> Lihat</a>` : ''}
+        ${ids.length ? `<a class="th-btn th-btn-ghost text-xs" href="/app/posts"><i class="bi bi-box-arrow-up-right"></i> Lihat</a>` : ''}
         ${canCancel ? `<button type="button" class="th-btn th-btn-ghost text-xs" data-cancel="${Threads.escapeHtml(e.id)}"><i class="bi bi-x-lg"></i> Batalkan</button>` : ''}
-        ${e.source === 'manual' && e.status === 'pending' ? `<a class="th-btn th-btn-ghost text-xs" href="/app/buat.html"><i class="bi bi-pencil"></i> Edit</a>` : ''}
-        ${e.source === 'lazy' ? `<a class="th-btn th-btn-ghost text-xs" href="/app/lazy.html"><i class="bi bi-lightning-charge"></i> Lazy</a>` : ''}
+        ${e.source === 'manual' && e.status === 'pending' ? `<a class="th-btn th-btn-ghost text-xs" href="/app/buat"><i class="bi bi-pencil"></i> Edit</a>` : ''}
+        ${e.source === 'lazy' ? `<a class="th-btn th-btn-ghost text-xs" href="/app/lazy"><i class="bi bi-lightning-charge"></i> Lazy</a>` : ''}
         ${e.source === 'manual' ? `<button type="button" class="th-btn th-btn-danger-soft text-xs" data-delete-schedule="${Threads.escapeHtml(e.id)}"><i class="bi bi-calendar-x"></i> Hapus jadwal</button>` : ''}
         ${ids.length ? `<button type="button" class="th-btn th-btn-danger-soft text-xs" data-delete-content="${Threads.escapeHtml(e.id)}" data-ids="${Threads.escapeHtml(ids.join(','))}"><i class="bi bi-trash"></i> Hapus konten</button>` : ''}
       </div>
@@ -227,7 +222,7 @@ function renderDay() {
       if (!ids.length) return;
       const label = ids.length === 1 ? '1 post Threads' : `${ids.length} post Threads`;
       const ok = await Threads.confirm(
-        `Hapus ${label} dari platform Threads? Tindakan ini tidak bisa dibatalkan.`,
+        `Hapus ${label} dari platform? Repliz Public API tidak mendukung hapus post terpublish.`,
         { title: 'Hapus konten', okLabel: 'Ya, hapus', danger: true }
       );
       if (!ok) return;

@@ -1,17 +1,30 @@
 window.Threads = window.Threads || {};
 
 Threads.api = async function (path, opts = {}) {
-  const res = await fetch(path, {
-    credentials: 'same-origin',
-    headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
-    ...opts,
-  });
+  let res;
+  try {
+    res = await fetch(path, {
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', ...(opts.headers || {}) },
+      ...opts,
+    });
+  } catch (e) {
+    const name = e?.name || '';
+    const msg = e?.message || String(e);
+    if (name === 'AbortError') {
+      throw new Error('Request dibatalkan');
+    }
+    if (/Failed to fetch|NetworkError|network error|Load failed/i.test(msg) || name === 'TypeError') {
+      throw new Error('Koneksi putus saat request (sering karena generate gambar >30–60 dtk). Coba lagi; pastikan server & gateway localhost:20128 hidup.');
+    }
+    throw e instanceof Error ? e : new Error(msg);
+  }
   const text = await res.text();
   let data = null;
   try { data = text ? JSON.parse(text) : null; } catch { data = { raw: text }; }
   if (res.status === 401 && data?.code === 'unauthorized') {
     if (!location.pathname.endsWith('/login.html')) {
-      const portal = location.pathname.startsWith('/core') ? '/core/login.html' : '/app/login.html';
+      const portal = location.pathname.startsWith('/core') ? '/core/login.html' : '/app/login';
       location.replace(portal + '?next=' + encodeURIComponent(location.pathname + location.search));
     }
     throw new Error('login required');
@@ -413,10 +426,18 @@ Threads.animateMetric = function (el, raw) {
 };
 
 Threads.requireConnected = async function () {
+  return Threads.requireRepliz();
+};
+
+Threads.requireRepliz = async function () {
   try {
     const st = await Threads.api('/api/status');
-    if (!st.connected) {
-      Threads.toast('Hubungkan token dulu di Akun & API → Kelola', false);
+    if (!st.repliz) {
+      Threads.toast('Hubungkan Repliz dulu di Akun & API', false);
+      return false;
+    }
+    if (!st.connected && !st.ig_connected) {
+      Threads.toast('Sambungkan akun Threads/Instagram lewat Repliz di Akun', false);
       return false;
     }
     return true;

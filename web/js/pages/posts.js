@@ -1,6 +1,8 @@
 Threads.pageShell('posts');
 
 let meCache = null;
+/** @type {Map<string, any>} */
+const postsById = new Map();
 
 function typeIcon(t) {
   const m = String(t || 'TEXT').toUpperCase();
@@ -39,20 +41,22 @@ function metricLabel(name) {
 /** Ambil insight tiap post secara paralel. Gagal satu post tidak merusak lainnya. */
 async function fetchPostInsights(items) {
   const out = new Map();
-  await Promise.all(items.map(async (p) => {
-    if (!p.id) return;
-    try {
-      const resp = await Threads.api('/api/media/' + encodeURIComponent(p.id) + '/insights');
+  const need = [];
+  for (const p of items) {
+    if (!p.id) continue;
+    if (p.metrics && typeof p.metrics === 'object') {
       const metrics = [];
-      for (const m of (resp?.data || [])) {
-        const v = m.values?.[0]?.value ?? m.total_value?.value ?? 0;
-        const n = Number(v) || 0;
-        if (m.name) metrics.push({ name: m.name, value: n });
+      for (const [name, value] of Object.entries(p.metrics)) {
+        const n = Number(value) || 0;
+        if (n) metrics.push({ name, value: n });
       }
       out.set(p.id, metrics);
-    } catch {
-      out.set(p.id, []);
+    } else {
+      need.push(p);
     }
+  }
+  await Promise.all(need.map(async (p) => {
+    out.set(p.id, []);
   }));
   return out;
 }
@@ -82,7 +86,7 @@ function emptyState(msg, sub) {
       <div class="th-empty-icon"><i class="bi bi-collection"></i></div>
       <p class="font-semibold text-ink mb-1">${Threads.escapeHtml(msg)}</p>
       <p class="text-sm text-muted mb-5">${Threads.escapeHtml(sub || '')}</p>
-      <a href="/app/buat.html" class="th-btn th-btn-primary">Buat post pertama</a>
+      <a href="/app/buat" class="th-btn th-btn-primary">Buat post pertama</a>
     </div>
   </div>`;
 }
@@ -94,9 +98,12 @@ async function renderPosts(data) {
     return t !== 'REPOST_FACADE';
   });
   const meta = document.getElementById('posts-meta');
+  const accBit = meCache?.username
+    ? `@${String(meCache.username).replace(/^@/, '')}${meCache.type ? ' · ' + meCache.type : ''} · `
+    : '';
   meta.textContent = items.length
-    ? `${items.length} post · menyesuaikan lebar layar`
-    : 'Belum ada post di rentang ini';
+    ? `${accBit}${items.length} post dari Repliz`
+    : `${accBit}Belum ada post di rentang ini`;
 
   if (!items.length) {
     list.innerHTML = emptyState('Belum ada post', 'Coba ubah filter tanggal, atau buat post baru.');
@@ -105,6 +112,10 @@ async function renderPosts(data) {
 
   // Muat insight semua post secara paralel.
   list.innerHTML = skeleton();
+  postsById.clear();
+  for (const p of items) {
+    if (p.id) postsById.set(String(p.id), p);
+  }
   let insights;
   try {
     insights = await fetchPostInsights(items);
@@ -112,10 +123,10 @@ async function renderPosts(data) {
     insights = new Map();
   }
 
-  const uname = meCache?.username ? '@' + meCache.username : '@akun';
-  const avatar = meCache?.threads_profile_picture_url
-    ? `<img src="${Threads.escapeHtml(meCache.threads_profile_picture_url)}" class="w-9 h-9 rounded-full object-cover" alt="">`
-    : `<div class="w-9 h-9 rounded-full bg-ink text-white flex items-center justify-center text-xs font-semibold">${Threads.escapeHtml((meCache?.username || 'T')[0].toUpperCase())}</div>`;
+  const uname = meCache?.username ? '@' + String(meCache.username).replace(/^@/, '') : '@akun';
+  const avatar = meCache?.picture || meCache?.threads_profile_picture_url
+    ? `<img src="${Threads.escapeHtml(meCache.picture || meCache.threads_profile_picture_url)}" class="w-9 h-9 rounded-full object-cover" alt="">`
+    : `<div class="w-9 h-9 rounded-full bg-ink text-white flex items-center justify-center text-xs font-semibold">${Threads.escapeHtml((meCache?.username || 'R')[0].toUpperCase())}</div>`;
 
   list.innerHTML = items.map(p => {
     const text = (p.text || '').trim();
@@ -157,13 +168,65 @@ async function renderPosts(data) {
       ${media}
       ${metricHtml}
       <div class="mt-3 pt-3 border-t border-line flex items-center gap-0.5">
-        <a href="/app/balasan.html?media_id=${encodeURIComponent(p.id || '')}" class="action-btn" title="Balasan"><i class="bi bi-chat"></i></a>
+        <a href="/app/balasan?media_id=${encodeURIComponent(p.id || '')}" class="action-btn" title="Balasan"><i class="bi bi-chat"></i></a>
         ${permalink}
+        <button type="button" data-carousel="${Threads.escapeHtml(p.id)}" class="action-btn" title="Buka sebagai carousel IG" ${text ? '' : 'disabled'}><i class="bi bi-images"></i></button>
         <button data-copy="${Threads.escapeHtml(p.id)}" class="action-btn" title="Salin ID"><i class="bi bi-copy"></i></button>
-        <button data-delete="${Threads.escapeHtml(p.id)}" class="action-btn danger ml-auto" title="Hapus"><i class="bi bi-trash3"></i></button>
+        ${meCache?.source === 'repliz' ? '' : `<button data-delete="${Threads.escapeHtml(p.id)}" class="action-btn danger ml-auto" title="Hapus"><i class="bi bi-trash3"></i></button>`}
       </div>
     </article>`;
   }).join('');
+}
+
+function partsFromPostText(text) {
+  const raw = String(text || '').trim();
+  if (!raw) return [];
+  const paras = raw.split(/\n\s*\n/).map((s) => s.trim()).filter(Boolean);
+  return paras.length ? paras.slice(0, 20) : [raw];
+}
+
+async function openCarouselFromPost(post, btn) {
+  const fallback = partsFromPostText(post?.text || '');
+  if (!fallback.length && !post?.id) {
+    Threads.toast('Post tanpa teks — tidak bisa jadi carousel', false);
+    return;
+  }
+
+  const prev = btn?.innerHTML;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i>';
+  }
+  try {
+    let parts = fallback;
+    // Ambil seluruh utas (root + balasan milik sendiri), bukan cuma 1 kartu.
+    if (post?.id && meCache?.source !== 'repliz') {
+      try {
+        const tp = await Threads.api('/api/media/' + encodeURIComponent(post.id) + '/thread');
+        if (Array.isArray(tp?.parts) && tp.parts.length) {
+          parts = tp.parts.map((p) => String(p || '').trim()).filter(Boolean);
+        }
+      } catch {
+        // fallback ke teks kartu
+      }
+    }
+    if (!parts.length) {
+      throw new Error('Tidak ada teks utas untuk carousel');
+    }
+
+    localStorage.setItem('threads_carousel_parts', JSON.stringify(parts));
+    localStorage.setItem('threads_compose_parts', JSON.stringify(parts));
+    localStorage.removeItem('threads_carousel_caption');
+    localStorage.setItem('threads_carousel_gen_caption', '1');
+    Threads.toast(`${parts.length} slide · caption AI menyusul…`, true);
+    location.href = '/app/ig-carousel?from=posts';
+  } catch (e) {
+    Threads.toast(e.message || String(e), false);
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = prev;
+    }
+  }
 }
 
 async function loadPosts() {
@@ -173,6 +236,7 @@ async function loadPosts() {
   const q = new URLSearchParams();
   if (since) q.set('since', Math.floor(new Date(since).getTime() / 1000));
   if (until) q.set('until', Math.floor(new Date(until + 'T23:59:59').getTime() / 1000));
+  if (meCache?.id) q.set('account_id', meCache.id);
   await renderPosts(await Threads.api('/api/threads?' + q.toString()));
 }
 
@@ -182,7 +246,14 @@ document.getElementById('btn-posts-refresh').onclick = () => loadPosts().catch(e
 document.getElementById('posts-list').addEventListener('click', async e => {
   const del = e.target.closest('[data-delete]');
   const copy = e.target.closest('[data-copy]');
+  const car = e.target.closest('[data-carousel]');
   try {
+    if (car) {
+      const post = postsById.get(String(car.dataset.carousel || ''));
+      if (!post) return Threads.toast('Post tidak ditemukan', false);
+      await openCarouselFromPost(post, car);
+      return;
+    }
     if (copy) {
       await navigator.clipboard.writeText(copy.dataset.copy);
       Threads.toast('ID disalin', true);
@@ -201,7 +272,7 @@ document.getElementById('posts-list').addEventListener('click', async e => {
         const msg = err.message || String(err);
         if (/permission|threads_delete|#10|#200/i.test(msg)) {
           Threads.toast(
-            'Hapus gagal: token belum punya scope threads_delete. Aktifkan di Meta App → generate ulang token → hubungkan di halaman Token.',
+            'Hapus post terpublish tidak tersedia di Repliz. Batalkan jadwal di Kalender jika belum terkirim.',
             false,
           );
         } else {
@@ -215,17 +286,39 @@ document.getElementById('posts-list').addEventListener('click', async e => {
 
 (async () => {
   document.getElementById('posts-list').innerHTML = skeleton();
-  if (!(await Threads.requireConnected())) {
+  try {
+    const accs = await Threads.api('/api/repliz/accounts');
+    const list = accs.accounts || [];
+    const id = accs.active_id || '';
+    const a = list.find((x) => (x.id || x._id) === id) || list[0];
+    if (!a) {
+      document.getElementById('posts-list').innerHTML = emptyState(
+        'Belum ada akun Repliz',
+        'Buka Akun, hubungkan atau pilih akun, lalu kembali ke Post.'
+      );
+      const cta = document.querySelector('#posts-list a');
+      if (cta) { cta.href = '/app/akun'; cta.textContent = 'Ke Akun Repliz'; }
+      return;
+    }
+    meCache = {
+      id: a.id || a._id,
+      username: a.username || a.name,
+      name: a.name,
+      picture: a.picture,
+      source: 'repliz',
+      type: a.type,
+    };
+    const meta = document.getElementById('posts-meta');
+    if (meta) {
+      const handle = '@' + String(meCache.username || '').replace(/^@/, '');
+      meta.textContent = `${handle} · ${a.type || 'repliz'} — post dari Repliz`;
+    }
+  } catch (e) {
     document.getElementById('posts-list').innerHTML = emptyState(
-      'Belum terhubung',
-      'Hubungkan token Threads di Akun & API → Kelola.'
+      'Repliz belum tersambung',
+      e.message || 'Set REPLIZ_ACCESS_KEY di .env'
     );
-    const cta = document.querySelector('#posts-list a');
-    if (cta) { cta.href = '/akun.html'; cta.textContent = 'Ke Akun & API'; }
     return;
   }
-  try {
-    meCache = await Threads.api('/api/me');
-  } catch {}
   try { await loadPosts(); } catch (e) { Threads.toast(e.message, false); }
 })();

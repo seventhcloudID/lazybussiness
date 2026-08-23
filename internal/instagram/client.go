@@ -190,6 +190,52 @@ func (c *Client) Do(method, path string, query url.Values, form url.Values) (jso
 	return raw, nil
 }
 
+// Field profil IG: coba lengkap dulu, mundur kalau Meta nolak sebagian.
+var igUserFieldSets = []string{
+	"id,user_id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count,biography,website",
+	"id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count,biography,website",
+	"id,username,name,account_type,profile_picture_url,followers_count,follows_count,media_count",
+	"id,username,account_type,profile_picture_url,followers_count,follows_count,media_count",
+	"id,username,account_type",
+	"id,username",
+}
+
+func (c *Client) getUserNode(path string) (json.RawMessage, error) {
+	var last error
+	for _, fields := range igUserFieldSets {
+		raw, err := c.Do(http.MethodGet, path, url.Values{"fields": {fields}}, nil)
+		if err == nil {
+			return raw, nil
+		}
+		last = err
+		var apiErr *APIError
+		if !errors.As(err, &apiErr) {
+			return nil, err
+		}
+	}
+	if last == nil {
+		last = fmt.Errorf("gagal baca profil Instagram")
+	}
+	return nil, last
+}
+
+func rememberIGUserID(c *Client, raw json.RawMessage) {
+	var me struct {
+		ID     string `json:"id"`
+		UserID string `json:"user_id"`
+	}
+	if json.Unmarshal(raw, &me) != nil {
+		return
+	}
+	id := strings.TrimSpace(me.ID)
+	if id == "" {
+		id = strings.TrimSpace(me.UserID)
+	}
+	if id != "" {
+		c.setUserID(id)
+	}
+}
+
 func (c *Client) GetMe() (json.RawMessage, error) {
 	// Prefer explicit user id (lebih andal di Instagram Login API daripada /me).
 	if id := strings.TrimSpace(c.UserID()); id != "" {
@@ -197,32 +243,11 @@ func (c *Client) GetMe() (json.RawMessage, error) {
 			return raw, nil
 		}
 	}
-	raw, err := c.Do(http.MethodGet, "/me", url.Values{
-		"fields": {"id,username,account_type"},
-	}, nil)
+	raw, err := c.getUserNode("/me")
 	if err != nil {
-		var apiErr *APIError
-		if errors.As(err, &apiErr) && isUnsupportedGET(apiErr.Body) {
-			// Retry field lebih minimal — kadang field ekstra memicu error Meta.
-			raw2, err2 := c.Do(http.MethodGet, "/me", url.Values{"fields": {"id,username"}}, nil)
-			if err2 == nil {
-				var me struct {
-					ID string `json:"id"`
-				}
-				if json.Unmarshal(raw2, &me) == nil && me.ID != "" {
-					c.setUserID(me.ID)
-				}
-				return raw2, nil
-			}
-		}
 		return nil, err
 	}
-	var me struct {
-		ID string `json:"id"`
-	}
-	if json.Unmarshal(raw, &me) == nil && me.ID != "" {
-		c.setUserID(me.ID)
-	}
+	rememberIGUserID(c, raw)
 	return raw, nil
 }
 
@@ -231,13 +256,12 @@ func (c *Client) GetUser(id string) (json.RawMessage, error) {
 	if id == "" {
 		return nil, fmt.Errorf("user id kosong")
 	}
-	raw, err := c.Do(http.MethodGet, "/"+id, url.Values{
-		"fields": {"id,username,account_type"},
-	}, nil)
+	raw, err := c.getUserNode("/" + id)
 	if err != nil {
 		return nil, err
 	}
 	c.setUserID(id)
+	rememberIGUserID(c, raw)
 	return raw, nil
 }
 

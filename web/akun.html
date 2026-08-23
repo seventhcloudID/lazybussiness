@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Akun — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=ns9" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -15,19 +15,19 @@
   <header class="th-page-head">
     <div>
       <p class="th-eyebrow">Sistem</p>
-      <h1 class="th-title" id="akun-title">Akun brand</h1>
-      <p class="th-lead" id="akun-lead">Kelola akun Threads/IG dalam workspace ini.</p>
+      <h1 class="th-title" id="akun-title">Workspace akun</h1>
+      <p class="th-lead" id="akun-lead">Satukan akun Threads, Instagram, dan TikTok milik satu brand.</p>
       <p class="text-xs text-muted m-0 mt-1" id="org-breadcrumb">Tenant · Workspace</p>
     </div>
     <div class="flex flex-wrap gap-2 items-center" id="akun-head-actions">
-      <button type="button" id="btn-add" class="th-btn th-btn-primary"><i class="bi bi-plus-lg"></i> Tambah akun</button>
+      <button type="button" id="btn-add" class="th-btn th-btn-primary"><i class="bi bi-plus-lg"></i> Workspace baru</button>
       <button type="button" id="btn-keys-refresh" class="th-btn th-btn-ghost hidden"><i class="bi bi-arrow-clockwise"></i> Refresh</button>
     </div>
   </header>
 
   <div class="akun-tabs" role="tablist" aria-label="Bagian akun">
     <button type="button" class="akun-tab is-active" role="tab" id="tab-workspace" data-tab="workspace" aria-selected="true" aria-controls="panel-workspace">
-      <i class="bi bi-people"></i> Akun brand
+      <i class="bi bi-grid"></i> Workspace
     </button>
     <button type="button" class="akun-tab" role="tab" id="tab-keys" data-tab="keys" aria-selected="false" aria-controls="panel-keys">
       <i class="bi bi-key"></i> API keys workspace
@@ -37,22 +37,26 @@
   <div id="akun-alert" class="th-alert hidden mb-4"></div>
 
   <section id="panel-workspace" class="akun-panel" role="tabpanel" aria-labelledby="tab-workspace">
+    <div class="th-panel mb-4">
+      <div class="th-panel-body">
+        <strong>Satu brand, satu workspace.</strong>
+        <p class="text-sm text-muted m-0 mt-1">Contoh: Threads @bimosept + Instagram @bimosept + TikTok @bimosept. Lazy Business kemudian berjalan memakai pasangan akun ini.</p>
+      </div>
+    </div>
+    <div class="flex flex-wrap gap-2 mb-4" id="repliz-connect">
+      <button type="button" class="th-btn th-btn-primary text-xs" data-connect="threads"><i class="bi bi-at"></i> Hubungkan Threads</button>
+      <button type="button" class="th-btn th-btn-primary text-xs" data-connect="instagram"><i class="bi bi-instagram"></i> Hubungkan Instagram</button>
+      <button type="button" class="th-btn th-btn-soft text-xs" data-connect="tiktok"><i class="bi bi-tiktok"></i> Hubungkan TikTok</button>
+    </div>
     <div id="akun-list" class="grid gap-3"></div>
   </section>
 
   <section id="panel-keys" class="akun-panel hidden" role="tabpanel" aria-labelledby="tab-keys" hidden>
-    <p class="text-sm text-muted mb-4">Gemini &amp; OpenAI milik <strong>workspace</strong> ini — dipakai semua akun brand di dalamnya. Buffer key per akun (tab Akun brand → Kelola).</p>
+    <p class="text-sm text-muted mb-4">AI memakai gateway di <code>.env</code>. REST API key untuk akses HTTP. Buffer key per akun (tab Akun brand → Kelola).</p>
 
-    <section class="th-panel mb-4" id="gemini-panel">
-      <div class="th-panel-head"><span>Gemini</span></div>
-      <div class="th-panel-body" id="gemini-body">
-        <p class="text-sm text-muted m-0">Memuat…</p>
-      </div>
-    </section>
-
-    <section class="th-panel mb-4" id="openai-panel">
-      <div class="th-panel-head"><span>OpenAI</span></div>
-      <div class="th-panel-body" id="openai-body">
+    <section class="th-panel mb-4" id="ai-panel">
+      <div class="th-panel-head"><span>AI gateway</span></div>
+      <div class="th-panel-body" id="ai-body">
         <p class="text-sm text-muted m-0">Memuat…</p>
       </div>
     </section>
@@ -65,8 +69,8 @@
     </section>
   </section>
 </main>
-<script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/akun.js?v=mn76"></script>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/akun.js?v=ws1"></script>
 </body>
 </html>

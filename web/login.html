@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Login — Malesngonten</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=ns6" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -38,16 +38,16 @@
       </div>
     </div>
   </main>
-<script src="/js/api.js?v=mn70"></script>
+<script src="/js/api.js?v=ns12"></script>
 <script>
 function defaultHome(role) {
-  return role === 'admin' ? '/core/' : '/app/ringkasan.html';
+  return role === 'admin' ? '/core/' : '/app/ringkasan';
 }
 function safeNext(role) {
   const next = new URLSearchParams(location.search).get('next');
   if (!next || !next.startsWith('/') || next.startsWith('//')) return defaultHome(role);
   if (role === 'admin') return next;
-  if (next.startsWith('/core')) return '/app/ringkasan.html';
+  if (next.startsWith('/core')) return '/app/ringkasan';
   if (next.startsWith('/app/')) return next;
   if (next.endsWith('.html')) return '/app' + (next.startsWith('/') ? next : '/' + next);
   return defaultHome(role);

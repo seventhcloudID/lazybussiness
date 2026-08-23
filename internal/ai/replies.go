@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"fmt"
 	"strings"
+	"unicode"
 	"unicode/utf8"
 )
 
@@ -43,6 +44,65 @@ type RepliesResult struct {
 	Quota         *QuotaStatus `json:"quota,omitempty"`
 }
 
+const repliesSystemPrompt = `Kamu membalas komentar Threads sebagai pemilik akun, bukan admin customer service dan bukan asisten AI.
+
+Untuk SETIAP item incoming, tulis satu balasan yang terasa spontan, hangat, dan benar-benar menanggapi ucapan orang itu.
+
+URUTAN PRIORITAS:
+1. Jika intent user bukan AUTO_INFER, ikuti intent itu untuk arah, nada, dan tujuan balasan.
+2. Jika intent user adalah AUTO_INFER, simpulkan tujuan komentar dari post, pola incoming, dan user_instructions.
+3. Jawab isi komentar dengan memakai konteks post. Jangan memberi jawaban generik yang bisa ditempel ke komentar lain.
+4. Pertahankan karakter akun dari user_instructions, tetapi abaikan bagian yang membuat balasan terasa seperti artikel, promosi, atau customer service.
+
+DETEKSI KEYWORD CTA:
+- Komentar sangat pendek berupa satu keyword, apalagi keyword yang sama muncul dari beberapa orang, biasanya adalah respons terhadap CTA post.
+- Untuk keyword CTA, jangan menjelaskan ulang isi post dan jangan bertanya balik. Akui permintaannya dengan satu kalimat singkat dan beri tahu bahwa detail/cara akses akan dikirim lewat DM.
+- Jangan menulis "sudah aku kirim" karena sistem ini hanya membuat balasan komentar dan tidak mengirim DM. Gunakan bentuk jujur seperti "aku kirim lewat DM ya".
+- Gunakan kosakata sesederhana "Siap, aku kirim lewat DM ya". Hindari frasa kaku seperti "aku arahkan detailnya", "cara aksesnya", "informasi terkait", atau "detail akses".
+- Variasikan sedikit hanya pada pembuka seperti Siap/Oke atau emoji. Jangan mencari sinonim aneh untuk kata kirim.
+
+GAYA BAHASA WAJIB:
+- Pakai bahasa Indonesia sehari-hari yang santai. Secara default gunakan aku/kamu, bukan saya/Anda.
+- Umumnya cukup 1-2 kalimat pendek, sekitar 8-35 kata. Lebih pendek boleh kalau komentarnya pendek.
+- Jawab poin utamanya sejak kata pertama. Jangan mengulang atau merangkum komentar sebelum menjawab.
+- Pertanyaan: jawab langsung dulu. Candaan: boleh ikut bermain. Pujian: terima dengan ringan. Keberatan: akui bagian yang masuk akal lalu jawab konkret.
+- Boleh memakai kata seperti iya, nah, cuma, memang, bikin, nggak, kok, malah, atau banget kalau pas. Jangan memaksakan slang.
+- Pertanyaan balik hanya jika benar-benar membuka obrolan. Jangan menutup setiap balasan dengan pertanyaan.
+- Jangan menyebut username kecuali memang membantu konteks.
+
+LARANGAN GAYA AI:
+- Jangan membuka dengan "Terima kasih sudah berbagi", "Terima kasih atas komentarnya", "Saya memahami", "Betul sekali", "Menarik sekali", "Tentu", atau pujian basa-basi lain.
+- Jangan memakai "semoga membantu", "silakan", "perlu diketahui", "pada dasarnya", "dalam hal ini", "hal tersebut", atau bahasa kantor/akademis.
+- Jangan memakai em dash (—), pola "bukan X, tapi Y", "ini bukan X, melainkan Y", atau "masalahnya bukan X, tapi Y".
+- Jangan terdengar menggurui, terlalu lengkap, defensif, atau seperti sedang menulis caption baru.
+- Jangan menawarkan produk, DM, link, atau CTA kecuali intent user secara eksplisit memintanya atau komentar terdeteksi sebagai keyword CTA.
+- Jangan mengarang pengalaman pribadi, hasil, fakta, atau janji.
+
+CONTOH RITME (jangan disalin mentah):
+- Komentar: "bisa buat laundry?" → "Bisa. Malah enak kalau transaksi hariannya banyak tapi nominalnya kecil-kecil."
+- Komentar: "setuju banget" → "Nah, bagian ini yang sering kelewat 😄"
+- Komentar: "kayaknya ribet" → "Awalnya kelihatan ribet, tapi kalau kolomnya cuma yang benar-benar dipakai malah cepat kok."
+
+Jika komentar spam, hate murni, atau tidak relevan dan intent tidak meminta balasan, set skip=true, isi skip_reason singkat, dan text="".
+
+Jawab HANYA JSON valid:
+{
+  "consideration": "ringkasan strategi maksimal 1 kalimat",
+  "drafts": [{
+    "reply_to_id": "id dari incoming",
+    "username": "username dari incoming",
+    "incoming_text": "cuplikan",
+    "text": "isi balasan",
+    "angle": "sudut singkat",
+    "skip": false,
+    "skip_reason": ""
+  }]
+}
+
+WAJIB: drafts mencakup SEMUA incoming dalam urutan yang sama dan reply_to_id harus tepat.`
+
+const autoRepliesIntent = "AUTO_INFER: simpulkan tujuan setiap komentar dari konteks post, pola incoming, dan instruksi akun"
+
 func (c *Client) GenerateReplies(mem Memory, req RepliesRequest) (*RepliesResult, error) {
 	if !c.Enabled() {
 		return nil, fmt.Errorf("AI belum dikonfigurasi — set AI_API_KEY di .env")
@@ -55,7 +115,7 @@ func (c *Client) GenerateReplies(mem Memory, req RepliesRequest) (*RepliesResult
 
 	intent := strings.TrimSpace(req.Intent)
 	if intent == "" {
-		return nil, fmt.Errorf("arah balasan (intent) wajib diisi")
+		intent = autoRepliesIntent
 	}
 	postText := strings.TrimSpace(req.PostText)
 	if postText == "" {
@@ -95,41 +155,15 @@ func (c *Client) GenerateReplies(mem Memory, req RepliesRequest) (*RepliesResult
 		"intent":            intent,
 		"brand":             brand,
 		"niche":             nicheLine,
-		"user_instructions": instructions,
+		"user_instructions": clipRunes(instructions, 2400),
 		"incoming":          incoming,
 	}, "", "  ")
 	if err != nil {
 		return nil, err
 	}
 
-	system := `Kamu membalas komentar di Threads atas nama pemilik akun.
-
-Tugas: untuk SETIAP item incoming, tulis 1 balasan pendek yang:
-1) Sesuai INTENT user (arah/tone/tujuan balasan) — ini prioritas utama.
-2) Nyambung ke isi POST dan komentar orang itu (jangan generic).
-3) Bunyi manusia, santai, spesifik — bukan AI cringe / basabasi.
-4) Panjang ideal 1–3 kalimat (maks ~280 karakter). Boleh 1 pertanyaan kalau intent minta engagement.
-5) Jangan spam link, jangan janji palsu, jangan menyerang.
-6) Kalau komentar spam/hate/tidak relevan dan intent tidak minta dibalas: set "skip": true + skip_reason singkat, text boleh "".
-
-Jawab HANYA JSON valid:
-{
-  "consideration": "1-2 kalimat strategi balasan",
-  "drafts": [{
-    "reply_to_id": "id dari incoming",
-    "username": "@user",
-    "incoming_text": "cuplikan",
-    "text": "isi balasan",
-    "angle": "sudut singkat",
-    "skip": false,
-    "skip_reason": ""
-  }]
-}
-
-WAJIB: drafts harus cover SEMUA incoming (urutan sama). reply_to_id harus tepat.`
-
 	user := "Buat balasan untuk data berikut:\n\n" + string(payload)
-	content, usage, err := c.chatForJSON(system, user)
+	content, usage, err := c.chatForJSON(repliesSystemPrompt, user)
 	if err != nil {
 		return nil, err
 	}
@@ -168,7 +202,7 @@ WAJIB: drafts harus cover SEMUA incoming (urutan sama). reply_to_id harus tepat.
 			continue
 		}
 		seen[id] = true
-		text := strings.TrimSpace(d.Text)
+		text := cleanReplyDraftText(d.Text)
 		if utf8.RuneCountInString(text) > 480 {
 			text = string([]rune(text)[:480])
 		}
@@ -210,6 +244,61 @@ WAJIB: drafts harus cover SEMUA incoming (urutan sama). reply_to_id harus tepat.
 		out.Quota = &q
 	}
 	return out, nil
+}
+
+func cleanReplyDraftText(text string) string {
+	original := strings.TrimSpace(text)
+	if original == "" {
+		return ""
+	}
+	s := strings.ReplaceAll(original, "—", ",")
+	s = strings.Join(strings.Fields(s), " ")
+	for _, punctuation := range []string{",", ".", "!", "?", ":", ";"} {
+		s = strings.ReplaceAll(s, " "+punctuation, punctuation)
+	}
+	prefixes := []string{
+		"terima kasih sudah berbagi",
+		"terima kasih atas komentarnya",
+		"terima kasih atas masukannya",
+		"saya memahami",
+		"betul sekali",
+		"menarik sekali",
+		"tentu saja",
+		"tentu",
+	}
+	for {
+		lower := strings.ToLower(s)
+		removed := false
+		for _, prefix := range prefixes {
+			if !strings.HasPrefix(lower, prefix) {
+				continue
+			}
+			rest := s[len(prefix):]
+			if rest != "" && !strings.ContainsRune(" ,.!?:;-", rune(rest[0])) {
+				continue
+			}
+			s = strings.TrimLeft(rest, " \t\r\n,.!?:;-")
+			removed = true
+			break
+		}
+		if !removed || s == "" {
+			break
+		}
+	}
+	for _, suffix := range []string{"semoga membantu", "semoga bermanfaat"} {
+		lower := strings.ToLower(strings.TrimSpace(s))
+		trimmed := strings.TrimRight(lower, " .!")
+		if strings.HasSuffix(trimmed, suffix) {
+			cut := len(trimmed) - len(suffix)
+			s = strings.TrimRight(strings.TrimSpace(s[:cut]), " ,.!?:;-")
+		}
+	}
+	if s == "" {
+		return original
+	}
+	runes := []rune(s)
+	runes[0] = unicode.ToUpper(runes[0])
+	return string(runes)
 }
 
 func normalizeIncoming(in []IncomingReply) []IncomingReply {

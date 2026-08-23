@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 )
@@ -17,34 +18,36 @@ const (
 )
 
 type Config struct {
-	Enabled          bool   `json:"enabled"`
-	PostsPerDay      int    `json:"posts_per_day"`
-	Timezone         string `json:"timezone"`
-	TopicHint        string `json:"topic_hint,omitempty"`
-	ThumbnailEnabled bool   `json:"thumbnail_enabled"`           // thumbnail utas Threads (OpenAI)
-	CarouselTemplate string `json:"carousel_template,omitempty"` // noir|paper|ocean|ink|ember|meadow
+	Enabled          bool     `json:"enabled"`
+	PostsPerDay      int      `json:"posts_per_day"`
+	Timezone         string   `json:"timezone"`
+	TopicHint        string   `json:"topic_hint,omitempty"`
+	ThumbnailEnabled bool     `json:"thumbnail_enabled"`           // legacy field; Threads cover is always enabled
+	CarouselTemplate string   `json:"carousel_template,omitempty"` // noir|paper|ocean|ink|ember|meadow
+	Channels         []string `json:"channels,omitempty"`          // threads|instagram|tiktok
 }
 
 type Job struct {
-	ID          string    `json:"id"`
-	Date        string    `json:"date"` // YYYY-MM-DD in local TZ
-	ScheduledAt time.Time `json:"scheduled_at"`
-	Status      string    `json:"status"`
-	Title       string    `json:"title,omitempty"`
-	Parts       []string  `json:"parts,omitempty"`
-	Caption     string    `json:"caption,omitempty"`
-	ThreadsIDs  []string  `json:"threads_ids,omitempty"`
-	ThumbURL    string    `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
-	ImageURLs   []string  `json:"image_urls,omitempty"`
-	IGContainer string    `json:"ig_container,omitempty"`
-	IGMediaID   string    `json:"ig_media_id,omitempty"` // published IG media id
-	BufferPostID  string   `json:"buffer_post_id,omitempty"`   // TikTok
-	BufferError   string   `json:"buffer_error,omitempty"`    // TikTok
-	BufferXPostID string   `json:"buffer_x_post_id,omitempty"` // X/Twitter thread
-	BufferXError  string   `json:"buffer_x_error,omitempty"`
-	Error         string   `json:"error,omitempty"`
-	StartedAt   time.Time `json:"started_at,omitempty"`
-	FinishedAt  time.Time `json:"finished_at,omitempty"`
+	ID            string    `json:"id"`
+	Date          string    `json:"date"` // YYYY-MM-DD in local TZ
+	ScheduledAt   time.Time `json:"scheduled_at"`
+	Status        string    `json:"status"`
+	Title         string    `json:"title,omitempty"`
+	Parts         []string  `json:"parts,omitempty"`
+	Caption       string    `json:"caption,omitempty"`
+	ThreadsIDs    []string  `json:"threads_ids,omitempty"`
+	ThumbURL      string    `json:"thumb_url,omitempty"` // Threads utas thumbnail (ChatGPT)
+	CoverURL      string    `json:"cover_url,omitempty"` // cover 4:5 untuk Instagram/TikTok (ChatGPT)
+	ImageURLs     []string  `json:"image_urls,omitempty"`
+	IGContainer   string    `json:"ig_container,omitempty"`
+	IGMediaID     string    `json:"ig_media_id,omitempty"`      // published IG media id
+	BufferPostID  string    `json:"buffer_post_id,omitempty"`   // TikTok
+	BufferError   string    `json:"buffer_error,omitempty"`     // TikTok
+	BufferXPostID string    `json:"buffer_x_post_id,omitempty"` // X/Twitter thread
+	BufferXError  string    `json:"buffer_x_error,omitempty"`
+	Error         string    `json:"error,omitempty"`
+	StartedAt     time.Time `json:"started_at,omitempty"`
+	FinishedAt    time.Time `json:"finished_at,omitempty"`
 }
 
 type jobFile struct {
@@ -79,6 +82,7 @@ func NewStoreAt(configPath, jobsPath, mediaDir string) *Store {
 			Timezone:         "Asia/Jakarta",
 			ThumbnailEnabled: true,
 			CarouselTemplate: DefaultTemplate,
+			Channels:         []string{"threads", "instagram", "tiktok"},
 		},
 	}
 	s.load()
@@ -104,6 +108,10 @@ func (s *Store) load() {
 				c.ThumbnailEnabled = true
 			}
 			c.CarouselTemplate = NormalizeTemplate(c.CarouselTemplate)
+			if _, ok := raw["channels"]; !ok {
+				c.Channels = []string{"threads", "instagram", "tiktok"}
+			}
+			c.Channels = normalizeChannels(c.Channels)
 			s.cfg = c
 		}
 	}
@@ -160,8 +168,39 @@ func (s *Store) SetConfig(c Config) (Config, error) {
 		c.Timezone = "Asia/Jakarta"
 	}
 	c.CarouselTemplate = NormalizeTemplate(c.CarouselTemplate)
+	c.Channels = normalizeChannels(c.Channels)
+	c.ThumbnailEnabled = true
 	s.cfg = c
 	return s.cfg, s.saveConfigLocked()
+}
+
+func normalizeChannels(in []string) []string {
+	seen := map[string]bool{}
+	out := make([]string, 0, 3)
+	for _, raw := range in {
+		v := strings.ToLower(strings.TrimSpace(raw))
+		if v == "ig" {
+			v = "instagram"
+		}
+		if (v == "threads" || v == "instagram" || v == "tiktok") && !seen[v] {
+			seen[v] = true
+			out = append(out, v)
+		}
+	}
+	return out
+}
+
+func (c Config) HasChannel(platform string) bool {
+	platform = strings.ToLower(strings.TrimSpace(platform))
+	if platform == "ig" {
+		platform = "instagram"
+	}
+	for _, channel := range c.Channels {
+		if channel == platform {
+			return true
+		}
+	}
+	return false
 }
 
 func (s *Store) Location() *time.Location {
@@ -249,17 +288,27 @@ func (s *Store) DueJobs(now time.Time) []Job {
 	return out
 }
 
-// RecoverStuckJobs turns abandoned "running" jobs back to pending after restart.
+// RecoverStuckJobs turns abandoned "running" jobs back to a safe state after restart.
+// Jobs that already published to any channel are marked done — never re-run.
 func (s *Store) RecoverStuckJobs() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
 	for i := range s.jobs {
-		if s.jobs[i].Status == StatusRunning {
-			s.jobs[i].Status = StatusPending
-			s.jobs[i].Error = "recovered after restart"
-			n++
+		if s.jobs[i].Status != StatusRunning {
+			continue
 		}
+		n++
+		if len(s.jobs[i].ThreadsIDs) > 0 || s.jobs[i].IGMediaID != "" || s.jobs[i].BufferPostID != "" {
+			s.jobs[i].Status = StatusDone
+			s.jobs[i].Error = "recovered after restart (sudah terpublish)"
+			if s.jobs[i].FinishedAt.IsZero() {
+				s.jobs[i].FinishedAt = time.Now().UTC()
+			}
+			continue
+		}
+		s.jobs[i].Status = StatusPending
+		s.jobs[i].Error = "recovered after restart"
 	}
 	if n > 0 {
 		_ = s.saveJobsLocked()

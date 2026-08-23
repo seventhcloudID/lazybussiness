@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lazy Business — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=lazy2" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -16,15 +16,15 @@
     <div>
       <p class="th-eyebrow">Automasi</p>
       <h1 class="th-title">Lazy Business</h1>
-      <p class="th-lead">Otomasi 24/7: Threads — IG carousel — Buffer TikTok — Buffer X</p>
+      <p class="th-lead">Otomasi konten per workspace melalui akun Repliz yang sudah dipasangkan.</p>
     </div>
-    <div class="th-toolbar">
-      <a href="/app/lazy-track.html" class="th-btn th-btn-ghost"><i class="bi bi-graph-up-arrow"></i> Lazy Track</a>
-      <button id="btn-replan" class="th-btn th-btn-ghost" type="button" title="Buat ulang jadwal hari ini">
-        <i class="bi bi-calendar2-plus"></i> Reset hari ini
-      </button>
-      <button id="btn-run-now" class="th-btn th-btn-soft" type="button">
+    <div class="th-toolbar lazy-head-actions">
+      <button id="btn-run-now" class="th-btn th-btn-primary" type="button">
         <i class="bi bi-play-fill"></i> Run 1 sekarang
+      </button>
+      <a href="/app/lazy-track" class="th-btn th-btn-ghost"><i class="bi bi-graph-up-arrow"></i> Riwayat</a>
+      <button id="btn-replan" class="th-btn th-btn-ghost" type="button" title="Buat ulang jadwal hari ini">
+        <i class="bi bi-calendar2-plus"></i> Reset
       </button>
       <button id="btn-refresh" class="th-btn th-btn-ghost" type="button" title="Refresh">
         <i class="bi bi-arrow-clockwise"></i>
@@ -35,17 +35,29 @@
   <div id="lazy-alert" class="th-alert hidden"></div>
   <div id="lazy-warnings" class="lazy-warns mb-4 hidden"></div>
 
-  <section class="lazy-hero mb-4" id="lazy-hero" data-on="0">
-    <div class="lazy-hero-main">
-      <div class="lazy-hero-copy">
-        <p class="lazy-hero-kicker">Status otomasi</p>
-        <h2 class="lazy-hero-title">
-          <span class="lazy-hero-pulse" aria-hidden="true"></span>
-          <span id="lazy-hero-title">OFF</span>
-        </h2>
-        <p class="lazy-hero-next" id="lazy-hero-next">Nyalakan otomasi lalu simpan untuk mulai jadwal.</p>
+  <section class="lazy-command mb-4" id="lazy-hero" data-on="0">
+    <div class="lazy-workspace-bar">
+      <div class="lazy-workspace-select">
+        <span class="lazy-command-icon"><i class="bi bi-grid"></i></span>
+        <div class="min-w-0">
+          <label for="lazy-workspace">Workspace aktif</label>
+          <select id="lazy-workspace"></select>
+        </div>
       </div>
-      <div class="lazy-hero-toggles">
+      <a href="/app/akun" class="lazy-manage-link">Kelola akun <i class="bi bi-arrow-up-right"></i></a>
+    </div>
+
+    <div class="lazy-command-main">
+      <div class="lazy-status-block">
+        <div class="lazy-status-copy">
+          <p class="lazy-hero-kicker">Otomasi</p>
+          <h2 class="lazy-hero-title">
+            <span class="lazy-hero-pulse" aria-hidden="true"></span>
+            <span id="lazy-hero-title">OFF</span>
+          </h2>
+          <p class="lazy-hero-next" id="lazy-hero-next">Nyalakan otomasi lalu simpan untuk mulai jadwal.</p>
+        </div>
+        <div class="lazy-hero-toggles">
         <label class="lazy-switch">
           <input type="checkbox" id="enabled">
           <span class="lazy-switch-ui" aria-hidden="true"></span>
@@ -54,17 +66,26 @@
             <small>Otomasi</small>
           </span>
         </label>
-        <label class="lazy-switch">
-          <input type="checkbox" id="thumb-enabled" checked>
-          <span class="lazy-switch-ui" aria-hidden="true"></span>
-          <span class="lazy-switch-text">
-            <strong id="thumb-label">ON</strong>
-            <small>Thumbnail utas</small>
-          </span>
-        </label>
+        <button type="button" id="btn-save-top" class="th-btn th-btn-primary"><i class="bi bi-check2"></i> Simpan</button>
+        </div>
+      </div>
+
+      <div class="lazy-target-block">
+        <div class="lazy-target-head">
+          <div><span class="lazy-section-kicker">Publikasikan ke</span><strong>Pilih akun tujuan</strong></div>
+          <span class="lazy-target-note">Mengikuti workspace</span>
+        </div>
+        <div class="lazy-targets">
+          <label class="lazy-target"><input type="checkbox" data-lazy-channel="threads" checked><span class="lazy-target-icon"><i class="bi bi-at"></i></span><span><strong>Threads</strong><small>Cover + utas</small></span><i class="bi bi-check-lg lazy-target-check"></i></label>
+          <label class="lazy-target"><input type="checkbox" data-lazy-channel="instagram" checked><span class="lazy-target-icon"><i class="bi bi-instagram"></i></span><span><strong>Instagram</strong><small>Cover + carousel</small></span><i class="bi bi-check-lg lazy-target-check"></i></label>
+          <label class="lazy-target"><input type="checkbox" data-lazy-channel="tiktok" checked><span class="lazy-target-icon"><i class="bi bi-tiktok"></i></span><span><strong>TikTok</strong><small>Cover + carousel</small></span><i class="bi bi-check-lg lazy-target-check"></i></label>
+        </div>
       </div>
     </div>
-    <div class="lazy-channels" id="lazy-channels"></div>
+    <div class="lazy-command-foot">
+      <p id="lazy-workspace-accounts">Memuat pasangan akun…</p>
+      <div class="lazy-channels" id="lazy-channels"></div>
+    </div>
   </section>
 
   <div class="lazy-stats mb-4" id="lazy-stats">
@@ -98,11 +119,11 @@
     </div>
   </div>
 
-  <section class="th-panel lazy-settings mb-4">
-    <div class="th-panel-head">
-      <span>Pengaturan</span>
-      <span id="lazy-meta" class="text-xs text-muted font-medium"></span>
-    </div>
+  <details class="th-panel lazy-settings mb-4" id="lazy-settings">
+    <summary class="lazy-settings-summary">
+      <span><i class="bi bi-sliders2"></i><span><strong>Pengaturan konten</strong><small>Frekuensi, brand, topik, dan template</small></span></span>
+      <span class="lazy-settings-summary-side"><span id="lazy-meta"></span><i class="bi bi-chevron-down"></i></span>
+    </summary>
     <div class="th-panel-body">
       <div class="lazy-settings-grid">
         <div>
@@ -124,7 +145,7 @@
               <strong id="tpl-current-name">Noir</strong>
               <small id="tpl-current-desc">Preview & ganti di halaman Template Carousel</small>
             </div>
-            <a href="/app/carousel-templates.html" class="th-btn th-btn-soft shrink-0">
+            <a href="/app/carousel-templates" class="th-btn th-btn-soft shrink-0">
               <i class="bi bi-palette2"></i> Pilih template
             </a>
           </div>
@@ -136,7 +157,7 @@
         </div>
       </div>
     </div>
-  </section>
+  </details>
 
   <div class="lazy-schedule-grid mb-6">
     <section class="th-panel lazy-schedule">
@@ -179,8 +200,8 @@
       <div class="lazy-detail-grid">
         <div class="lazy-preview-col">
           <div id="lazy-thumb-box" class="gen-thumb-box mb-3" hidden>
-            <img id="lazy-thumb-img" class="gen-thumb-img" alt="Thumbnail Threads 4:3">
-            <p class="gen-thumb-cap">Thumbnail utas Threads — bagian 1</p>
+            <img id="lazy-thumb-img" class="gen-thumb-img" alt="Cover Threads 4:5">
+            <p class="gen-thumb-cap">Cover visual Threads 4:5 — bagian 1</p>
           </div>
           <div class="igc-stage">
             <article class="igc-phone">
@@ -221,7 +242,7 @@
               </div>
             </article>
           </div>
-          <p class="igc-hint">PNG sama seperti yang di-publish ke IG</p>
+          <p class="igc-hint">Cover visual + carousel yang sama seperti dipublish ke IG/TikTok</p>
         </div>
         <div class="lazy-parts-col min-w-0">
           <div id="lazy-parts" class="gen-thread"></div>
@@ -231,8 +252,8 @@
     </div>
   </div>
 </main>
-<script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/lazy.js?v=strand50"></script>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/lazy.js?v=workspace3"></script>
 </body>
 </html>

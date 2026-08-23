@@ -1,16 +1,17 @@
-Threads.pageShell('akun');
+﻿Threads.pageShell('akun');
 
 let expandedId = null;
 let keysLoaded = false;
+let replizAccounts = [];
 
 const TAB_COPY = {
   workspace: {
-    title: 'Akun brand',
-    lead: 'Kelola akun Threads/IG dalam workspace ini, lalu pilih akun aktif.',
+    title: 'Workspace akun',
+    lead: 'Satukan akun sosial satu brand, lalu pakai workspace itu di seluruh automasi.',
   },
   keys: {
     title: 'API keys workspace',
-    lead: 'Gemini, OpenAI (BYOK), dan REST API key untuk akses lewat HTTP.',
+    lead: 'Status gateway AI dan REST API key untuk akses HTTP.',
   },
 };
 
@@ -61,6 +62,7 @@ function setTab(tab) {
   document.getElementById('akun-title').textContent = copy.title;
   document.getElementById('akun-lead').textContent = copy.lead;
   document.getElementById('btn-add')?.classList.toggle('hidden', isKeys);
+  document.getElementById('repliz-connect')?.classList.toggle('hidden', isKeys);
   document.getElementById('btn-keys-refresh')?.classList.toggle('hidden', !isKeys);
 
   const url = new URL(location.href);
@@ -86,7 +88,7 @@ function renderBuffer(root, accountId, st) {
       <span class="buf-ch-ico"><i class="bi ${serviceIcon(ch.service)}"></i></span>
       <div class="min-w-0">
         <div class="buf-ch-name">${Threads.escapeHtml(name)}</div>
-        <div class="buf-ch-meta mono">${Threads.escapeHtml(ch.service || '—')}${used ? ' · dipakai' : ''}</div>
+        <div class="buf-ch-meta mono">${Threads.escapeHtml(ch.service || 'â€”')}${used ? ' Â· dipakai' : ''}</div>
       </div>
     </div>`;
   }).join('');
@@ -94,8 +96,8 @@ function renderBuffer(root, accountId, st) {
   const statusBlock = enabled ? `
     <div class="flex flex-wrap gap-2 items-center mb-3">
       ${pill(tokenOk, tokenOk ? 'Key OK' : 'Key bermasalah')}
-      ${pill(!!st.tiktok_ok, st.tiktok_ok ? 'TikTok' : 'TikTok —')}
-      ${pill(!!st.twitter_ok, st.twitter_ok ? 'X' : 'X —')}
+      ${pill(!!st.tiktok_ok, st.tiktok_ok ? 'TikTok' : 'TikTok â€”')}
+      ${pill(!!st.twitter_ok, st.twitter_ok ? 'X' : 'X â€”')}
       <span class="text-xs text-muted mono">${Threads.escapeHtml(st.key_hint || '')}</span>
     </div>
     ${st.tiktok_error ? `<p class="text-xs text-danger mb-2">${Threads.escapeHtml(st.tiktok_error)}</p>` : ''}
@@ -105,7 +107,7 @@ function renderBuffer(root, accountId, st) {
   ` : `<p class="text-sm text-muted mb-3 m-0">${Threads.escapeHtml(st?.note || 'Belum ada Buffer API key untuk akun ini.')}</p>`;
 
   root.innerHTML = `
-    <p class="text-xs text-muted mb-2 m-0">Hanya untuk akun brand ini — tidak dipakai akun lain.</p>
+    <p class="text-xs text-muted mb-2 m-0">Hanya untuk akun brand ini â€” tidak dipakai akun lain.</p>
     ${statusBlock}
     <label class="th-label">Buffer API key</label>
     <input class="th-input" type="password" data-buffer-key placeholder="Dari publish.buffer.com/settings/api" autocomplete="off">
@@ -153,7 +155,7 @@ async function clearBufferKey(accountId) {
 async function loadBufferFor(accountId) {
   const root = document.querySelector(`[data-id="${CSS.escape(accountId)}"] [data-buffer-body]`);
   if (!root) return;
-  root.innerHTML = `<p class="text-sm text-muted m-0">Memuat Buffer…</p>`;
+  root.innerHTML = `<p class="text-sm text-muted m-0">Memuat Bufferâ€¦</p>`;
   try {
     const st = await Threads.api('/api/accounts/' + encodeURIComponent(accountId) + '/buffer');
     renderBuffer(root, accountId, st);
@@ -162,134 +164,31 @@ async function loadBufferFor(accountId) {
   }
 }
 
-function renderOpenAI(st) {
-  const root = document.getElementById('openai-body');
-  const enabled = !!st?.enabled;
-  root.innerHTML = `
-    <div class="flex flex-wrap gap-2 items-center mb-3">
-      ${pill(enabled, enabled ? 'Siap' : 'Belum ada key')}
-      ${st?.model ? `<span class="text-xs text-muted mono">${Threads.escapeHtml(st.model)}</span>` : ''}
-      ${st?.key_hint ? `<span class="text-xs text-muted mono">${Threads.escapeHtml(st.key_hint)}</span>` : ''}
-    </div>
-    <p class="text-xs text-muted mb-2 m-0">Thumbnail utas (Generate / Lazy).</p>
-    <label class="th-label">API key</label>
-    <input id="openai-key-input" class="th-input" type="password" placeholder="sk-…" autocomplete="off">
-    <div class="flex gap-2 flex-wrap mt-2">
-      <button type="button" class="th-btn th-btn-primary text-xs" id="btn-openai-save">Simpan</button>
-      <button type="button" class="th-btn th-btn-ghost text-xs" id="btn-openai-clear" ${(st?.store_count || 0) > 0 ? '' : 'disabled'}>Hapus</button>
-    </div>
-  `;
-  document.getElementById('btn-openai-save')?.addEventListener('click', saveOpenAIKey);
-  document.getElementById('btn-openai-clear')?.addEventListener('click', clearOpenAIKey);
-}
-
-async function saveOpenAIKey() {
-  const key = document.getElementById('openai-key-input')?.value?.trim();
-  if (!key) return Threads.toast('Isi OpenAI API key', false);
-  try {
-    await Threads.api('/api/openai/keys', {
-      method: 'PUT',
-      body: JSON.stringify({ api_key: key }),
-    });
-    Threads.toast('OpenAI key tersimpan', true);
-    await loadOpenAI();
-  } catch (e) {
-    Threads.toast(e.message, false);
-  }
-}
-
-async function clearOpenAIKey() {
-  if (!(await Threads.confirm('Hapus OpenAI key dari UI? Key di .env tidak terhapus.', {
-    title: 'Hapus OpenAI key',
-    okLabel: 'Hapus key',
-  }))) return;
-  try {
-    await Threads.api('/api/openai/keys', { method: 'DELETE' });
-    Threads.toast('Key UI dihapus', true);
-    await loadOpenAI();
-  } catch (e) {
-    Threads.toast(e.message, false);
-  }
-}
-
-async function loadOpenAI() {
-  const root = document.getElementById('openai-body');
-  if (!root) return false;
-  root.innerHTML = `<p class="text-sm text-muted m-0">Memuat…</p>`;
-  try {
-    const st = await Threads.api('/api/openai/keys');
-    renderOpenAI(st);
-    return true;
-  } catch (e) {
-    root.innerHTML = `<p class="text-sm text-muted m-0">${Threads.escapeHtml(e.message)}</p>`;
-    return false;
-  }
-}
-
-function renderGemini(st) {
-  const root = document.getElementById('gemini-body');
+function renderAI(st) {
+  const root = document.getElementById('ai-body');
   if (!root) return;
   const enabled = !!st?.enabled;
-  const storeN = st?.from_store ?? 0;
-  const masked = Array.isArray(st?.stored_masked) ? st.stored_masked : [];
-  const maskedList = masked.length
-    ? `<ul class="text-xs text-muted mono mt-2 mb-0 pl-4">${masked.map((m) => `<li>${Threads.escapeHtml(m)}</li>`).join('')}</ul>`
-    : '';
+  const thumb = st?.thumbnail || {};
+  const model = [st?.provider, st?.model].filter(Boolean).join(' Â· ');
+  const thumbLine = [thumb.model].filter(Boolean).join(' Â· ');
   root.innerHTML = `
     <div class="flex flex-wrap gap-2 items-center mb-3">
-      ${pill(enabled, enabled ? 'Siap' : 'Belum ada key')}
-      ${st?.model ? `<span class="text-xs text-muted mono">${Threads.escapeHtml(st.model)}</span>` : ''}
-      <span class="text-xs text-muted">UI ${storeN} · .env ${st?.from_env ?? 0}</span>
+      ${pill(enabled, enabled ? 'Siap' : 'Belum dikonfigurasi')}
+      ${pill(!!thumb.enabled, thumb.enabled ? 'Thumbnail siap' : 'Thumbnail off')}
     </div>
-    <p class="text-xs text-muted mb-2 m-0">Generate, Lazy, Chat, balasan — satu key per baris.</p>
-    <label class="th-label">API keys</label>
-    <textarea id="gemini-keys-input" class="th-textarea" rows="3" placeholder="AIza…&#10;AIza…" autocomplete="off"></textarea>
-    ${maskedList}
-    <div class="flex gap-2 flex-wrap mt-2">
-      <button type="button" class="th-btn th-btn-primary text-xs" id="btn-gemini-save">Simpan</button>
-      <button type="button" class="th-btn th-btn-ghost text-xs" id="btn-gemini-clear" ${storeN > 0 ? '' : 'disabled'}>Hapus</button>
-    </div>
+    <p class="text-sm m-0 mb-1"><span class="text-muted">Model</span> <code class="th-code">${Threads.escapeHtml(model || 'â€”')}</code></p>
+    <p class="text-sm m-0 mb-3"><span class="text-muted">Thumbnail</span> <code class="th-code">${Threads.escapeHtml(thumbLine || 'â€”')}</code></p>
+    <p class="text-xs text-muted m-0">Ubah di <code>.env</code>: <code>AI_BASE_URL</code>, <code>AI_MODEL</code>, <code>AI_API_KEY</code>. Generate, caption, Lazy, chat, dan thumbnail memakai gateway ini.</p>
   `;
-  document.getElementById('btn-gemini-save')?.addEventListener('click', saveGeminiKey);
-  document.getElementById('btn-gemini-clear')?.addEventListener('click', clearGeminiKey);
 }
 
-async function saveGeminiKey() {
-  const text = document.getElementById('gemini-keys-input')?.value?.trim();
-  if (!text) return Threads.toast('Tempel minimal 1 Gemini API key', false);
-  try {
-    await Threads.api('/api/ai/keys', {
-      method: 'PUT',
-      body: JSON.stringify({ keys_text: text }),
-    });
-    Threads.toast('Gemini keys tersimpan', true);
-    await loadGemini();
-  } catch (e) {
-    Threads.toast(e.message, false);
-  }
-}
-
-async function clearGeminiKey() {
-  if (!(await Threads.confirm('Hapus Gemini key dari UI? Key di .env tidak terhapus.', {
-    title: 'Hapus Gemini keys',
-    okLabel: 'Hapus keys',
-  }))) return;
-  try {
-    await Threads.api('/api/ai/keys', { method: 'DELETE' });
-    Threads.toast('Key UI dihapus', true);
-    await loadGemini();
-  } catch (e) {
-    Threads.toast(e.message, false);
-  }
-}
-
-async function loadGemini() {
-  const root = document.getElementById('gemini-body');
+async function loadAI() {
+  const root = document.getElementById('ai-body');
   if (!root) return false;
-  root.innerHTML = `<p class="text-sm text-muted m-0">Memuat…</p>`;
+  root.innerHTML = `<p class="text-sm text-muted m-0">Memuatâ€¦</p>`;
   try {
-    const st = await Threads.api('/api/ai/keys');
-    renderGemini(st);
+    const st = await Threads.api('/api/ai/status');
+    renderAI(st);
     return true;
   } catch (e) {
     root.innerHTML = `<p class="text-sm text-muted m-0">${Threads.escapeHtml(e.message)}</p>`;
@@ -312,11 +211,11 @@ function renderConnect(st) {
     : `<p class="text-xs text-muted mb-3">Belum ada API key. Buat satu untuk akses lewat curl / script / otomasi.</p>`;
   const docs = (st?.openapi_url || '').replace(/\/openapi\.yaml$/, '/docs') || (location.origin + '/docs');
   root.innerHTML = `
-    <p class="text-sm text-muted mb-2 m-0">Akses dashboard lewat REST API: kirim header <code class="th-code">Authorization: Bearer mn_…</code>.</p>
+    <p class="text-sm text-muted mb-2 m-0">Akses dashboard lewat REST API: kirim header <code class="th-code">Authorization: Bearer mn_â€¦</code>.</p>
     <p class="text-xs mb-3 m-0">
       Docs: <a class="underline" href="${Threads.escapeHtml(docs)}" target="_blank" rel="noopener">${Threads.escapeHtml(docs)}</a>
-      · Schema: <a class="underline" href="${Threads.escapeHtml(openapi)}" target="_blank" rel="noopener">openapi.yaml</a>
-      ${st?.env_key_set ? ' · <span class="th-chip th-chip-ok">CONNECT_API_KEY di .env aktif</span>' : ''}
+      Â· Schema: <a class="underline" href="${Threads.escapeHtml(openapi)}" target="_blank" rel="noopener">openapi.yaml</a>
+      ${st?.env_key_set ? ' Â· <span class="th-chip th-chip-ok">CONNECT_API_KEY di .env aktif</span>' : ''}
     </p>
     ${rows}
     <div class="flex gap-2 flex-wrap items-end">
@@ -342,11 +241,11 @@ async function createConnectKey() {
       method: 'POST',
       body: JSON.stringify({ name }),
     });
-    Threads.toast('Connect key dibuat — salin sekarang', true);
+    Threads.toast('Connect key dibuat â€” salin sekarang', true);
     await loadConnect();
     const el = document.getElementById('connect-key-once');
     if (el && data?.key) {
-      el.textContent = data.key + '\n\n' + (data.note || 'Simpan sekarang — tidak ditampilkan ulang.');
+      el.textContent = data.key + '\n\n' + (data.note || 'Simpan sekarang â€” tidak ditampilkan ulang.');
       el.classList.remove('hidden');
     }
   } catch (e) {
@@ -369,7 +268,7 @@ async function deleteConnectKey(id) {
 async function loadConnect() {
   const root = document.getElementById('connect-body');
   if (!root) return false;
-  root.innerHTML = `<p class="text-sm text-muted m-0">Memuat…</p>`;
+  root.innerHTML = `<p class="text-sm text-muted m-0">Memuatâ€¦</p>`;
   try {
     const st = await Threads.api('/api/connect/keys');
     renderConnect(st);
@@ -381,79 +280,8 @@ async function loadConnect() {
 }
 
 async function loadAllKeys() {
-  const results = await Promise.all([loadGemini(), loadOpenAI(), loadConnect()]);
+  const results = await Promise.all([loadAI(), loadConnect()]);
   return results.every(Boolean);
-}
-
-function card(a) {
-  const active = a.active ? ' is-active-acct' : '';
-  const open = expandedId === a.id;
-  const handle = a.threads_username ? '@' + a.threads_username.replace(/^@/, '') : a.name || a.id;
-  return `<section class="th-panel akun-card${active}${open ? ' is-open' : ''}" data-id="${Threads.escapeHtml(a.id)}">
-    <div class="akun-card-summary">
-      <div class="min-w-0">
-        <div class="font-semibold truncate">${Threads.escapeHtml(handle)}</div>
-        <div class="text-xs text-muted truncate">${Threads.escapeHtml(a.name || a.id)}${a.active ? ' · aktif' : ''}</div>
-      </div>
-      <div class="akun-card-meta">
-        ${pill(a.threads_connected, a.threads_connected ? 'Threads' : 'Threads —')}
-        ${pill(a.instagram_connected, a.instagram_connected ? 'IG' : 'IG —')}
-        ${pill(!!a.buffer_enabled, a.buffer_enabled ? 'Buffer' : 'Buffer —')}
-        ${pill(a.lazy_enabled, a.lazy_enabled ? 'Lazy' : 'Lazy off')}
-        ${a.active
-          ? `<span class="th-chip th-chip-ok">Aktif</span>`
-          : `<button type="button" class="th-btn th-btn-soft text-xs" data-switch>Buka</button>`}
-        <button type="button" class="th-btn th-btn-ghost text-xs" data-toggle-detail aria-expanded="${open ? 'true' : 'false'}">
-          ${open ? 'Tutup' : 'Kelola'} <i class="bi bi-chevron-${open ? 'up' : 'down'}"></i>
-        </button>
-      </div>
-    </div>
-    ${open ? `
-    <div class="th-panel-body akun-card-detail border-t border-line">
-      <div class="grid gap-4 md:grid-cols-2">
-        <div class="md:col-span-2">
-          <label class="th-label">Nama tampilan</label>
-          <div class="flex gap-2">
-            <input class="th-input" data-name value="${Threads.escapeHtml(a.name || '')}" placeholder="bimosept">
-            <button type="button" class="th-btn th-btn-ghost" data-rename>Simpan</button>
-          </div>
-        </div>
-        <div>
-          <label class="th-label">Threads</label>
-          <div class="flex gap-2 mb-2 flex-wrap">
-            <button type="button" class="th-btn th-btn-primary text-xs" data-oauth-threads>
-              <i class="bi bi-at"></i> Login dengan Threads
-            </button>
-            <button type="button" class="th-btn th-btn-ghost text-xs" data-clear-threads>Hapus</button>
-          </div>
-          <input class="th-input" type="password" data-threads-token placeholder="Atau tempel long-lived token" autocomplete="off">
-          <div class="flex gap-2 mt-2 flex-wrap">
-            <button type="button" class="th-btn th-btn-soft text-xs" data-save-threads>Simpan token manual</button>
-          </div>
-        </div>
-        <div>
-          <label class="th-label">Instagram</label>
-          <div class="flex gap-2 mb-2 flex-wrap">
-            <button type="button" class="th-btn th-btn-primary text-xs" data-oauth-ig>
-              <i class="bi bi-instagram"></i> Login dengan Instagram
-            </button>
-            <button type="button" class="th-btn th-btn-ghost text-xs" data-clear-ig>Hapus</button>
-          </div>
-          <input class="th-input" type="password" data-ig-token placeholder="Atau tempel long-lived token" autocomplete="off">
-          <div class="flex gap-2 mt-2 flex-wrap">
-            <button type="button" class="th-btn th-btn-soft text-xs" data-save-ig>Simpan token manual</button>
-          </div>
-        </div>
-        <div class="md:col-span-2 border-t border-line pt-4" data-buffer-body>
-          <p class="text-sm text-muted m-0">Memuat Buffer…</p>
-        </div>
-        <div class="md:col-span-2 flex justify-between items-center gap-2 flex-wrap">
-          <p class="text-xs text-muted m-0">Lazy, AI memory, dan Buffer tersimpan per akun.</p>
-          ${a.active ? '' : `<button type="button" class="th-btn th-btn-ghost text-xs text-danger" data-delete>Hapus akun</button>`}
-        </div>
-      </div>
-    </div>` : ''}
-  </section>`;
 }
 
 async function loadOrgBreadcrumb() {
@@ -463,50 +291,146 @@ async function loadOrgBreadcrumb() {
     const org = await Threads.api('/api/org');
     const t = org.tenant?.name || org.tenant?.id || 'Tenant';
     const w = org.workspace?.name || org.workspace?.id || 'Workspace';
-    el.textContent = `${t} · workspace ${w} · ${org.account_count || 0} akun brand`;
+    el.textContent = `${t} Â· workspace ${w}`;
   } catch {
-    el.textContent = 'Tenant · Workspace';
+    el.textContent = 'Tenant Â· Workspace';
   }
 }
 
-function consumeOAuthFlash() {
-  const q = new URLSearchParams(location.search);
-  const st = q.get('oauth');
-  if (!st) return;
-  const provider = q.get('provider') || 'oauth';
-  const msg = q.get('msg') || '';
-  if (st === 'ok') {
-    const okMsg = msg || `${provider} terhubung via login Meta.`;
-    showAlert(okMsg, true);
-    Threads.toast(msg ? 'Terhubung (cek catatan)' : `${provider} terhubung`, true);
-  } else {
-    showAlert(msg || `${provider} gagal dihubungkan.`, false);
-    Threads.toast(msg || 'OAuth gagal', false);
+function platformOptions(platform, selected, preferred) {
+  const list = replizAccounts.filter((a) => String(a.type || '').toLowerCase() === platform);
+  const wanted = String(preferred || '').replace(/^@/, '').toLowerCase();
+  if (!selected && wanted) {
+    const matches = list.filter((a) => String(a.username || '').replace(/^@/, '').toLowerCase() === wanted);
+    if (matches.length === 1) selected = matches[0].id || matches[0]._id || matches[0].accountId || '';
   }
-  q.delete('oauth');
-  q.delete('provider');
-  q.delete('msg');
-  const next = location.pathname + (q.toString() ? '?' + q.toString() : '');
-  history.replaceState({}, '', next);
+  const options = [`<option value="">Belum dipilih</option>`];
+  list.forEach((a) => {
+    const id = a.id || a._id || a.accountId || '';
+    const handle = a.username ? '@' + String(a.username).replace(/^@/, '') : (a.name || id);
+    options.push(`<option value="${Threads.escapeHtml(id)}"${id === selected ? ' selected' : ''}>${Threads.escapeHtml(handle)}</option>`);
+  });
+  return options.join('');
+}
+
+function card(a, activeId) {
+  const id = a.id;
+  const active = id === activeId;
+  return `<section class="th-panel akun-card${active ? ' is-active-acct' : ''}" data-id="${Threads.escapeHtml(id)}">
+    <div class="akun-card-summary">
+      <div class="flex items-center gap-3 min-w-0">
+        <div class="sb-avatar shrink-0">${Threads.escapeHtml(String(a.name || id).slice(0, 2).toUpperCase())}</div>
+        <div class="min-w-0">
+          <div class="font-semibold truncate">${Threads.escapeHtml(a.name || id)}</div>
+          <div class="text-xs text-muted truncate">Workspace ${active ? '· aktif' : ''}</div>
+        </div>
+      </div>
+      <div class="akun-card-meta">
+        ${active
+          ? `<span class="th-chip th-chip-ok">Dipakai sekarang</span>`
+          : `<button type="button" class="th-btn th-btn-soft text-xs" data-switch>Pakai</button>`}
+        ${active ? '' : `<button type="button" class="th-btn th-btn-ghost text-xs text-danger" data-delete>Hapus</button>`}
+      </div>
+    </div>
+    <div class="th-panel-body grid gap-3">
+      <div><label class="th-label">Nama workspace</label><input class="th-input" data-workspace-name value="${Threads.escapeHtml(a.name || '')}"></div>
+      <div class="grid md:grid-cols-3 gap-3">
+        <div><label class="th-label"><i class="bi bi-at"></i> Threads</label><select class="th-input" data-platform="threads">${platformOptions('threads', a.repliz_threads_id, a.threads_username || a.name)}</select></div>
+        <div><label class="th-label"><i class="bi bi-instagram"></i> Instagram</label><select class="th-input" data-platform="instagram">${platformOptions('instagram', a.repliz_instagram_id, a.instagram_username || a.name)}</select></div>
+        <div><label class="th-label"><i class="bi bi-tiktok"></i> TikTok</label><select class="th-input" data-platform="tiktok">${platformOptions('tiktok', a.repliz_tiktok_id, a.tiktok_username || a.name)}</select></div>
+      </div>
+      <div><button type="button" class="th-btn th-btn-primary text-xs" data-save-workspace><i class="bi bi-check2"></i> Simpan pasangan akun</button></div>
+    </div>
+  </section>`;
 }
 
 async function load() {
   const root = document.getElementById('akun-list');
-  root.innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">Memuat…</p></div>`;
+  root.innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">Memuat workspace…</p></div>`;
   loadOrgBreadcrumb();
   try {
     const data = await Threads.api('/api/accounts');
     const list = data.accounts || [];
+    replizAccounts = data.repliz_accounts || [];
+    const activeId = data.active_id || '';
     if (!list.length) {
-      root.innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">Belum ada akun. Klik Tambah akun.</p></div>`;
+      root.innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">Belum ada workspace. Klik Workspace baru.</p></div>`;
       return;
     }
-    if (expandedId && !list.some((a) => a.id === expandedId)) expandedId = null;
-    root.innerHTML = list.map(card).join('');
-    if (expandedId) await loadBufferFor(expandedId);
+    root.innerHTML = list.map((a) => card(a, activeId)).join('');
   } catch (e) {
     root.innerHTML = `<div class="th-empty py-10"><p class="text-sm text-muted">${Threads.escapeHtml(e.message)}</p></div>`;
   }
+}
+
+function oauthRedirectURL(platform, accountId) {
+  const u = new URL(location.href);
+  const port = u.port || (u.protocol === 'https:' ? '443' : '80');
+  const origin = (u.hostname === 'localhost' || u.hostname === '127.0.0.1')
+    ? `${u.protocol}//127.0.0.1.sslip.io:${port}`
+    : u.origin;
+  let path = '/auth/repliz/' + encodeURIComponent(platform);
+  if (accountId) path += '/' + encodeURIComponent(accountId);
+  return origin + path;
+}
+
+async function startSocialConnect(platform, accountId) {
+  platform = String(platform || '').toLowerCase();
+  try {
+    sessionStorage.setItem('mn_repliz_oauth', JSON.stringify({ platform, accountId: accountId || '', t: Date.now() }));
+    const redirect = oauthRedirectURL(platform, accountId);
+    const q = new URLSearchParams({ platform, redirect });
+    const d = await Threads.api('/api/repliz/authorize?' + q.toString());
+    if (!d?.url) throw new Error('Repliz tidak mengirim URL otorisasi');
+    location.href = d.url;
+  } catch (e) {
+    sessionStorage.removeItem('mn_repliz_oauth');
+    Threads.toast(e.message || 'Gagal memulai OAuth Repliz', false);
+  }
+}
+
+function parseOAuthPath() {
+  const m = String(location.pathname || '').match(/^\/auth\/repliz\/([a-z0-9]+)(?:\/([^/]+))?/i);
+  if (!m) return null;
+  return { platform: m[1].toLowerCase(), accountId: decodeURIComponent(m[2] || '') };
+}
+
+async function consumeOAuthReturn() {
+  const q = new URLSearchParams(location.search);
+  const h = new URLSearchParams(String(location.hash || '').replace(/^#/, ''));
+  const code = q.get('code') || h.get('code') || '';
+  const err = q.get('error_description') || q.get('error') || '';
+  const fromPath = parseOAuthPath();
+  let stored = null;
+  try { stored = JSON.parse(sessionStorage.getItem('mn_repliz_oauth') || 'null'); } catch {}
+  const pending = fromPath || (stored?.platform ? stored : null);
+  if (!fromPath && !code && !err) return;
+  sessionStorage.removeItem('mn_repliz_oauth');
+  if (err) {
+    showAlert(err, false);
+    history.replaceState({}, '', Threads.appUrl('/akun'));
+    return;
+  }
+  if (!pending?.platform || !code) {
+    history.replaceState({}, '', Threads.appUrl('/akun'));
+    return;
+  }
+  try {
+    await Threads.api('/api/repliz/connect', {
+      method: 'POST',
+      body: JSON.stringify({
+        platform: pending.platform,
+        code,
+        account_id: pending.accountId || '',
+      }),
+    });
+    Threads.toast('Akun Repliz terhubung', true);
+    showAlert('Akun terhubung lewat Repliz.', true);
+  } catch (e) {
+    showAlert(e.message, false);
+    Threads.toast(e.message, false);
+  }
+  history.replaceState({}, '', Threads.appUrl('/akun'));
 }
 
 document.querySelectorAll('.akun-tab').forEach((btn) => {
@@ -514,23 +438,21 @@ document.querySelectorAll('.akun-tab').forEach((btn) => {
 });
 
 document.getElementById('btn-add').onclick = async () => {
-  const name = await Threads.prompt('Isi nama tampilan atau handle (tanpa @).', {
-    title: 'Tambah akun',
-    placeholder: 'contoh: bimosept',
-    okLabel: 'Tambah akun',
-  });
-  if (name == null) return;
-  const trimmed = name.trim();
-  if (!trimmed) return Threads.toast('Isi nama akun', false);
+  const name = prompt('Nama workspace / brand:', 'Workspace baru');
+  if (!name?.trim()) return;
   try {
-    const created = await Threads.api('/api/accounts', { method: 'POST', body: JSON.stringify({ name: trimmed }) });
-    Threads.toast('Akun ditambah', true);
-    if (created?.account?.id) expandedId = created.account.id;
+    const data = await Threads.api('/api/accounts', { method: 'POST', body: JSON.stringify({ name: name.trim() }) });
+    if (data?.account?.id) await Threads.api('/api/accounts/switch', { method: 'POST', body: JSON.stringify({ id: data.account.id }) });
+    Threads.toast('Workspace dibuat', true);
     await load();
-  } catch (e) {
-    Threads.toast(e.message, false);
-  }
+  } catch (e) { Threads.toast(e.message, false); }
 };
+
+document.getElementById('repliz-connect')?.addEventListener('click', (e) => {
+  const btn = e.target.closest('[data-connect]');
+  if (!btn) return;
+  startSocialConnect(btn.getAttribute('data-connect'));
+});
 
 document.getElementById('btn-keys-refresh')?.addEventListener('click', async () => {
   const ok = await loadAllKeys();
@@ -542,16 +464,10 @@ document.getElementById('akun-list').addEventListener('click', async (e) => {
   if (!cardEl) return;
   const id = cardEl.dataset.id;
 
-  if (e.target.closest('[data-toggle-detail]')) {
-    expandedId = expandedId === id ? null : id;
-    await load();
-    return;
-  }
-
   if (e.target.closest('[data-switch]')) {
     try {
       await Threads.api('/api/accounts/switch', { method: 'POST', body: JSON.stringify({ id }) });
-      Threads.toast('Akun aktif diganti', true);
+      Threads.toast('Workspace aktif diganti', true);
       location.reload();
     } catch (err) {
       Threads.toast(err.message, false);
@@ -559,121 +475,29 @@ document.getElementById('akun-list').addEventListener('click', async (e) => {
     return;
   }
 
-  if (e.target.closest('[data-rename]')) {
-    const name = cardEl.querySelector('[data-name]')?.value?.trim();
-    if (!name) return Threads.toast('Isi nama tampilan', false);
+  if (e.target.closest('[data-save-workspace]')) {
+    const payload = {
+      name: cardEl.querySelector('[data-workspace-name]')?.value?.trim() || id,
+      repliz_threads_id: cardEl.querySelector('[data-platform="threads"]')?.value || '',
+      repliz_instagram_id: cardEl.querySelector('[data-platform="instagram"]')?.value || '',
+      repliz_tiktok_id: cardEl.querySelector('[data-platform="tiktok"]')?.value || '',
+    };
     try {
-      await Threads.api('/api/accounts/' + encodeURIComponent(id), {
-        method: 'PATCH',
-        body: JSON.stringify({ name }),
-      });
-      Threads.toast('Nama disimpan', true);
-      expandedId = id;
+      await Threads.api('/api/accounts/' + encodeURIComponent(id), { method: 'PATCH', body: JSON.stringify(payload) });
+      Threads.toast('Workspace tersimpan', true);
       await load();
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
-    return;
-  }
-
-  if (e.target.closest('[data-oauth-threads]')) {
-    try {
-      const data = await Threads.api('/api/oauth/threads/start?account_id=' + encodeURIComponent(id));
-      if (!data?.url) throw new Error('URL OAuth kosong');
-      location.href = data.url;
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
-    return;
-  }
-
-  if (e.target.closest('[data-oauth-ig]')) {
-    try {
-      const data = await Threads.api('/api/oauth/instagram/start?account_id=' + encodeURIComponent(id));
-      if (!data?.url) throw new Error('URL OAuth kosong');
-      location.href = data.url;
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
-    return;
-  }
-
-  if (e.target.closest('[data-save-threads]')) {
-    const token = cardEl.querySelector('[data-threads-token]')?.value?.trim();
-    if (!token) return Threads.toast('Isi token Threads', false);
-    try {
-      await Threads.api('/api/accounts/' + encodeURIComponent(id) + '/threads-token', {
-        method: 'POST',
-        body: JSON.stringify({ token }),
-      });
-      Threads.toast('Token Threads tersimpan', true);
-      showAlert('Threads terhubung untuk akun ini.', true);
-      expandedId = id;
-      await load();
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
-    return;
-  }
-
-  if (e.target.closest('[data-clear-threads]')) {
-    if (!(await Threads.confirm('Hapus token Threads akun ini?', {
-      title: 'Hapus token Threads',
-      okLabel: 'Hapus token',
-    }))) return;
-    try {
-      await Threads.api('/api/accounts/' + encodeURIComponent(id) + '/threads-token', { method: 'DELETE' });
-      Threads.toast('Token Threads dihapus', true);
-      expandedId = id;
-      await load();
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
-    return;
-  }
-
-  if (e.target.closest('[data-save-ig]')) {
-    const token = cardEl.querySelector('[data-ig-token]')?.value?.trim();
-    if (!token) return Threads.toast('Isi token Instagram', false);
-    try {
-      await Threads.api('/api/accounts/' + encodeURIComponent(id) + '/ig-token', {
-        method: 'POST',
-        body: JSON.stringify({ token }),
-      });
-      Threads.toast('Token IG tersimpan', true);
-      expandedId = id;
-      await load();
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
-    return;
-  }
-
-  if (e.target.closest('[data-clear-ig]')) {
-    if (!(await Threads.confirm('Hapus token Instagram akun ini?', {
-      title: 'Hapus token Instagram',
-      okLabel: 'Hapus token',
-    }))) return;
-    try {
-      await Threads.api('/api/accounts/' + encodeURIComponent(id) + '/ig-token', { method: 'DELETE' });
-      Threads.toast('Token IG dihapus', true);
-      expandedId = id;
-      await load();
-    } catch (err) {
-      Threads.toast(err.message, false);
-    }
+    } catch (err) { Threads.toast(err.message, false); }
     return;
   }
 
   if (e.target.closest('[data-delete]')) {
-    if (!(await Threads.confirm('Hapus akun dari daftar? File data di disk tetap ada.', {
-      title: 'Hapus akun',
-      okLabel: 'Hapus akun',
+    if (!(await Threads.confirm('Hapus workspace ini? Akun Repliz tidak ikut terhapus.', {
+      title: 'Hapus workspace',
+      okLabel: 'Hapus',
     }))) return;
     try {
       await Threads.api('/api/accounts/' + encodeURIComponent(id), { method: 'DELETE' });
-      Threads.toast('Akun dihapus dari daftar', true);
-      if (expandedId === id) expandedId = null;
+      Threads.toast('Workspace dihapus', true);
       await load();
     } catch (err) {
       Threads.toast(err.message, false);
@@ -683,5 +507,4 @@ document.getElementById('akun-list').addEventListener('click', async (e) => {
 
 const initialTab = new URLSearchParams(location.search).get('tab') === 'keys' ? 'keys' : 'workspace';
 setTab(initialTab);
-consumeOAuthFlash();
-load();
+consumeOAuthReturn().then(() => load());

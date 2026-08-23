@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Generate Konten — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=ns25" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -16,10 +16,13 @@
     <div>
       <p class="th-eyebrow">Konten</p>
       <h1 class="th-title">Generate</h1>
-      <p class="th-lead">AI bikin draf utas Threads + thumbnail 4:3. Preview dulu, publish lewat Buat Post.</p>
+      <p class="th-lead">Tarik awareness lewat insight yang berguna, lalu jembatani produk secara halus di akhir utas.</p>
     </div>
     <div class="th-toolbar flex-wrap items-center gap-2">
-      <a class="th-btn th-btn-ghost text-xs" href="/app/buat.html"><i class="bi bi-pencil-square"></i> Buat Post</a>
+      <a class="th-btn th-btn-ghost text-xs" href="/app/buat"><i class="bi bi-pencil-square"></i> Buat Post</a>
+      <button id="btn-cancel-generate" class="th-btn th-btn-ghost" type="button" hidden>
+        <i class="bi bi-x-lg"></i> Batalkan
+      </button>
       <button id="btn-generate" class="th-btn th-btn-primary" type="button">
         <i class="bi bi-magic"></i> Generate
       </button>
@@ -33,78 +36,108 @@
       <div class="gen-setup-top">
         <div>
           <p class="buat-kicker">Brief</p>
-          <p class="buat-hint">Topik hari ini + niche. Instruksi tetap bisa diubah kalau perlu.</p>
+          <p class="buat-hint">Produk menjadi tujuan bisnis. Topik dan insight dipakai untuk menarik calon pengguna tanpa hard selling.</p>
         </div>
         <div class="gen-setup-opts">
           <label class="gen-toggle">
             <input type="checkbox" id="auto-thumb" checked>
             <span>Auto thumbnail</span>
           </label>
-          <span id="thumb-preset" class="th-chip">gpt-image-2 — 1024x768</span>
+          <span id="thumb-preset" class="th-chip">cx/gpt-5.5-image — 4:5</span>
+          <a class="th-btn th-btn-ghost text-xs" href="/app/cover-templates"><i class="bi bi-layout-text-window-reverse"></i> Pilih template</a>
         </div>
       </div>
 
       <div class="gen-setup-body">
         <div class="gen-topic-block">
-          <label class="th-label" for="topic">Topik hari ini</label>
-          <input id="topic" class="th-input gen-topic-input" placeholder="Mis. WA blast — face recognition SIM — infrastruktur internet">
+          <label class="th-label" for="topic">Brief konten kali ini</label>
+          <textarea id="topic" class="th-textarea gen-topic-input" rows="5" placeholder="Tulis tujuan, target pembaca, masalah/angle, produk yang ingin dijembatani, gaya, hal yang wajib masuk, dan hal yang harus dihindari. Brief ini mengalahkan niche akun."></textarea>
         </div>
+
+        <details class="buat-advanced gen-instructions" open>
+          <summary>Produk yang mau di-soft-sell</summary>
+          <div class="gen-instructions-body">
+            <p class="buat-hint mt-0">Tempel seluruh knowledge produk di sini. Sertakan produk, target pengguna, masalah, cara kerja, fitur, bukti, batasan klaim, positioning, serta CTA yang diinginkan.</p>
+            <label class="th-label" for="product-knowledge">Knowledge dan instruksi produk</label>
+            <textarea id="product-knowledge" class="th-textarea" rows="12" placeholder="Nama produk: ...&#10;Target pengguna: ...&#10;Masalah yang diselesaikan: ...&#10;Cara kerja/fitur: ...&#10;Bukti yang aman disebut: ...&#10;Jangan klaim: ...&#10;CTA lembut: ..."></textarea>
+            <div class="flex flex-wrap gap-2 mt-2">
+              <button id="btn-save-product" class="th-btn th-btn-soft text-xs" type="button">Simpan knowledge produk</button>
+              <span id="product-status" class="text-xs text-muted self-center"></span>
+            </div>
+          </div>
+        </details>
 
         <div class="gen-setup-grid">
           <div>
-            <label class="th-label" for="niche">Niche akun</label>
-            <textarea id="niche" class="th-textarea" rows="4" placeholder="Satu niche per baris"></textarea>
+            <label class="th-label" for="niche">Niche akun (fallback)</label>
+            <textarea id="niche" class="th-textarea" rows="4" placeholder="Dipakai hanya saat brief kosong. Satu niche per baris."></textarea>
             <button id="btn-save-niche" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan niche</button>
           </div>
           <div>
-            <label class="th-label" for="brand">Nama brand</label>
-            <input id="brand" class="th-input" placeholder="Muncul di carousel IG">
+            <label class="th-label" for="brand">Brand visual (opsional)</label>
+            <input id="brand" class="th-input" placeholder="Hanya untuk thumbnail/carousel">
             <button id="btn-save-brand" class="th-btn th-btn-soft text-xs mt-2" type="button">Simpan brand</button>
-            <p class="buat-hint mt-2">Utas ? Threads. Brand dipakai saat bawa ke carousel IG.</p>
+            <p class="buat-hint mt-2">Tidak dikirim ke pipeline konten. Hanya dipakai untuk handle thumbnail/carousel.</p>
           </div>
         </div>
 
         <details class="buat-advanced gen-instructions">
-          <summary>Instruksi AI (style & larangan)</summary>
+          <summary>Prompt gambar</summary>
           <div class="gen-instructions-body">
-            <textarea id="instructions" class="th-textarea" rows="10" placeholder="Aturan tetap gaya tulisan…"></textarea>
+            <p class="buat-hint mt-0">Ini seluruh prompt kreatif yang dikirim ke model gambar. Edit langsung di sini. {{hook}}, {{brand}}, {{lokasi}}, dan {{cover_brief}} akan diisi otomatis.</p>
+            <textarea id="thumb-prompt" class="th-textarea" rows="12" placeholder="Arah visual thumbnail…"></textarea>
             <div class="flex flex-wrap gap-2 mt-2">
-              <button id="btn-save-instructions" class="th-btn th-btn-soft text-xs" type="button">Simpan instruksi</button>
-              <button id="btn-fill-template" class="th-btn th-btn-ghost text-xs" type="button">Isi template edukasi</button>
-              <span id="instructions-status" class="text-xs text-muted self-center"></span>
+              <button id="btn-reset-thumb-prompt" class="th-btn th-btn-ghost text-xs" type="button">Kembalikan default</button>
+              <span class="text-xs text-muted self-center">Tidak ada arahan visual tersembunyi yang ditambahkan sesudah prompt ini.</span>
+            </div>
+            <details class="mt-2">
+              <summary class="text-xs">Lihat prompt gambar setelah variabel diisi</summary>
+              <textarea id="thumb-prompt-preview" class="th-textarea mt-2" rows="8" readonly></textarea>
+            </details>
+          </div>
+        </details>
+
+        <details class="buat-advanced gen-instructions">
+          <summary>Prompt utas</summary>
+          <div class="gen-instructions-body">
+            <p class="buat-hint mt-0">Ini prompt kreatif yang dikirim ke ChatGPT via 9router untuk menulis utas, hook cover, dan brief gambar. Edit lalu simpan. Format JSON, web research, evidence, dan keamanan tetap dijaga aplikasi agar output tidak rusak.</p>
+            <textarea id="editorial-prompt" class="th-textarea" rows="18" placeholder="Memuat prompt utas…"></textarea>
+            <div class="flex flex-wrap gap-2 mt-2">
+              <button id="btn-save-editorial-prompt" class="th-btn th-btn-soft text-xs" type="button">Simpan prompt</button>
+              <button id="btn-reset-editorial-prompt" class="th-btn th-btn-ghost text-xs" type="button">Kembalikan default</button>
+              <span id="editorial-prompt-status" class="text-xs text-muted self-center"></span>
             </div>
           </div>
         </details>
       </div>
 
       <div class="gen-setup-foot">
-        <p class="buat-hint m-0">Generate menghasilkan 2 draf utas. Thumbnail butuh OpenAI key di API keys workspace.</p>
+        <p class="buat-hint m-0">Satu draf product-led: awareness dulu, soft selling di bagian akhir.</p>
         <button type="button" class="th-btn th-btn-primary" id="btn-generate-foot">
           <i class="bi bi-magic"></i> Generate sekarang
         </button>
       </div>
     </section>
 
-    <aside class="gen-aside">
-      <section class="th-panel">
-        <div class="th-panel-head">Alur</div>
-        <div class="th-panel-body">
-          <ol class="gen-steps">
-            <li><strong>Brief</strong> — topik + niche</li>
-            <li><strong>Generate</strong> — 2 draf utas</li>
-            <li><strong>Thumbnail</strong> — preview 4:3</li>
-            <li><strong>Ke Buat Post</strong> — publish</li>
-          </ol>
-        </div>
-      </section>
-      <section class="th-panel hidden" id="consideration-box">
-        <div class="th-panel-head">Pertimbangan AI</div>
-        <div class="th-panel-body">
-          <p id="consideration" class="gen-consideration m-0"></p>
-        </div>
-      </section>
-    </aside>
   </div>
+
+  <section class="gen-progress-panel" aria-label="Status generate">
+    <div class="gen-progress-copy">
+      <span class="gen-progress-title">Pipeline</span>
+      <span id="gen-pipeline-status" class="buat-hint">Isi brief, lalu Generate.</span>
+    </div>
+    <ol class="gen-pipeline" id="gen-pipeline" aria-label="Progress generate">
+      <li data-step="intent" data-group="editorial"><span class="gp-mark"></span><span class="gp-label">Intent</span></li>
+      <li data-step="research"><span class="gp-mark"></span><span class="gp-label">Research</span></li>
+      <li data-step="strategy" data-group="editorial"><span class="gp-mark"></span><span class="gp-label">Strategy</span></li>
+      <li data-step="story" data-group="editorial"><span class="gp-mark"></span><span class="gp-label">Story</span></li>
+      <li data-step="copy" data-group="editorial"><span class="gp-mark"></span><span class="gp-label">Copy</span></li>
+      <li data-step="visual" data-group="editorial"><span class="gp-mark"></span><span class="gp-label">Visual</span></li>
+      <li data-step="preview"><span class="gp-mark"></span><span class="gp-label">Preview</span></li>
+      <li data-step="review"><span class="gp-mark"></span><span class="gp-label">Review</span></li>
+      <li data-step="export"><span class="gp-mark"></span><span class="gp-label">Ready</span></li>
+    </ol>
+  </section>
 
   <section class="gen-results">
     <div class="gen-results-head">
@@ -119,9 +152,24 @@
       </div>
     </div>
   </section>
+
+  <section class="gen-support-grid" aria-label="Detail hasil generate">
+    <details class="gen-support-card hidden" id="consideration-box">
+      <summary><span>Catatan editorial</span><i class="bi bi-chevron-down"></i></summary>
+      <div class="gen-support-body"><p id="consideration" class="gen-consideration m-0"></p></div>
+    </details>
+    <details class="gen-support-card hidden" id="strategy-box">
+      <summary><span>Strategy</span><i class="bi bi-chevron-down"></i></summary>
+      <div class="gen-support-body" id="strategy-body"></div>
+    </details>
+    <details class="gen-support-card hidden" id="sources-box">
+      <summary><span>Sources</span><i class="bi bi-chevron-down"></i></summary>
+      <div class="gen-support-body" id="sources-body"></div>
+    </details>
+  </section>
 </main>
-<script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/generate.js?v=strand27"></script>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+  <script src="/js/pages/generate.js?v=ns47"></script>
 </body>
 </html>

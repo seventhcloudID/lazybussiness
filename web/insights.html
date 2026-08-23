@@ -3,148 +3,182 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Insight — Threads Dashboard</title>
+<title>Insight akun · malesngonten</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=ns10" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
 <body>
 <nav id="sidebar"></nav>
-<main class="ins-page">
-  <header class="th-page-head">
-    <div>
-      <p class="th-eyebrow">Analitik</p>
-      <h1 class="th-title">Insight Akun</h1>
-      <p class="th-lead">Baca performa periode ini — mana yang jalan, mana yang perlu digeser.</p>
-    </div>
-    <div class="th-toolbar">
-      <div class="th-preset" id="insights-presets">
-        <button type="button" data-days="7">7h</button>
-        <button type="button" data-days="30" class="active">30h</button>
-        <button type="button" data-days="90">90h</button>
-        <button type="button" data-days="0">Semua</button>
+<main class="ns-shell">
+  <header class="ns-topbar">
+    <div class="ns-topbar-inner">
+      <div class="ns-topbar-row">
+        <div class="min-w-0">
+          <h1 class="ns-topbar-title">Insight akun</h1>
+          <p class="ns-topbar-sub" id="insights-range-label">Memuat rentang…</p>
+        </div>
+        <div class="ns-topbar-actions">
+          <select id="repliz-account" class="max-w-[240px] rounded-lg border border-line bg-surface px-2.5 py-2 text-[12.5px] text-ink" aria-label="Akun Repliz"></select>
+          <div role="tablist" aria-label="Rentang waktu" class="flex rounded-lg border border-line bg-surface p-0.5" id="insights-presets">
+            <button type="button" role="tab" class="period" data-days="7">7 hari</button>
+            <button type="button" role="tab" class="period period-on" aria-selected="true" data-days="30">30 hari</button>
+            <button type="button" role="tab" class="period" data-days="90">90 hari</button>
+            <button type="button" role="tab" class="period" data-days="0">Semua</button>
+          </div>
+          <a href="/app/ai-insight" class="hidden sm:inline-flex items-center gap-1.5 rounded-lg bg-iris px-3 py-2 text-[12.5px] font-semibold text-white hover:brightness-110 transition">
+            Analisis AI
+          </a>
+          <button type="button" id="btn-insights" class="grid h-9 w-9 place-items-center rounded-lg border border-line bg-surface text-muted hover:text-ink transition" aria-label="Muat ulang data">
+            <i class="bi bi-arrow-clockwise"></i>
+          </button>
+        </div>
       </div>
-      <button id="btn-insights" class="th-btn th-btn-soft" title="Muat ulang"><i class="bi bi-arrow-clockwise"></i></button>
     </div>
   </header>
 
-  <div id="insights-alert" class="th-alert hidden"></div>
+  <div class="ns-wrap">
+    <div id="insights-alert" class="th-alert hidden"></div>
+    <input type="date" id="insights-since" class="hidden">
+    <input type="date" id="insights-until" class="hidden">
 
-  <div id="insights-body">
-    <section class="ins-hero" aria-label="Ringkasan engagement">
-      <div class="ins-hero-glow" aria-hidden="true"></div>
-      <div class="ins-hero-grid">
-        <div class="ins-hero-er">
-          <p class="ins-kicker">Engagement rate</p>
-          <p class="ins-er-value" id="hero-eng-rate">—</p>
-          <p class="ins-er-sub" id="hero-eng-hint">Dari views periode terpilih</p>
-        </div>
-        <div class="ins-hero-side">
-          <div class="ins-hero-stat">
-            <span class="ins-kicker">Total interaksi</span>
-            <strong id="hero-eng">—</strong>
-            <span class="ins-meta" id="hero-posts-hint">—</span>
-          </div>
-          <div class="ins-mix">
-            <div class="ins-mix-head">
-              <span class="ins-kicker">Komposisi</span>
-              <span class="ins-meta" id="mix-total-label">—</span>
+    <div id="insights-body">
+      <!-- HERO -->
+      <section class="ns-card">
+        <div class="grid lg:grid-cols-[minmax(0,1.15fr)_minmax(0,1fr)]">
+          <div class="border-b border-line p-6 lg:border-b-0 lg:border-r sm:p-7">
+            <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted">Engagement rate</p>
+            <div class="mt-3 flex flex-wrap items-end gap-x-4 gap-y-2">
+              <span class="font-display text-[62px] font-extrabold leading-[0.85] tracking-tight tnum" id="hero-er">—</span>
+              <span id="hero-delta" class="mb-1.5 inline-flex items-center gap-1 rounded-md px-2 py-1 text-[12.5px] font-semibold" hidden></span>
             </div>
-            <div class="ins-mix-bar" id="mix-bar" role="img" aria-label="Komposisi interaksi"></div>
-            <ul class="ins-mix-legend" id="mix-legend"></ul>
+            <p class="mt-3 max-w-[46ch] text-[13.5px] leading-relaxed text-ink-600" id="hero-copy">Memuat…</p>
+            <div class="mt-6">
+              <div class="mb-2 flex items-baseline justify-between text-[11px] text-muted">
+                <span>ER harian</span>
+                <span class="tnum font-mono" id="spark-peak-label">—</span>
+              </div>
+              <svg viewBox="0 0 560 96" class="h-[96px] w-full" preserveAspectRatio="none" role="img" aria-label="Grafik ER harian">
+                <defs>
+                  <linearGradient id="gfill" x1="0" y1="0" x2="0" y2="1">
+                    <stop offset="0%" stop-color="#7B6CF6" stop-opacity="0.28"/>
+                    <stop offset="100%" stop-color="#7B6CF6" stop-opacity="0"/>
+                  </linearGradient>
+                </defs>
+                <line x1="0" y1="72" x2="560" y2="72" stroke="#242836" stroke-width="1"/>
+                <path id="spark-fill" fill="url(#gfill)"></path>
+                <polyline id="spark-line" fill="none" stroke="#9A8FFF" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"></polyline>
+                <circle id="spark-peak" r="4" fill="#3DDC97" stroke="#0A0B0F" stroke-width="2"></circle>
+              </svg>
+            </div>
+          </div>
+
+          <div class="p-6 sm:p-7">
+            <div class="flex items-baseline justify-between">
+              <p class="text-[11px] font-semibold uppercase tracking-[0.14em] text-muted" id="mix-heading">Isi interaksi</p>
+              <span class="text-[11px] text-muted" id="mix-posts">—</span>
+            </div>
+            <div class="mt-4 flex h-2.5 w-full overflow-hidden rounded-full" id="mix-bar"></div>
+            <ul class="mt-5 divide-y divide-line" id="mix-legend"></ul>
+            <p class="mt-4 rounded-lg bg-canvas px-3 py-2.5 text-[12.5px] leading-relaxed text-muted" id="mix-note">—</p>
           </div>
         </div>
-      </div>
-      <div class="ins-meta-row">
-        <span id="insights-source">Sumber: —</span>
-        <span id="insights-range">Rentang: —</span>
-        <input type="date" id="insights-since" class="hidden">
-        <input type="date" id="insights-until" class="hidden">
-      </div>
-    </section>
+      </section>
 
-    <section class="ins-section" aria-label="Metrik akun">
-      <div class="ins-section-head">
-        <h2 class="ins-section-title">Metrik periode</h2>
-        <p class="ins-section-lead">Angka agregat dari Threads untuk rentang yang dipilih.</p>
-      </div>
-      <div class="th-metrics" id="insights-stats">
-        <article class="th-metric" data-tone="views">
-          <div class="th-metric-top">
-            <span class="th-metric-icon"><i class="bi bi-eye-fill"></i></span>
-            <span class="th-metric-label">Views</span>
+      <!-- ACTIONS -->
+      <section class="ns-section">
+        <div class="flex items-baseline justify-between gap-4">
+          <div>
+            <h2 class="ns-section-h">Yang bisa dikerjakan sekarang</h2>
+            <p class="ns-section-p">Diambil langsung dari data periode ini.</p>
           </div>
-          <div class="th-metric-value" data-metric="views">—</div>
-          <div class="th-metric-hint">Tayangan</div>
-        </article>
-        <article class="th-metric" data-tone="likes">
-          <div class="th-metric-top">
-            <span class="th-metric-icon"><i class="bi bi-heart-fill"></i></span>
-            <span class="th-metric-label">Likes</span>
-          </div>
-          <div class="th-metric-value" data-metric="likes">—</div>
-          <div class="th-metric-hint">Suka</div>
-        </article>
-        <article class="th-metric" data-tone="replies">
-          <div class="th-metric-top">
-            <span class="th-metric-icon"><i class="bi bi-chat-dots-fill"></i></span>
-            <span class="th-metric-label">Balasan</span>
-          </div>
-          <div class="th-metric-value" data-metric="replies">—</div>
-          <div class="th-metric-hint">Balasan masuk</div>
-        </article>
-        <article class="th-metric" data-tone="reposts">
-          <div class="th-metric-top">
-            <span class="th-metric-icon"><i class="bi bi-arrow-repeat"></i></span>
-            <span class="th-metric-label">Repost</span>
-          </div>
-          <div class="th-metric-value" data-metric="reposts">—</div>
-          <div class="th-metric-hint">Dibagikan ulang</div>
-        </article>
-        <article class="th-metric" data-tone="quotes">
-          <div class="th-metric-top">
-            <span class="th-metric-icon"><i class="bi bi-quote"></i></span>
-            <span class="th-metric-label">Kutipan</span>
-          </div>
-          <div class="th-metric-value" data-metric="quotes">—</div>
-          <div class="th-metric-hint">Quote post</div>
-        </article>
-        <article class="th-metric" data-tone="followers">
-          <div class="th-metric-top">
-            <span class="th-metric-icon"><i class="bi bi-people-fill"></i></span>
-            <span class="th-metric-label">Pengikut</span>
-          </div>
-          <div class="th-metric-value" data-metric="followers_count">—</div>
-          <div class="th-metric-hint">Total akun</div>
-        </article>
-      </div>
-    </section>
-
-    <section class="ins-section" aria-label="Post teratas">
-      <div class="ins-section-head ins-section-head-row">
-        <div>
-          <h2 class="ins-section-title">Post teratas</h2>
-          <p class="ins-section-lead">Ranking berdasarkan metrik — bar relatif ke post #1.</p>
+          <span class="shrink-0 text-[11px] text-muted" id="action-count">—</span>
         </div>
-        <label class="ins-sort">
-          <span>Urutkan</span>
-          <select id="sort-posts" class="th-select">
-            <option value="score">Skor</option>
-            <option value="views">Views</option>
-            <option value="likes">Likes</option>
-            <option value="replies">Balasan</option>
-          </select>
-        </label>
-      </div>
-      <div class="ins-posts" id="top-posts">
-        <div class="ins-posts-empty">Memuat…</div>
-      </div>
-    </section>
+        <div class="mt-4 grid gap-3 md:grid-cols-3" id="action-cards"></div>
+      </section>
+
+      <!-- KPI LEDGER -->
+      <section class="ns-section">
+        <div class="flex flex-wrap items-baseline justify-between gap-3">
+          <div>
+            <h2 class="ns-section-h">Perbandingan periode</h2>
+            <p class="ns-section-p" id="kpi-lead">Dihitung dari post di rentang ini.</p>
+          </div>
+          <div class="flex rounded-lg border border-line bg-surface p-0.5 text-[12px]" id="kpi-sort">
+            <button type="button" class="sort-btn sort-on" data-sort="drop">Turun paling tajam</button>
+            <button type="button" class="sort-btn" data-sort="default">Urutan asli</button>
+          </div>
+        </div>
+        <div class="mt-4 overflow-hidden rounded-2xl border border-line bg-surface">
+          <table class="w-full text-left">
+            <thead>
+              <tr class="border-b border-line text-[11px] uppercase tracking-[0.1em] text-muted">
+                <th class="px-5 py-3 font-semibold">Metrik</th>
+                <th class="px-3 py-3 text-right font-semibold">Sekarang</th>
+                <th class="px-3 py-3 text-right font-semibold hidden sm:table-cell">Periode lalu</th>
+                <th class="px-3 py-3 font-semibold w-[34%]">Perubahan</th>
+              </tr>
+            </thead>
+            <tbody id="kpiBody" class="divide-y divide-line"></tbody>
+          </table>
+        </div>
+      </section>
+
+      <!-- FORMAT + HEATMAP -->
+      <section class="ns-section grid gap-5 lg:grid-cols-2">
+        <div class="rounded-2xl border border-line bg-surface p-5 sm:p-6">
+          <h2 class="ns-section-h">Performa per format</h2>
+          <p class="ns-section-p">Rata-rata ER, diurutkan dari yang paling kuat.</p>
+          <ul id="formatList" class="mt-5 space-y-5"></ul>
+          <p class="mt-5 flex gap-2 rounded-lg bg-canvas px-3 py-2.5 text-[12px] leading-relaxed text-muted">
+            <span class="mt-[3px] h-1.5 w-1.5 shrink-0 rounded-full bg-sun-500"></span>
+            Format dengan kurang dari 3 post ditandai sampel kecil — angkanya belum bisa dipakai ambil keputusan.
+          </p>
+        </div>
+
+        <div class="rounded-2xl border border-line bg-surface p-5 sm:p-6">
+          <div>
+            <h2 class="ns-section-h">Waktu posting</h2>
+            <p class="ns-section-p">ER rata-rata per slot. Kotak kosong = belum pernah dicoba.</p>
+          </div>
+          <div class="mt-5 overflow-x-auto">
+            <div id="heatmap" class="min-w-[380px]"></div>
+          </div>
+          <div class="mt-5 flex flex-wrap items-center justify-between gap-3">
+            <div class="flex items-center gap-2 text-[11px] text-muted">
+              <span>Rendah</span>
+              <span class="flex overflow-hidden rounded">
+                <i class="block h-3 w-6 bg-sun-100"></i><i class="block h-3 w-6 bg-sun-200"></i><i class="block h-3 w-6 bg-sun-300"></i><i class="block h-3 w-6 bg-sun-400"></i><i class="block h-3 w-6 bg-sun-500"></i>
+              </span>
+              <span>Tinggi</span>
+            </div>
+            <p class="text-[11.5px] text-muted" id="heat-best">Slot terbaik: —</p>
+          </div>
+        </div>
+      </section>
+
+      <!-- RAW -->
+      <section class="ns-section">
+        <details class="group rounded-2xl border border-line bg-surface">
+          <summary class="flex cursor-pointer list-none items-center justify-between gap-4 px-5 py-4 sm:px-6">
+            <div>
+              <h2 class="font-display text-[16px] font-bold tracking-tight">Angka mentah dari Repliz</h2>
+              <p class="mt-0.5 text-[12.5px] text-muted">Total agregat sebelum diolah jadi KPI di atas.</p>
+            </div>
+            <i class="bi bi-chevron-down text-muted transition group-open:rotate-180"></i>
+          </summary>
+          <div class="grid grid-cols-2 border-t border-line sm:grid-cols-3 lg:grid-cols-6" id="raw-grid"></div>
+        </details>
+      </section>
+    </div>
   </div>
 </main>
-<script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/insights.js?v=strand1"></script>
+
+<div id="tip" class="ns-tip hidden"></div>
+
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/insights.js?v=ns12"></script>
 </body>
 </html>

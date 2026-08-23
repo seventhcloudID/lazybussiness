@@ -1,33 +1,51 @@
 package schedule
 
 import (
-	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"strings"
 	"time"
-
-	"threads-dashboard/internal/threads"
 )
 
+type PublishFunc func(post Post) ([]string, error)
+
 // ProcessWith is used by the Lazy ticker (manual queue, independent of Lazy ON/OFF).
-func (s *Store) ProcessWith(th *threads.Client) {
-	ProcessDue(s, th)
+func (s *Store) ProcessWith(pub PublishFunc) {
+	ProcessDue(s, pub)
 }
 
 // ProcessDue claims and publishes at most one due post.
-func ProcessDue(store *Store, th *threads.Client) {
-	if store == nil || th == nil || !th.Connected() {
+func ProcessDue(store *Store, pub PublishFunc) {
+	if store == nil || pub == nil {
 		return
 	}
 	store.Prune(30)
-	post, ok := store.ClaimDue(time.Now())
+	now := time.Now()
+	post, ok := store.ClaimDue(now)
 	if !ok {
 		return
 	}
-	log.Printf("schedule: publish %s run_at=%s", post.ID, post.RunAt.Format(time.RFC3339))
-	ids, err := publish(th, post)
+	if post.RunAt.IsZero() || post.RunAt.After(now.UTC().Add(30*time.Second)) {
+		log.Printf("schedule: skip %s run_at=%s (belum due)", post.ID, post.RunAt.Format(time.RFC3339))
+		_ = store.Update(post.ID, func(p *Post) {
+			p.Status = StatusPending
+			p.StartedAt = time.Time{}
+			p.Error = "claim dibatalkan: belum due"
+		})
+		return
+	}
+	if len(post.ThreadsIDs) > 0 {
+		log.Printf("schedule: skip %s sudah punya threads_ids", post.ID)
+		_ = store.Update(post.ID, func(p *Post) {
+			p.Status = StatusDone
+			if p.FinishedAt.IsZero() {
+				p.FinishedAt = time.Now().UTC()
+			}
+		})
+		return
+	}
+	log.Printf("schedule: publish %s run_at=%s now=%s", post.ID, post.RunAt.Format(time.RFC3339), now.UTC().Format(time.RFC3339))
+	ids, err := pub(post)
 	if err != nil {
 		log.Printf("schedule: gagal %s: %v", post.ID, err)
 		_ = store.Update(post.ID, func(p *Post) {
@@ -47,90 +65,24 @@ func ProcessDue(store *Store, th *threads.Client) {
 	log.Printf("schedule: ok %s threads=%v", post.ID, ids)
 }
 
-func publish(th *threads.Client, post Post) ([]string, error) {
+func PartsOf(post Post) []string {
 	parts := post.Parts
 	if len(parts) == 0 && strings.TrimSpace(post.Text) != "" {
 		parts = []string{post.Text}
 	}
-	if len(parts) == 0 {
-		return nil, fmt.Errorf("konten kosong")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p != "" {
+			out = append(out, p)
+		}
 	}
+	return out
+}
 
-	var ids []string
-	prev := strings.TrimSpace(post.ReplyToID)
-	for i, text := range parts {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			continue
-		}
-		form := url.Values{"text": {text}}
-		mt := "TEXT"
-		if i == 0 {
-			switch strings.ToUpper(post.MediaType) {
-			case "IMAGE":
-				if post.ImageURL != "" {
-					mt = "IMAGE"
-					form.Set("image_url", post.ImageURL)
-				}
-			case "VIDEO":
-				if post.VideoURL != "" {
-					mt = "VIDEO"
-					form.Set("video_url", post.VideoURL)
-				}
-			}
-			if post.ReplyControl != "" {
-				form.Set("reply_control", post.ReplyControl)
-			}
-		}
-		form.Set("media_type", mt)
-		if prev != "" {
-			form.Set("reply_to_id", prev)
-		}
-
-		var created struct {
-			ID string `json:"id"`
-		}
-		var lastErr error
-		for attempt := 1; attempt <= 3; attempt++ {
-			container, err := th.CreateContainer(form)
-			if err != nil {
-				lastErr = fmt.Errorf("bagian %d container: %w", i+1, err)
-				time.Sleep(time.Duration(attempt) * 2 * time.Second)
-				continue
-			}
-			_ = json.Unmarshal(container, &created)
-			if created.ID == "" {
-				lastErr = fmt.Errorf("bagian %d: container id kosong", i+1)
-				break
-			}
-			pub, err := th.PublishContainer(created.ID)
-			if err != nil {
-				lastErr = fmt.Errorf("bagian %d publish: %w", i+1, err)
-				time.Sleep(time.Duration(attempt) * 2 * time.Second)
-				continue
-			}
-			var published struct {
-				ID string `json:"id"`
-			}
-			_ = json.Unmarshal(pub, &published)
-			id := published.ID
-			if id == "" {
-				id = created.ID
-			}
-			ids = append(ids, id)
-			prev = id
-			lastErr = nil
-			break
-		}
-		if lastErr != nil {
-			return ids, lastErr
-		}
-		if i < len(parts)-1 {
-			time.Sleep(2 * time.Second)
-		}
+func ValidateParts(post Post) error {
+	if len(PartsOf(post)) == 0 {
+		return fmt.Errorf("konten kosong")
 	}
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("tidak ada bagian yang ter-publish")
-	}
-	return ids, nil
+	return nil
 }

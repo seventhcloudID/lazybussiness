@@ -1,18 +1,25 @@
 Threads.pageShell('profil');
 
 (async () => {
-  if (!(await Threads.requireConnected())) return;
   try {
-    const me = await Threads.api('/api/me');
-    document.getElementById('profile-name').textContent = me?.name || '—';
-    document.getElementById('profile-username').textContent = me?.username ? '@' + me.username : '@—';
-    document.getElementById('profile-bio').textContent = me?.threads_biography || '(tanpa bio)';
-    document.getElementById('profile-id').textContent = me?.id || '—';
+    const accs = await Threads.api('/api/repliz/accounts');
+    const list = accs.accounts || [];
+    const id = accs.active_id || '';
+    const me = list.find((x) => (x.id || x._id) === id) || list[0];
+    if (!me) {
+      Threads.toast('Belum ada akun Repliz', false);
+      return;
+    }
+    document.getElementById('profile-name').textContent = me.name || me.username || '—';
+    document.getElementById('profile-username').textContent = me.username ? '@' + String(me.username).replace(/^@/, '') : '@—';
+    document.getElementById('profile-bio').textContent = me.biography || me.bio || me.type || '(tanpa bio)';
+    document.getElementById('profile-id').textContent = me.id || me._id || '—';
     const av = document.getElementById('profile-avatar');
-    if (me?.threads_profile_picture_url) {
-      av.innerHTML = '<img src="' + me.threads_profile_picture_url + '" alt="">';
+    if (me.picture) {
+      av.innerHTML = '<img src="' + me.picture + '" alt="">';
     } else {
-      av.textContent = me?.username ? me.username[0].toUpperCase() : '@';
+      const u = String(me.username || me.name || '@');
+      av.textContent = u.replace(/^@/, '')[0].toUpperCase();
     }
   } catch (e) {
     Threads.toast(e.message, false);

@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html lang="id">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Test Generate Gambar — malesngonten</title>
+<link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
+<link rel="stylesheet" href="/css/app.css?v=ns6" id="app-css">
+<script src="https://cdn.tailwindcss.com"></script>
+<script src="/js/tailwind-config.js"></script>
+</head>
+<body class="strand-body">
+<nav id="sidebar"></nav>
+<main class="app-main main">
+  <header class="th-page-head">
+    <div>
+      <p class="th-eyebrow">Lab</p>
+      <h1 class="th-title">Generate Gambar</h1>
+      <p class="th-lead">Referensi gaya + format IG 4:5 / Threads 4:3.</p>
+    </div>
+    <div class="th-toolbar">
+      <span class="th-chip" id="img-status">cek…</span>
+      <button id="btn-gen" class="th-btn th-btn-primary" type="button">
+        <i class="bi bi-magic"></i> Generate
+      </button>
+    </div>
+  </header>
+
+  <div id="img-alert" class="th-alert hidden"></div>
+
+  <div class="gambar-lab">
+    <section class="th-panel gambar-lab-preview">
+      <div class="th-panel-head">
+        <span>Preview</span>
+        <span class="gambar-lab-dim" id="img-dim">1080×1350</span>
+      </div>
+          <div class="gambar-lab-stage is-ig" id="img-preview-wrap">
+        <div id="img-placeholder" class="gambar-lab-empty">
+          <i class="bi bi-image" aria-hidden="true"></i>
+          <strong>Belum ada gambar</strong>
+          <span>Edit prompt di kanan, lalu Generate. Biasanya 30–90 detik.</span>
+        </div>
+        <img id="img-preview" alt="hasil generate" hidden>
+        <div id="img-busy" class="gambar-lab-busy" hidden>
+          <span class="gambar-lab-spinner" aria-hidden="true"></span>
+          <span>Sedang generate…</span>
+        </div>
+      </div>
+      <div class="gambar-lab-foot">
+        <code id="img-path" class="gambar-lab-path">—</code>
+        <a id="img-open" class="th-btn th-btn-soft text-xs" href="#" target="_blank" rel="noopener" hidden>
+          <i class="bi bi-box-arrow-up-right"></i> Buka
+        </a>
+      </div>
+    </section>
+
+    <aside class="gambar-lab-side">
+      <section class="th-panel">
+        <div class="th-panel-head">Kontrol</div>
+        <div class="th-panel-body gambar-lab-form">
+          <div>
+            <label class="th-label" for="hook">Hook / konteks</label>
+            <textarea id="hook" class="th-textarea" rows="3" placeholder="Teks bagian 1 utas…">Face recognition SIM — kenapa data biometrik di e-KTP rawan bocor</textarea>
+            <p class="buat-hint mt-1">Bagian ini otomatis masuk prompt (tidak diedit di bawah).</p>
+          </div>
+
+          <div>
+            <label class="th-label" for="format">Format output</label>
+            <select id="format" class="th-input">
+              <option value="4:5" selected>Instagram 4:5 (1080×1350)</option>
+              <option value="4:3">Threads 4:3 (1024×768)</option>
+            </select>
+          </div>
+
+          <div>
+            <label class="th-label" for="ref-file">Referensi desain</label>
+            <div class="gambar-lab-ref">
+              <label class="th-btn th-btn-soft text-xs gambar-lab-ref-btn" for="ref-file">
+                <i class="bi bi-image"></i> Pilih gambar
+              </label>
+              <input id="ref-file" type="file" accept="image/png,image/jpeg,image/webp,image/gif,.png,.jpg,.jpeg,.webp,.gif" hidden>
+              <button id="btn-clear-ref" class="th-btn th-btn-ghost text-xs" type="button" hidden>Hapus</button>
+            </div>
+            <div id="ref-preview-wrap" class="gambar-lab-ref-preview" hidden>
+              <img id="ref-preview" alt="referensi desain">
+              <span id="ref-name" class="buat-hint"></span>
+            </div>
+            <p class="buat-hint mt-1">Gaya ikut referensi; pose/aksi/subjek menyesuaikan hook.</p>
+          </div>
+
+          <div>
+            <div class="gambar-lab-prompt-head">
+              <label class="th-label m-0" for="rules">Aturan desain (boleh diedit)</label>
+              <button id="btn-reset-rules" class="th-btn th-btn-ghost text-xs" type="button">Reset aturan</button>
+            </div>
+            <textarea id="rules" class="th-textarea mono gambar-lab-prompt" rows="8" spellcheck="false" placeholder="buat design clean, minimalis.…"></textarea>
+            <p class="buat-hint mt-1">Hanya blok ini yang diedit. Header + hook digabung otomatis saat generate.</p>
+          </div>
+
+          <details class="gambar-lab-preview-prompt">
+            <summary>Lihat prompt penuh yang akan dikirim</summary>
+            <pre id="prompt-preview" class="gambar-lab-json"></pre>
+          </details>
+
+          <div class="gambar-lab-fields">
+            <div>
+              <label class="th-label" for="model">Model</label>
+              <input id="model" class="th-input" value="cx/gpt-5.5-image" spellcheck="false">
+            </div>
+            <div>
+              <label class="th-label" for="quality">Quality</label>
+              <select id="quality" class="th-input">
+                <option value="low">low</option>
+                <option value="medium">medium</option>
+                <option value="high" selected>high</option>
+                <option value="auto">auto</option>
+              </select>
+            </div>
+          </div>
+          <div class="gambar-lab-actions">
+            <button id="btn-gen-side" class="th-btn th-btn-primary" type="button">
+              <i class="bi bi-magic"></i> Generate gambar
+            </button>
+            <button id="btn-defaults" class="th-btn th-btn-ghost text-xs" type="button">Muat defaults</button>
+          </div>
+          <div class="gambar-lab-chips" id="img-meta" aria-live="polite"></div>
+        </div>
+      </section>
+
+      <details class="th-panel gambar-lab-raw">
+        <summary class="th-panel-head">Response JSON</summary>
+        <pre id="img-raw" class="gambar-lab-json">Belum ada response.</pre>
+      </details>
+    </aside>
+  </div>
+</main>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/gambar.js?v=19"></script>
+</body>
+</html>

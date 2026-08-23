@@ -5,8 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Ringkasan — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
-<link rel="stylesheet" href="/css/overview.css?v=mn71">
+<link rel="stylesheet" href="/css/app.css?v=ns10" id="app-css">
+<link rel="stylesheet" href="/css/overview.css?v=mn73">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -29,8 +29,8 @@
         <span class="ov-spinner" aria-hidden="true"></span>
         <span id="load-chip-text">Memuat metrik akun…</span>
       </div>
-      <a class="th-btn th-btn-ghost text-xs" href="/app/insights.html"><i class="bi bi-bar-chart"></i> Insight</a>
-      <a class="th-btn th-btn-primary text-xs" href="/app/buat.html"><i class="bi bi-plus-lg"></i> Buat post</a>
+      <a class="th-btn th-btn-ghost text-xs" href="/app/insights"><i class="bi bi-bar-chart"></i> Insight</a>
+      <a class="th-btn th-btn-primary text-xs" href="/app/buat"><i class="bi bi-plus-lg"></i> Buat post</a>
     </div>
   </header>
 
@@ -41,24 +41,30 @@
       <div class="th-panel-head flex flex-wrap items-center justify-between gap-2">
         <span>Tren engagement</span>
         <div class="ov-metric-toggle" id="metric-toggle">
+          <button type="button" class="ov-mt-btn" data-metric="views"><span class="ov-mt-dot"></span>Views</button>
           <button type="button" class="ov-mt-btn is-on" data-metric="likes"><span class="ov-mt-dot"></span>Likes</button>
-          <button type="button" class="ov-mt-btn" data-metric="replies"><span class="ov-mt-dot" style="background:#059669"></span>Balasan</button>
-          <button type="button" class="ov-mt-btn" data-metric="reposts"><span class="ov-mt-dot" style="background:#d97706"></span>Repost</button>
-          <button type="button" class="ov-mt-btn" data-metric="quotes"><span class="ov-mt-dot" style="background:#64748b"></span>Kutipan</button>
+          <button type="button" class="ov-mt-btn" data-metric="replies"><span class="ov-mt-dot"></span>Balasan</button>
+          <button type="button" class="ov-mt-btn" data-metric="reposts"><span class="ov-mt-dot"></span>Repost</button>
+          <button type="button" class="ov-mt-btn" data-metric="quotes"><span class="ov-mt-dot"></span>Kutipan</button>
         </div>
       </div>
       <div class="th-panel-body ov-panel-body">
-        <p class="text-sm text-muted m-0 mb-1" id="chart-title">Per post (terbaru)</p>
-        <div class="ov-chart-wrap">
-          <svg class="ov-chart-svg" id="chart-svg" viewBox="0 0 880 320" preserveAspectRatio="none"></svg>
-          <div class="ov-chart-tip" id="chart-tip" hidden></div>
-          <div class="ov-panel-load show" id="chart-load" aria-hidden="true">
-            <span class="ov-spinner ov-spinner-lg"></span>
-            <span>Memuat tren post…</span>
+        <p class="text-sm text-muted m-0 mb-1" id="chart-title">Per post (lama → baru)</p>
+        <div class="ov-chart-plot">
+          <div class="ov-chart-y" id="chart-y" aria-hidden="true"></div>
+          <div class="ov-chart-wrap" id="chart-wrap" data-metric="likes">
+            <svg class="ov-chart-svg" id="chart-svg" viewBox="0 0 880 280" preserveAspectRatio="none"></svg>
+            <div class="ov-chart-empty" id="chart-empty">Belum ada cukup data post</div>
+            <div class="ov-chart-tip" id="chart-tip" hidden></div>
+            <div class="ov-panel-load show" id="chart-load" aria-hidden="true">
+              <span class="ov-spinner ov-spinner-lg"></span>
+              <span>Memuat tren post…</span>
+            </div>
           </div>
+          <div class="ov-chart-x" id="chart-x" aria-hidden="true"></div>
         </div>
         <div class="ov-chart-foot">
-          <span>Sample post dalam rentang</span>
+          <span>Sampel post dalam rentang · garis putus = rata-rata</span>
           <div class="ov-chart-stats">
             <span>Peak <strong class="mono" id="stat-peak">…</strong></span>
             <span>Avg <strong class="mono" id="stat-avg">…</strong></span>
@@ -75,25 +81,37 @@
         <p class="text-xl font-semibold m-0 mono" id="pulse-handle">…</p>
         <p class="text-xs text-muted mt-1 mb-3" id="pulse-meta">Memuat…</p>
         <div id="pace-list"></div>
-        <a class="th-btn th-btn-soft text-xs mt-3" href="/app/profil.html"><i class="bi bi-person"></i> Buka profil</a>
+        <a class="th-btn th-btn-soft text-xs mt-3" id="pulse-profile-link" href="/app/ig-profil"><i class="bi bi-person"></i> Buka profil</a>
       </div>
     </section>
   </div>
 
   <section class="th-panel mb-4">
     <div class="th-panel-head flex flex-wrap items-center justify-between gap-2">
-      <span>Post teratas</span>
-      <a class="th-btn th-btn-ghost text-xs" href="/app/posts.html">Semua post</a>
+      <div>
+        <span>Post teratas</span>
+        <p class="th-lead m-0 mt-1 text-xs font-normal normal-case tracking-normal" id="top-posts-hint">Diurutkan dari views tertinggi pada sampel rentang.</p>
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
+        <div class="ov-metric-toggle" id="sort-toggle" role="group" aria-label="Urutan post teratas">
+          <button type="button" class="ov-mt-btn is-on" data-sort="views">Views</button>
+          <button type="button" class="ov-mt-btn" data-sort="likes">Likes</button>
+          <button type="button" class="ov-mt-btn" data-sort="eng">Interaksi</button>
+          <button type="button" class="ov-mt-btn" data-sort="er">ER</button>
+        </div>
+        <a class="th-btn th-btn-ghost text-xs" href="/app/posts">Semua post</a>
+      </div>
     </div>
     <div class="th-panel-body ov-panel-body">
       <div class="ov-table">
-        <div class="ov-thead">
+        <div class="ov-thead" id="top-posts-head">
+          <div class="ov-td" style="width:28px">#</div>
           <div class="ov-td" style="flex:1">Post</div>
           <div class="ov-td" style="width:72px">Waktu</div>
-          <div class="ov-td ov-td-num" style="width:88px">Likes</div>
-          <div class="ov-td ov-td-num" style="width:88px">Balasan</div>
-          <div class="ov-td ov-td-num" style="width:88px">Views</div>
-          <div class="ov-td ov-td-num" style="width:72px">ER</div>
+          <div class="ov-td ov-td-num is-sort" data-sort="views" style="width:88px">Views</div>
+          <div class="ov-td ov-td-num" data-sort="likes" style="width:88px">Likes</div>
+          <div class="ov-td ov-td-num" data-sort="eng" style="width:88px">Interaksi</div>
+          <div class="ov-td ov-td-num" data-sort="er" style="width:72px">ER</div>
           <div class="ov-td" style="width:36px"></div>
         </div>
         <div id="posts-rows"></div>
@@ -106,12 +124,12 @@
   </section>
 
   <div class="ov-foot">
-    <span>Data dari Meta Threads API</span>
+    <span>Data dari Repliz</span>
     <span><button type="button" class="link" id="btn-refresh">Muat ulang</button></span>
   </div>
 </main>
-<script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/ringkasan.js?v=strand30"></script>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/ringkasan.js?v=ns17"></script>
 </body>
 </html>

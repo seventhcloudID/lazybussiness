@@ -4,4 +4,6 @@ threads-dashboard.exe
 *~
 .env
 .data/
+/.data.bak-*/
+/tmp/
 deploy/lazybussiness-linux-amd64

@@ -17,6 +17,34 @@ function publishedId(data) {
   return data?.published?.id || '';
 }
 
+/** datetime-local / "YYYY-MM-DDTHH:MM" → RFC3339 dengan offset WIB (+07:00). */
+function toWIBRFC3339(raw) {
+  let s = String(raw || '').trim();
+  if (!s) throw new Error('Pilih tanggal & jam jadwal');
+  if (/[zZ]|[+-]\d{2}:\d{2}$/.test(s)) return s;
+  if (/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}$/.test(s)) s += ':00';
+  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}$/.test(s)) {
+    throw new Error('Format jadwal tidak valid');
+  }
+  return s + '+07:00';
+}
+
+function setScheduleMinNow() {
+  const el = document.getElementById('schedule-at');
+  if (!el) return;
+  // Min = sekarang WIB dibulatkan ke menit berikutnya.
+  const fmt = new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'Asia/Jakarta',
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  });
+  const parts = Object.fromEntries(fmt.formatToParts(new Date()).map((p) => [p.type, p.value]));
+  const d = new Date(`${parts.year}-${parts.month}-${parts.day}T${parts.hour}:${parts.minute}:00+07:00`);
+  d.setMinutes(d.getMinutes() + 2);
+  const p2 = Object.fromEntries(fmt.formatToParts(d).map((p) => [p.type, p.value]));
+  el.min = `${p2.year}-${p2.month}-${p2.day}T${p2.hour}:${p2.minute}`;
+}
+
 let previewHandle = 'kamu';
 let previewInitials = 'TH';
 
@@ -141,44 +169,34 @@ async function publishChain() {
   }
 
   const replyControl = document.getElementById('compose-reply-control').value;
-  let prevId = document.getElementById('compose-reply-to').value.trim();
   const status = document.getElementById('container-status');
   const btn = document.getElementById('btn-publish');
   const btnC = document.getElementById('btn-container');
   btn.disabled = true;
   btnC.disabled = true;
 
-  const log = [];
   try {
-    for (let i = 0; i < texts.length; i++) {
-      status.textContent = `Mempublish bagian ${i + 1}/${texts.length}…\n` + log.join('\n');
-      const isRoot = i === 0 && !prevId;
-      const body = {
-        media_type: isRoot ? mediaType() : 'TEXT',
-        text: texts[i],
+    const mediaURL = document.getElementById('compose-media-url').value.trim();
+    const data = await Threads.api('/api/publish', {
+      method: 'POST',
+      body: JSON.stringify({
+        media_type: mediaType(),
+        text: texts[0],
+        parts: texts,
         publish: true,
-      };
-      if (i === 0 && replyControl) body.reply_control = replyControl;
-      if (prevId) body.reply_to_id = prevId;
-      if (isRoot) {
-        const mediaURL = document.getElementById('compose-media-url').value.trim();
-        if (body.media_type === 'IMAGE') body.image_url = mediaURL;
-        if (body.media_type === 'VIDEO') body.video_url = mediaURL;
-      }
-      const data = await Threads.api('/api/publish', {
-        method: 'POST',
-        body: JSON.stringify(body),
-      });
-      const id = publishedId(data);
-      if (!id) throw new Error(`Bagian ${i + 1}: tidak dapat ID publish`);
-      log.push(`${i + 1}. ${id}`);
-      prevId = id;
-      if (i < texts.length - 1) await new Promise(r => setTimeout(r, 600));
-    }
-    status.textContent = `Utas terpublish (${texts.length} bagian):\n` + log.join('\n');
-    Threads.toast(texts.length > 1 ? `Utas ${texts.length} bagian terpublish` : 'Post dipublikasikan', true);
+        reply_control: replyControl || undefined,
+        image_url: mediaType() === 'IMAGE' ? mediaURL : undefined,
+        video_url: mediaType() === 'VIDEO' ? mediaURL : undefined,
+        reply_to_id: document.getElementById('compose-reply-to').value.trim() || undefined,
+      }),
+    });
+    const id = publishedId(data);
+    status.textContent = id
+      ? `Dijadwalkan lewat Repliz · ${id}`
+      : 'Dijadwalkan lewat Repliz';
+    Threads.toast(texts.length > 1 ? `Utas ${texts.length} bagian dijadwalkan di Repliz` : 'Post dijadwalkan di Repliz', true);
   } catch (e) {
-    status.textContent = (log.length ? `Sebagian terkirim:\n${log.join('\n')}\n\n` : '') + 'Error: ' + e.message;
+    status.textContent = 'Error: ' + e.message;
     Threads.toast(e.message, false);
   } finally {
     btn.disabled = false;
@@ -188,31 +206,7 @@ async function publishChain() {
 }
 
 async function createContainerOnly() {
-  if (!(await Threads.requireConnected())) return;
-  readPartsFromDOM();
-  const text = (parts[0] || '').trim();
-  if (!text) return Threads.toast('Isi bagian 1 dulu', false);
-  if (charLen(text) > MAX_CHARS) return Threads.toast(`Melebihi ${MAX_CHARS} karakter`, false);
-
-  const body = {
-    media_type: mediaType(),
-    text,
-    reply_control: document.getElementById('compose-reply-control').value,
-    reply_to_id: document.getElementById('compose-reply-to').value.trim() || undefined,
-    publish: false,
-  };
-  const mediaURL = document.getElementById('compose-media-url').value.trim();
-  if (body.media_type === 'IMAGE') body.image_url = mediaURL;
-  if (body.media_type === 'VIDEO') body.video_url = mediaURL;
-
-  const data = await Threads.api('/api/publish', {
-    method: 'POST',
-    body: JSON.stringify(body),
-  });
-  const id = data?.container?.id || '';
-  document.getElementById('container-status').textContent =
-    'Container bagian 1: ' + (id || JSON.stringify(data.container));
-  Threads.toast('Container dibuat', true);
+  Threads.toast('Repliz tidak memakai container Meta. Pakai Publikasikan untuk jadwal Repliz.', false);
 }
 
 document.getElementById('btn-container').onclick = () =>
@@ -229,8 +223,10 @@ function schedulePayload() {
   }
   const runAt = document.getElementById('schedule-at')?.value?.trim();
   if (!runAt) throw new Error('Pilih tanggal & jam jadwal');
+  // datetime-local = jam dinding WIB (label UI). Kirim offset eksplisit agar
+  // server tidak salah interpretasi sebagai UTC.
   const body = {
-    run_at: runAt.length === 16 ? runAt : runAt.slice(0, 16),
+    run_at: toWIBRFC3339(runAt),
     media_type: mediaType(),
     parts: cleaned,
     text: cleaned[0],
@@ -315,8 +311,10 @@ document.getElementById('btn-schedule')?.addEventListener('click', async () => {
   }
 });
 document.getElementById('btn-schedule-refresh')?.addEventListener('click', () => loadScheduleList());
+setScheduleMinNow();
 loadScheduleList();
 setInterval(loadScheduleList, 60000);
+setInterval(setScheduleMinNow, 60000);
 
 document.getElementById('btn-repost').onclick = async () => {
   const media_id = document.getElementById('repost-id').value.trim();
@@ -448,9 +446,9 @@ document.getElementById('btn-gen-thumb').onclick = async () => {
   try {
     const data = await Threads.api('/api/ai/thumbnail', {
       method: 'POST',
-      body: JSON.stringify({ hook }),
+      body: JSON.stringify({ hook, size: '1024x768', quality: 'high', crop_4_3: true }),
     });
-    const url = data.image_url || data.path;
+    const url = data.path || data.local_path || data.image_url;
     if (!url) throw new Error('URL thumbnail kosong');
     setComposeImageURL(url);
     Threads.toast('Thumbnail 4:3 siap — mode Gambar aktif', true);
@@ -478,8 +476,11 @@ document.querySelectorAll('input[name="mtype"]').forEach((el) => {
 
 (async function loadAccountChip() {
   try {
-    const st = await Threads.api('/api/status');
-    const name = st.account_name || st.threads_username || '';
+    const accs = await Threads.api('/api/repliz/accounts');
+    const list = accs.accounts || [];
+    const id = accs.active_id || '';
+    const a = list.find((x) => (x.id || x._id) === id) || list[0];
+    const name = a?.username || a?.name || '';
     if (name) {
       previewHandle = '@' + String(name).replace(/^@/, '');
       previewInitials = previewHandle.replace(/^@/, '').slice(0, 2).toUpperCase();
@@ -519,6 +520,12 @@ document.querySelectorAll('input[name="mtype"]').forEach((el) => {
         true,
       );
       return;
+    }
+  } catch {}
+  try {
+    const hook = new URLSearchParams(location.search).get('hook');
+    if (hook && !(parts[0] || '').trim()) {
+      parts[0] = hook.slice(0, 500);
     }
   } catch {}
   renderParts();

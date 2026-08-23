@@ -189,7 +189,7 @@ func (g *Gate) Middleware(next http.Handler) http.Handler {
 		if r.URL.RawQuery != "" {
 			nextURL += "?" + r.URL.RawQuery
 		}
-		login := "/app/login.html"
+		login := "/app/login"
 		if strings.HasPrefix(path, "/core") {
 			login = "/core/login.html"
 		}
@@ -201,7 +201,7 @@ func (g *Gate) Middleware(next http.Handler) http.Handler {
 func isPublic(r *http.Request) bool {
 	p := r.URL.Path
 	switch {
-	case p == "/login.html" || p == "/app/login.html" || p == "/core/login.html":
+	case p == "/login.html" || p == "/app/login" || p == "/app/login.html" || p == "/core/login.html":
 		return true
 	case p == "/" || p == "/index.html":
 		return true
@@ -214,6 +214,8 @@ func isPublic(r *http.Request) bool {
 	case p == "/health":
 		return true
 	case p == "/auth/threads/callback" || p == "/auth/instagram/callback":
+		return true
+	case strings.HasPrefix(p, "/auth/repliz/"):
 		return true
 	case p == "/auth/meta/deauthorize" || p == "/auth/meta/data-deletion" || p == "/auth/meta/data-deletion-status":
 		return true
@@ -253,7 +255,7 @@ func (g *Gate) RequireAdminHTML(next http.Handler) http.Handler {
 			http.Redirect(w, r, "/core/login.html?next="+url.QueryEscape(p), http.StatusFound)
 			return
 		}
-		http.Redirect(w, r, "/app/ringkasan.html", http.StatusFound)
+		http.Redirect(w, r, "/app/ringkasan", http.StatusFound)
 	})
 }
 

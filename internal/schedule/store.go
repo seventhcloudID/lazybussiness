@@ -107,8 +107,9 @@ func (s *Store) Create(in CreateInput) (Post, error) {
 	if in.RunAt.IsZero() {
 		return Post{}, fmt.Errorf("run_at wajib (RFC3339)")
 	}
-	if in.RunAt.Before(time.Now().Add(-1 * time.Minute)) {
-		return Post{}, fmt.Errorf("run_at harus di masa depan")
+	// Minimal 1 menit ke depan — hindari "langsung post" karena detik datetime-local.
+	if !in.RunAt.After(time.Now().Add(55 * time.Second)) {
+		return Post{}, fmt.Errorf("run_at harus minimal ~1 menit ke depan")
 	}
 	mt := strings.ToUpper(strings.TrimSpace(in.MediaType))
 	if mt == "" {
@@ -219,9 +220,23 @@ func (s *Store) ClaimDue(now time.Time) (Post, bool) {
 	defer s.mu.Unlock()
 	now = now.UTC()
 	idx := -1
+	dirty := false
 	for i := range s.list {
 		p := s.list[i]
 		if p.Status != StatusPending {
+			continue
+		}
+		if p.RunAt.IsZero() {
+			// Data korup / parse gagal — jangan auto-publish.
+			continue
+		}
+		if len(p.ThreadsIDs) > 0 {
+			// Sudah pernah terpublish — anggap selesai, jangan claim lagi.
+			s.list[i].Status = StatusDone
+			if s.list[i].FinishedAt.IsZero() {
+				s.list[i].FinishedAt = time.Now().UTC()
+			}
+			dirty = true
 			continue
 		}
 		if p.RunAt.After(now) {
@@ -232,6 +247,9 @@ func (s *Store) ClaimDue(now time.Time) (Post, bool) {
 		}
 	}
 	if idx < 0 {
+		if dirty {
+			_ = s.saveLocked()
+		}
 		return Post{}, false
 	}
 	s.list[idx].Status = StatusRunning
@@ -253,17 +271,30 @@ func (s *Store) Update(id string, fn func(*Post)) error {
 	return fmt.Errorf("jadwal tidak ditemukan")
 }
 
-// RecoverStuck turns running posts back to pending after restart.
+// RecoverStuck turns abandoned "running" posts back to a safe state after restart.
+// Posts that already have ThreadsIDs are marked done (idempotent — no re-publish).
 func (s *Store) RecoverStuck() int {
 	s.mu.Lock()
 	defer s.mu.Unlock()
 	n := 0
 	for i := range s.list {
-		if s.list[i].Status == StatusRunning {
-			s.list[i].Status = StatusPending
-			s.list[i].StartedAt = time.Time{}
-			n++
+		if s.list[i].Status != StatusRunning {
+			continue
 		}
+		n++
+		if len(s.list[i].ThreadsIDs) > 0 {
+			s.list[i].Status = StatusDone
+			s.list[i].Error = "recovered after restart (sudah terpublish)"
+			if s.list[i].FinishedAt.IsZero() {
+				s.list[i].FinishedAt = time.Now().UTC()
+			}
+			continue
+		}
+		// Belum ada bukti publish — kembalikan ke antrian, tapi jangan
+		// geser run_at. ClaimDue tetap hormati jadwal.
+		s.list[i].Status = StatusPending
+		s.list[i].StartedAt = time.Time{}
+		s.list[i].Error = "recovered after restart"
 	}
 	if n > 0 {
 		_ = s.saveLocked()

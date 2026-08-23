@@ -14,6 +14,10 @@ const TEMPLATE_NAMES = {
   bloom: 'Bloom', lilac: 'Lilac', peach: 'Peach', bold: 'Bold', frame: 'Frame',
   meadow: 'Meadow', midnight: 'Midnight', coral: 'Coral', mint: 'Mint', cherry: 'Cherry',
   sand: 'Sand', neon: 'Neon', slate: 'Slate', honey: 'Honey', mono: 'Mono',
+  aurora: 'Aurora', cocoa: 'Cocoa', ivory: 'Ivory', forest: 'Forest', rose: 'Rose',
+  graphite: 'Graphite', citrus: 'Citrus', clay: 'Clay', glacier: 'Glacier', matcha: 'Matcha',
+  signal: 'Signal', espresso: 'Espresso', sky: 'Sky', dusk: 'Dusk', pearl: 'Pearl',
+  olive: 'Olive', inkred: 'Ink Red', orchid: 'Orchid',
 };
 
 function showAlert(msg) {
@@ -151,7 +155,7 @@ async function renderPngPreview(text, brand, index, total) {
     });
     if (seq !== renderSeq) return;
     if (res.status === 401) {
-      location.replace('/app/login.html?next=' + encodeURIComponent(location.pathname));
+      location.replace('/app/login?next=' + encodeURIComponent(location.pathname));
       return;
     }
     if (!res.ok) {
@@ -269,6 +273,46 @@ document.getElementById('btn-copy-caption').onclick = async () => {
   }
 };
 
+function setCaption(text) {
+  const el = document.getElementById('caption');
+  el.value = String(text || '').slice(0, 2200);
+  document.getElementById('caption-count').textContent = `${el.value.length}/2200`;
+}
+
+async function generateCaptionAI() {
+  readEditorToSlide();
+  const parts = partsFromSlides();
+  if (!parts.length) {
+    Threads.toast('Isi slide dulu', false);
+    return;
+  }
+  const btn = document.getElementById('btn-gen-caption');
+  const prev = btn?.innerHTML;
+  if (btn) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> …';
+  }
+  try {
+    const brand = document.getElementById('brand')?.value?.trim() || '';
+    const result = await Threads.api('/api/ai/caption', {
+      method: 'POST',
+      body: JSON.stringify({ parts, brand }),
+    });
+    if (!result?.caption) throw new Error('Caption kosong dari AI');
+    setCaption(result.caption);
+    Threads.toast('Caption AI siap', true);
+  } catch (e) {
+    Threads.toast(e.message || String(e), false);
+  } finally {
+    if (btn) {
+      btn.disabled = false;
+      btn.innerHTML = prev || '<i class="bi bi-magic"></i> Generate AI';
+    }
+  }
+}
+
+document.getElementById('btn-gen-caption')?.addEventListener('click', () => generateCaptionAI());
+
 document.getElementById('btn-copy-slides').onclick = async () => {
   readEditorToSlide();
   const text = partsFromSlides().map((t, i) => `[${i + 1}]\n${t}`).join('\n\n');
@@ -286,7 +330,7 @@ document.getElementById('btn-to-threads').onclick = () => {
   if (parts.length < 1) return Threads.toast('Isi slide dulu', false);
   localStorage.setItem('threads_compose_parts', JSON.stringify(parts));
   localStorage.setItem('threads_compose_draft', parts.join('\n\n'));
-  location.href = '/app/buat.html?from=carousel';
+  location.href = '/app/buat?from=carousel';
 };
 
 document.getElementById('btn-from-utas').onclick = () => {
@@ -360,8 +404,8 @@ document.getElementById('btn-publish').onclick = async () => {
   try {
     const st = await Threads.api('/api/ig/status');
     if (!st.connected) {
-      Threads.toast('Hubungkan token IG dulu', false);
-      location.href = '/app/ig-token.html';
+      Threads.toast('Sambungkan Instagram lewat Repliz di Akun', false);
+      location.href = '/app/akun';
       return;
     }
   } catch {
@@ -447,6 +491,11 @@ function syncTemplateLabel() {
   try {
     const tpl = await Threads.api('/api/ig/carousel/templates');
     activeTemplate = tpl.active || 'noir';
+    if (Array.isArray(tpl?.templates)) {
+      for (const t of tpl.templates) {
+        if (t?.id && t?.name) TEMPLATE_NAMES[t.id] = t.name;
+      }
+    }
     syncTemplateLabel();
   } catch {}
 
@@ -455,7 +504,8 @@ function syncTemplateLabel() {
     if (mem?.brand) document.getElementById('brand').value = mem.brand;
   } catch {}
 
-  // Prefer package from Generate / Lazy
+  // Prefer package from Generate / Lazy / Posts
+  let wantAICaption = false;
   try {
     const raw = localStorage.getItem('threads_carousel_parts');
     if (raw) {
@@ -465,10 +515,12 @@ function syncTemplateLabel() {
         localStorage.removeItem('threads_carousel_parts');
         const cap = localStorage.getItem('threads_carousel_caption');
         if (cap) {
-          document.getElementById('caption').value = cap;
-          document.getElementById('caption-count').textContent = `${cap.length}/2200`;
+          setCaption(cap);
           localStorage.removeItem('threads_carousel_caption');
         }
+        wantAICaption = localStorage.getItem('threads_carousel_gen_caption') === '1'
+          || new URLSearchParams(location.search).get('from') === 'posts';
+        localStorage.removeItem('threads_carousel_gen_caption');
         Threads.toast(`Utas dimuat — ${slides.length} slide`, true);
       }
     }
@@ -482,4 +534,7 @@ function syncTemplateLabel() {
   } catch {}
 
   refreshAll();
+  if (wantAICaption && partsFromSlides().length) {
+    await generateCaptionAI();
+  }
 })();

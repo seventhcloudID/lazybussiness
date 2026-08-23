@@ -196,6 +196,66 @@ func (c *Client) carouselFromScratch(mem Memory, brand string, req CarouselReque
 	return out, nil
 }
 
+// GenerateIGCaption membuat caption Instagram dari slide/utas (tanpa ubah slide).
+func (c *Client) GenerateIGCaption(mem Memory, parts []string, brand string) (string, *TokenUsage, error) {
+	if !c.Enabled() {
+		return "", nil, fmt.Errorf("AI belum dikonfigurasi — set AI_API_KEY di .env")
+	}
+	if c.quota != nil {
+		if err := c.quota.check(); err != nil {
+			return "", nil, err
+		}
+	}
+	parts = cleanParts(parts)
+	if len(parts) == 0 {
+		return "", nil, fmt.Errorf("isi slide dulu untuk buat caption")
+	}
+	if len(parts) > 12 {
+		parts = parts[:12]
+	}
+	brand = strings.TrimSpace(brand)
+	if brand == "" {
+		brand = strings.TrimSpace(mem.Brand)
+	}
+	payload, _ := json.MarshalIndent(map[string]any{
+		"brand": brand,
+		"parts": parts,
+		"today": time.Now().Format("2006-01-02"),
+	}, "", "  ")
+
+	system := fmt.Sprintf(`Kamu copywriter Instagram untuk carousel.
+Tulis CAPTION saja (bukan ulang isi slide). Caption harus:
+- Hook 1–2 baris di awal yang bikin berhenti scroll
+- Ringkas poin utama dari slide tanpa copy-paste utas
+- Ajakan reply/save yang natural (bukan "komen YA")
+- Bahasa Indonesia natural, anti-dogeng
+- Maks ~900 karakter, 0–3 hashtag relevan di akhir (opsional)
+- Brand: %s
+
+Jawab HANYA JSON valid: {"caption":"..."}`, emptyFallback(brand, "(tanpa brand)"))
+
+	user := "Buat caption IG untuk carousel ini:\n\n" + string(payload)
+	content, usage, err := c.chatForJSON(system, user)
+	if err != nil {
+		return "", usage, err
+	}
+	if c.quota != nil {
+		c.quota.record(usage)
+	}
+	var meta struct {
+		Caption string `json:"caption"`
+	}
+	_ = json.Unmarshal([]byte(extractJSON(content)), &meta)
+	cap := strings.TrimSpace(meta.Caption)
+	if cap == "" {
+		cap = clipRunes(parts[0], 280)
+	}
+	if utf8 := []rune(cap); len(utf8) > 2200 {
+		cap = string(utf8[:2200])
+	}
+	return cap, usage, nil
+}
+
 func (c *Client) chatForJSON(system, user string) (string, *TokenUsage, error) {
 	switch c.provider {
 	case "gemini", "google":

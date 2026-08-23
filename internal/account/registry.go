@@ -25,11 +25,15 @@ const (
 )
 
 type Meta struct {
-	ID               string `json:"id"`
-	Name             string `json:"name"`
-	ThreadsUsername  string `json:"threads_username,omitempty"`
+	ID                string `json:"id"`
+	Name              string `json:"name"`
+	ThreadsUsername   string `json:"threads_username,omitempty"`
 	InstagramUsername string `json:"instagram_username,omitempty"`
-	CreatedAt        string `json:"created_at"`
+	TikTokUsername    string `json:"tiktok_username,omitempty"`
+	ReplizThreadsID   string `json:"repliz_threads_id,omitempty"`
+	ReplizInstagramID string `json:"repliz_instagram_id,omitempty"`
+	ReplizTikTokID    string `json:"repliz_tiktok_id,omitempty"`
+	CreatedAt         string `json:"created_at"`
 }
 
 type fileShape struct {
@@ -54,9 +58,10 @@ type Workspace struct {
 
 // Shared deps used by every workspace.
 type Shared struct {
-	AI     *ai.Client
-	Thumb  *ai.ThumbnailClient
-	Public string
+	AI        *ai.Client
+	Thumb     *ai.ThumbnailClient
+	Public    string
+	Publisher lazy.Publisher
 }
 
 type Registry struct {
@@ -295,16 +300,20 @@ func (r *Registry) ensureWorkspace(id string) (*Workspace, error) {
 	)
 	schedStore := schedule.NewStoreAt(filepath.Join(dir, "scheduled_posts.json"))
 	deps := &lazy.Deps{
-		Store:    lz,
-		Threads:  th,
-		IG:       ig,
-		AI:       r.shared.AI,
-		Thumb:    r.shared.Thumb,
-		Buffer:   buf,
-		Memory:   mem,
-		Public:   r.shared.Public,
-		ThumbDir: thumbDir,
-		Schedule: schedStore,
+		Store:     lz,
+		Threads:   th,
+		IG:        ig,
+		AI:        r.shared.AI,
+		Thumb:     r.shared.Thumb,
+		Buffer:    buf,
+		Memory:    mem,
+		Public:    r.shared.Public,
+		ThumbDir:  thumbDir,
+		Schedule:  schedStore,
+		Publisher: r.shared.Publisher,
+		ResolveAccountID: func(platform string) string {
+			return r.PlatformAccountID(id, platform)
+		},
 	}
 	sched := lazy.NewScheduler(deps)
 	ws := &Workspace{
@@ -471,6 +480,23 @@ func (r *Registry) UpdateMeta(id string, mutate func(*Meta)) error {
 	return r.persist()
 }
 
+// PlatformAccountID returns the Repliz account bound to a local brand workspace.
+func (r *Registry) PlatformAccountID(workspaceID, platform string) string {
+	r.mu.RLock()
+	defer r.mu.RUnlock()
+	m := r.meta[workspaceID]
+	switch strings.ToLower(strings.TrimSpace(platform)) {
+	case "threads":
+		return strings.TrimSpace(m.ReplizThreadsID)
+	case "instagram", "ig":
+		return strings.TrimSpace(m.ReplizInstagramID)
+	case "tiktok":
+		return strings.TrimSpace(m.ReplizTikTokID)
+	default:
+		return ""
+	}
+}
+
 func (r *Registry) Delete(id string) error {
 	r.mu.Lock()
 	if len(r.order) <= 1 {
@@ -531,8 +557,13 @@ func (r *Registry) FindThumbMedia(rel string) string {
 			return p
 		}
 	}
-	// legacy global
+	// workspace-level legacy
 	p := filepath.Join(r.root, "thumbs", rel)
+	if st, err := os.Stat(p); err == nil && !st.IsDir() {
+		return p
+	}
+	// global legacy (.data/thumbs) — API lama pernah simpan di sini
+	p = filepath.Join(".data", "thumbs", rel)
 	if st, err := os.Stat(p); err == nil && !st.IsDir() {
 		return p
 	}

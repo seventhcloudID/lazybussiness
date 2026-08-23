@@ -131,7 +131,7 @@ func (c *Client) KeysStatus() KeysStatus {
 		Total:     c.KeyCount(),
 		FromEnv:   len(envKeys),
 		FromStore: len(storeKeys),
-		Note:      "Key Gemini milik workspace ini (BYOK). Key di .env digabung kalau ada.",
+		Note:      "API key dari .env (AI_API_KEY). Key Gemini/OpenAI di UI tidak dipakai.",
 	}
 	for _, k := range storeKeys {
 		st.StoredMasked = append(st.StoredMasked, MaskAPIKey(k))
@@ -162,7 +162,11 @@ func (c *Client) ReloadAPIKeys() {
 	if c == nil {
 		return
 	}
-	c.SetAPIKeys(mergeAPIKeys(collectAPIKeysFromEnv(), LoadStoredAPIKeys()))
+	keys := collectAPIKeysFromEnv()
+	if c.provider == "gemini" || c.provider == "google" {
+		keys = mergeAPIKeys(keys, LoadStoredAPIKeys())
+	}
+	c.SetAPIKeys(keys)
 }
 
 // ApplyStoredAPIKeys menyimpan ke file lalu reload ke client.

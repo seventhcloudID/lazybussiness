@@ -1,7 +1,6 @@
 package lazy
 
 import (
-	"encoding/json"
 	"sort"
 	"time"
 
@@ -49,80 +48,10 @@ func BestSlotTimes(client *threads.Client, loc *time.Location, day time.Time, n 
 }
 
 func rankedHourMinutes(client *threads.Client, loc *time.Location) []int {
-	if client == nil || !client.Connected() {
-		return nil
-	}
-	raw, err := client.GetInsightsOpts("", "", true, 20)
-	if err != nil {
-		return nil
-	}
-	var parsed struct {
-		Posts []struct {
-			Timestamp string             `json:"timestamp"`
-			Score     float64            `json:"score"`
-			Metrics   map[string]float64 `json:"metrics"`
-		} `json:"posts"`
-	}
-	if json.Unmarshal(raw, &parsed) != nil || len(parsed.Posts) == 0 {
-		return nil
-	}
-
-	type bucket struct {
-		hour  int
-		score float64
-		n     int
-	}
-	byHour := map[int]*bucket{}
-	for _, p := range parsed.Posts {
-		ts, err := time.Parse(time.RFC3339, p.Timestamp)
-		if err != nil {
-			ts, err = time.Parse(time.RFC3339Nano, p.Timestamp)
-			if err != nil {
-				continue
-			}
-		}
-		local := ts.In(loc)
-		h := local.Hour()
-		sc := p.Score
-		if sc == 0 && p.Metrics != nil {
-			sc = p.Metrics["views"] + p.Metrics["likes"]*3 + p.Metrics["replies"]*4
-		}
-		b := byHour[h]
-		if b == nil {
-			b = &bucket{hour: h}
-			byHour[h] = b
-		}
-		b.score += sc
-		b.n++
-	}
-	if len(byHour) == 0 {
-		return nil
-	}
-	list := make([]*bucket, 0, len(byHour))
-	for _, b := range byHour {
-		list = append(list, b)
-	}
-	sort.Slice(list, func(i, j int) bool {
-		ai := list[i].score / float64(max(list[i].n, 1))
-		aj := list[j].score / float64(max(list[j].n, 1))
-		if ai == aj {
-			return list[i].hour < list[j].hour
-		}
-		return ai > aj
-	})
-
-	out := make([]int, 0, len(list)+len(fallbackMinutes))
-	for _, b := range list {
-		// Prefer :30 for odd hours to stagger
-		m := b.hour * 60
-		if b.hour%2 == 1 {
-			m += 30
-		}
-		out = append(out, m)
-	}
-	// Append fallbacks for extra slots
-	out = append(out, fallbackMinutes...)
-	return out
+	_ = client
+	_ = loc
+	// Slot jam memakai fallback — insight Graph/workspace lama tidak dipakai.
+	return nil
 }
 
 func pickSpacedMinutes(ranked []int, n, minGapMin int) []int {

@@ -76,8 +76,8 @@ func (s *Scheduler) tick() {
 	s.mu.Unlock()
 
 	// Manual schedule queue — jalan meski Lazy OFF.
-	if s.deps.Schedule != nil {
-		s.deps.Schedule.ProcessWith(s.deps.Threads)
+	if s.deps.Schedule != nil && s.deps.Publisher != nil {
+		s.deps.Schedule.ProcessWith(s.deps.Publisher.PublishScheduled)
 	}
 
 	cfg := s.deps.Store.GetConfig()
@@ -282,24 +282,25 @@ func (s *Scheduler) GetJob(id string) (Job, bool) {
 }
 
 type Status struct {
-	Config          Config         `json:"config"`
-	Enabled         bool           `json:"enabled"`
-	Timezone        string         `json:"timezone"`
-	Today           string         `json:"today"`
-	Tomorrow        string         `json:"tomorrow"`
-	Counts          map[string]int `json:"counts"`
-	JobsToday       []Job          `json:"jobs_today"`
-	JobsTomorrow    []Job          `json:"jobs_tomorrow"`
-	NextPending     *Job           `json:"next_pending,omitempty"`
-	NextTomorrow    *Job           `json:"next_tomorrow,omitempty"`
-	PublicBaseURL   string         `json:"public_base_url"`
-	PublicOK        bool           `json:"public_ok"`
-	ThreadsOK       bool           `json:"threads_ok"`
-	InstagramOK     bool           `json:"instagram_ok"`
-	AIOK            bool           `json:"ai_ok"`
-	ThumbOK         bool           `json:"thumb_ok"`
-	BufferOK        bool           `json:"buffer_ok"`
-	Warnings        []string       `json:"warnings"`
+	Config        Config         `json:"config"`
+	Enabled       bool           `json:"enabled"`
+	Timezone      string         `json:"timezone"`
+	Today         string         `json:"today"`
+	Tomorrow      string         `json:"tomorrow"`
+	Counts        map[string]int `json:"counts"`
+	JobsToday     []Job          `json:"jobs_today"`
+	JobsTomorrow  []Job          `json:"jobs_tomorrow"`
+	NextPending   *Job           `json:"next_pending,omitempty"`
+	NextTomorrow  *Job           `json:"next_tomorrow,omitempty"`
+	PublicBaseURL string         `json:"public_base_url"`
+	PublicOK      bool           `json:"public_ok"`
+	ThreadsOK     bool           `json:"threads_ok"`
+	InstagramOK   bool           `json:"instagram_ok"`
+	TikTokOK      bool           `json:"tiktok_ok"`
+	AIOK          bool           `json:"ai_ok"`
+	ThumbOK       bool           `json:"thumb_ok"`
+	BufferOK      bool           `json:"buffer_ok"`
+	Warnings      []string       `json:"warnings"`
 }
 
 func (s *Scheduler) Status() Status {
@@ -313,6 +314,9 @@ func (s *Scheduler) Status() Status {
 	counts := s.deps.Store.CountTodayByStatus(today)
 
 	thumbProviderOK := s.deps.Thumb != nil && s.deps.Thumb.Enabled()
+	threadsID := s.deps.accountID("threads")
+	instagramID := s.deps.accountID("instagram")
+	tiktokID := s.deps.accountID("tiktok")
 	st := Status{
 		Config:        cfg,
 		Enabled:       cfg.Enabled,
@@ -324,33 +328,34 @@ func (s *Scheduler) Status() Status {
 		JobsTomorrow:  jobsTom,
 		PublicBaseURL: s.deps.Public,
 		PublicOK:      s.deps.publicOK(),
-		ThreadsOK:     s.deps.Threads != nil && s.deps.Threads.Connected(),
-		InstagramOK:   s.deps.IG != nil && s.deps.IG.Connected(),
+		ThreadsOK:     !cfg.HasChannel("threads") || (s.deps.Publisher != nil && s.deps.Publisher.ThreadsOK(threadsID)),
+		InstagramOK:   !cfg.HasChannel("instagram") || (s.deps.Publisher != nil && s.deps.Publisher.InstagramOK(instagramID)),
+		TikTokOK:      !cfg.HasChannel("tiktok") || (s.deps.Publisher != nil && s.deps.Publisher.TikTokOK(tiktokID)),
 		AIOK:          s.deps.AI != nil && s.deps.AI.Enabled(),
-		ThumbOK:       thumbProviderOK && cfg.ThumbnailEnabled,
+		ThumbOK:       !cfg.HasChannel("threads") || thumbProviderOK,
 		BufferOK:      s.deps.Buffer != nil && s.deps.Buffer.Enabled(),
 	}
 	var warns []string
 	if !st.AIOK {
 		warns = append(warns, "AI_API_KEY belum di-set")
 	}
-	if !st.ThreadsOK {
-		warns = append(warns, "Token Threads belum terhubung")
+	if cfg.HasChannel("threads") && !st.ThreadsOK {
+		warns = append(warns, "Akun Threads belum dipilih untuk workspace ini")
 	}
-	if !st.InstagramOK {
-		warns = append(warns, "Token Instagram belum — IG akan di-skip")
+	if cfg.HasChannel("instagram") && !st.InstagramOK {
+		warns = append(warns, "Akun Instagram belum dipilih untuk workspace ini")
 	}
-	if cfg.ThumbnailEnabled && !thumbProviderOK {
-		warns = append(warns, "OpenAI key belum — thumbnail utas Threads di-skip")
+	if cfg.HasChannel("tiktok") && !st.TikTokOK {
+		warns = append(warns, "Akun TikTok belum dipilih untuk workspace ini")
 	}
-	if !st.BufferOK {
-		warns = append(warns, "Buffer key akun ini belum — antrian Buffer TikTok/X di-skip")
+	if cfg.HasChannel("threads") && !thumbProviderOK {
+		warns = append(warns, "Model gambar belum siap — Threads membutuhkan cover + utas")
 	}
 	if !st.PublicOK {
-		warns = append(warns, "PUBLIC_BASE_URL belum valid — IG + Buffer TikTok butuh URL publik HTTPS")
+		warns = append(warns, "PUBLIC_BASE_URL belum valid — Instagram dan TikTok butuh URL publik HTTPS")
 	}
 	if cfg.Enabled && !st.ThreadsOK {
-		warns = append(warns, "Otomasi ON tapi Threads offline")
+		warns = append(warns, "Otomasi ON tapi Repliz Threads belum terhubung")
 	}
 	st.Warnings = warns
 

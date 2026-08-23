@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>AI Insight — Threads Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=mn73" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=ns9" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -16,13 +16,16 @@
     <div>
       <p class="th-eyebrow">Analitik</p>
       <h1 class="th-title">AI Insight</h1>
-      <p class="th-lead">Breakdown akun — niche, voice, pola engagement, DNA konten. Tanpa draf atau to-do.</p>
+      <p class="th-lead" id="ai-lead">Analisis akun Repliz yang aktif di sidebar — bukan token Meta.</p>
     </div>
     <div class="th-toolbar">
-      <span id="ai-badge" class="th-chip">Gemini</span>
-      <a href="/app/insights.html" class="th-btn th-btn-ghost text-xs"><i class="bi bi-bar-chart"></i> Insight</a>
+      <span id="ai-badge" class="th-chip">AI</span>
+      <a href="/app/insights" class="th-btn th-btn-ghost text-xs"><i class="bi bi-bar-chart"></i> Insight</a>
+      <button id="btn-export" class="th-btn th-btn-ghost text-xs" type="button" hidden>
+        <i class="bi bi-clipboard"></i> Salin brief
+      </button>
       <button id="btn-ai-insight" class="th-btn th-btn-primary" type="button">
-        <i class="bi bi-stars"></i> Analisis akun
+        <i class="bi bi-stars"></i> Analisis deep
       </button>
     </div>
   </header>
@@ -32,7 +35,7 @@
   <div id="ai-empty" class="ins-section">
     <div class="ins-posts-empty" style="padding:3rem 1.25rem">
       <p class="font-semibold text-ink mb-1">Belum ada breakdown</p>
-      <p class="text-sm text-muted mb-4 max-w-md mx-auto">AI baca profil + ~12 post terbaru, lalu bedah akun: voice, audience, hot/cold, dan pola.</p>
+      <p class="text-sm text-muted mb-4 max-w-md mx-auto" id="ai-empty-copy">Pilih akun Repliz di sidebar, lalu analisis. AI baca sampai 50 post dari Repliz, lalu susun playbook dan rencana 7 hari.</p>
       <button id="btn-ai-empty" class="th-btn th-btn-primary" type="button">
         <i class="bi bi-stars"></i> Analisis sekarang
       </button>
@@ -40,37 +43,41 @@
   </div>
 
   <div id="ai-report" class="hidden">
-    <section class="ins-hero ins-ai-hero" aria-label="Ringkasan AI">
-      <p class="ins-kicker">Baca akun</p>
+    <nav class="ai-toc" id="ai-toc" aria-label="Navigasi laporan"></nav>
+
+    <section class="ins-hero ins-ai-hero" id="sec-ringkas" aria-label="Ringkasan AI">
+      <p class="ins-kicker">Verdict</p>
       <p class="ins-ai-lead" id="ai-headline">…</p>
       <p class="ins-ai-body" id="ai-summary">…</p>
+      <p class="ai-north" id="ai-north" hidden></p>
       <div class="ins-meta-row">
         <span id="ai-meta">Sumber: …</span>
         <span id="ai-quota-tier">Kuota: …</span>
       </div>
     </section>
 
-    <section class="ins-section" aria-label="Scorecard">
+    <section class="ins-section" id="sec-score" aria-label="Scorecard">
       <div class="ins-section-head">
         <h2 class="ins-section-title">Scorecard</h2>
-        <p class="ins-section-lead">Tiga sinyal utama dari breakdown.</p>
+        <p class="ins-section-lead">6 skor 1–10 + SWOT singkat.</p>
       </div>
+      <div class="ins-ai-scores" id="ai-scores" hidden></div>
       <dl class="ins-ai-dl" id="ai-scorecard">
         <div><dt>Kekuatan</dt><dd id="hero-strength">…</dd></div>
         <div><dt>Kelemahan</dt><dd id="hero-weakness">…</dd></div>
-        <div><dt>Signal</dt><dd id="hero-signal">…</dd></div>
+        <div><dt>Peluang</dt><dd id="hero-signal">…</dd></div>
       </dl>
     </section>
 
-    <section class="ins-section" aria-label="Account read">
+    <section class="ins-section" id="sec-account" aria-label="Account read">
       <div class="ins-section-head">
         <h2 class="ins-section-title">Account read</h2>
-        <p class="ins-section-lead">Niche, voice, audience, dan positioning.</p>
+        <p class="ins-section-lead">Niche, voice, audience, positioning.</p>
       </div>
       <dl class="ins-ai-dl" id="ai-account-read"></dl>
     </section>
 
-    <section class="ins-section" aria-label="Profil engagement">
+    <section class="ins-section" id="sec-engage" aria-label="Profil engagement">
       <div class="ins-section-head">
         <h2 class="ins-section-title">Profil engagement</h2>
         <p class="ins-section-lead">Pendorong views/replies dan bias format.</p>
@@ -78,23 +85,47 @@
       <dl class="ins-ai-dl" id="ai-engagement"></dl>
     </section>
 
-    <section class="ins-section" aria-label="Konten rame">
+    <section class="ins-section" id="sec-hot" aria-label="Konten rame">
       <div class="ins-section-head">
         <h2 class="ins-section-title">Konten yang rame</h2>
-        <p class="ins-section-lead">Metrik + alasan hook — tanpa kartu gembung.</p>
+        <p class="ins-section-lead">Post asli + metrik + pola yang bisa diulang.</p>
       </div>
       <div class="ins-ai-list" id="ai-hot"></div>
     </section>
 
-    <section class="ins-section" aria-label="Konten sepi">
+    <section class="ins-section" id="sec-cold" aria-label="Konten sepi">
       <div class="ins-section-head">
         <h2 class="ins-section-title">Konten yang sepi</h2>
-        <p class="ins-section-lead">Yang jangkauannya lemah dan kenapa.</p>
+        <p class="ins-section-lead">Post lemah + kenapa sepi.</p>
       </div>
       <div class="ins-ai-list" id="ai-cold"></div>
     </section>
 
-    <section class="ins-section" aria-label="DNA konten">
+    <section class="ins-section" id="sec-rewrite" aria-label="Rewrite cold">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Rewrite cold posts</h2>
+        <p class="ins-section-lead">Hook baru siap tempel untuk post yang sepi.</p>
+      </div>
+      <div class="ins-ai-list" id="ai-rewrites"></div>
+    </section>
+
+    <section class="ins-section" id="sec-hooks" aria-label="Hook lab">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Hook lab</h2>
+        <p class="ins-section-lead">Pembuka menang vs kalah.</p>
+      </div>
+      <dl class="ins-ai-dl" id="ai-hooks"></dl>
+    </section>
+
+    <section class="ins-section" id="sec-pillars" aria-label="Pilar konten">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Pilar konten</h2>
+        <p class="ins-section-lead">Mix konten ideal + bobot.</p>
+      </div>
+      <div class="ai-pillars" id="ai-pillars"></div>
+    </section>
+
+    <section class="ins-section" id="sec-dna" aria-label="DNA konten">
       <div class="ins-section-head">
         <h2 class="ins-section-title">DNA konten</h2>
         <p class="ins-section-lead">Tema, signature, blind spots.</p>
@@ -102,18 +133,68 @@
       <dl class="ins-ai-dl" id="ai-dna"></dl>
     </section>
 
-    <section class="ins-section" aria-label="Pola">
+    <section class="ins-section" id="sec-patterns" aria-label="Pola">
       <div class="ins-section-head">
-        <h2 class="ins-section-title">Pola yang terlihat</h2>
-        <p class="ins-section-lead">Observasi lintas post.</p>
+        <h2 class="ins-section-title">Pola & risiko</h2>
+        <p class="ins-section-lead">Observasi lintas post + risiko brand/algoritma.</p>
       </div>
       <ol class="ins-ai-ol" id="ai-patterns"></ol>
+      <ul class="ai-risks" id="ai-risks"></ul>
     </section>
 
-    <section class="ins-section" aria-label="Kuota">
+    <section class="ins-section" id="sec-timing" aria-label="Timing">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Timing</h2>
+        <p class="ins-section-lead">Kapan akun ini paling hidup.</p>
+      </div>
+      <p class="ins-ai-body" id="ai-timing">—</p>
+    </section>
+
+    <section class="ins-section" id="sec-playbook" aria-label="Playbook">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Playbook</h2>
+        <p class="ins-section-lead">Stop / start / continue + langkah minggu ini.</p>
+      </div>
+      <dl class="ins-ai-dl" id="ai-playbook"></dl>
+      <ol class="ins-ai-ol mt-3" id="ai-this-week"></ol>
+    </section>
+
+    <section class="ins-section" id="sec-reply" aria-label="Reply play">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Reply play</h2>
+        <p class="ins-section-lead">Kapan dan bagaimana mancing balasan.</p>
+      </div>
+      <dl class="ins-ai-dl" id="ai-reply"></dl>
+    </section>
+
+    <section class="ins-section" id="sec-exp" aria-label="Eksperimen">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Eksperimen</h2>
+        <p class="ins-section-lead">Hipotesis uji 3–5 post.</p>
+      </div>
+      <div class="ins-ai-list" id="ai-experiments"></div>
+    </section>
+
+    <section class="ins-section" id="sec-week" aria-label="Week plan">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Week plan</h2>
+        <p class="ins-section-lead">7 slot siap eksekusi.</p>
+      </div>
+      <div class="ai-week" id="ai-week"></div>
+    </section>
+
+    <section class="ins-section" id="sec-next" aria-label="Ide post">
+      <div class="ins-section-head">
+        <h2 class="ins-section-title">Ide post berikutnya</h2>
+        <p class="ins-section-lead">Hook siap tempel — salin atau bawa ke Buat Post.</p>
+      </div>
+      <div class="ins-ai-list" id="ai-next"></div>
+    </section>
+
+    <section class="ins-section" id="sec-quota" aria-label="Kuota">
       <div class="ins-section-head">
         <h2 class="ins-section-title">Kuota AI</h2>
-        <p class="ins-section-lead">Estimasi pemakaian Gemini free tier (lokal).</p>
+        <p class="ins-section-lead">Estimasi pemakaian kuota AI (lokal).</p>
       </div>
       <div class="ins-quota" id="ai-quota">
         <div class="ins-quota-row">
@@ -133,8 +214,8 @@
     </section>
   </div>
 </main>
-<script src="/js/api.js?v=mn70"></script>
-<script src="/js/layout.js?v=mn73"></script>
-<script src="/js/pages/ai-insight.js?v=strand13"></script>
+<script src="/js/api.js?v=ns12"></script>
+<script src="/js/layout.js?v=ns14"></script>
+<script src="/js/pages/ai-insight.js?v=ns11"></script>
 </body>
 </html>

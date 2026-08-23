@@ -4,7 +4,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"log"
-	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,16 +17,25 @@ import (
 )
 
 type Deps struct {
-	Store    *Store
-	Threads  *threads.Client
-	IG       *instagram.Client
-	AI       *ai.Client
-	Thumb    *ai.ThumbnailClient
-	Buffer   *buff.Client
-	Memory   *ai.MemoryStore
-	Public   string // PUBLIC_BASE_URL, no trailing slash
-	ThumbDir string // optional per-account thumbs dir
-	Schedule *schedule.Store
+	Store            *Store
+	Threads          *threads.Client
+	IG               *instagram.Client
+	AI               *ai.Client
+	Thumb            *ai.ThumbnailClient
+	Buffer           *buff.Client
+	Memory           *ai.MemoryStore
+	Public           string // PUBLIC_BASE_URL, no trailing slash
+	ThumbDir         string // optional per-account thumbs dir
+	Schedule         *schedule.Store
+	Publisher        Publisher
+	ResolveAccountID func(platform string) string
+}
+
+func (d *Deps) accountID(platform string) string {
+	if d.ResolveAccountID == nil {
+		return ""
+	}
+	return strings.TrimSpace(d.ResolveAccountID(platform))
 }
 
 func (d *Deps) publicOK() bool {
@@ -58,11 +66,16 @@ func (d *Deps) runOnce(job Job) error {
 	if d.AI == nil || !d.AI.Enabled() {
 		return fmt.Errorf("AI belum dikonfigurasi")
 	}
-	if d.Threads == nil || !d.Threads.Connected() {
-		return fmt.Errorf("token Threads belum terhubung")
-	}
-
 	cfg := d.Store.GetConfig()
+	if len(cfg.Channels) == 0 {
+		return fmt.Errorf("pilih minimal satu kanal di Lazy Business")
+	}
+	threadsID := d.accountID("threads")
+	instagramID := d.accountID("instagram")
+	tiktokID := d.accountID("tiktok")
+	if cfg.HasChannel("threads") && (d.Publisher == nil || !d.Publisher.ThreadsOK(threadsID)) {
+		return fmt.Errorf("akun Threads workspace belum dipilih — atur di halaman Akun")
+	}
 	mem := d.Memory.Get()
 
 	var lastErr error
@@ -70,16 +83,18 @@ func (d *Deps) runOnce(job Job) error {
 	var caption, title string
 	var threadIDs []string
 	var thumbURL string
+	var coverURL string
 	var imageURLs []string
 	var igContainer, igMediaID string
-	var bufferPostID, bufferXPostID string
-	bufferErr, bufferXErr := "", ""
+	var bufferPostID string
+	bufferErr := ""
 	igSkipped := false
 	igErr := ""
 
 	for attempt := 1; attempt <= 2; attempt++ {
 		lastErr = nil
 		thumbURL = ""
+		coverURL = ""
 		gen, err := d.AI.GenerateContent(nil, mem, ai.GenerateRequest{
 			Topic: cfg.TopicHint,
 			Count: 1,
@@ -118,21 +133,35 @@ func (d *Deps) runOnce(job Job) error {
 			}
 		}
 
-		if cfg.ThumbnailEnabled {
+		if cfg.HasChannel("threads") {
 			thumbURL, err = d.generateThreadsThumb(job, parts[0])
 			if err != nil {
-				log.Printf("lazy job %s thumb: %v (lanjut publish TEXT)", job.ID, err)
-				thumbURL = ""
+				lastErr = fmt.Errorf("cover Threads: %w", err)
+				log.Printf("lazy job %s cover Threads: %v", job.ID, err)
+				time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				continue
 			}
-		} else {
-			log.Printf("lazy job %s thumb: OFF di pengaturan", job.ID)
 		}
 
-		threadIDs, err = d.publishThreads(parts, thumbURL)
-		if err != nil {
-			lastErr = fmt.Errorf("threads: %w", err)
-			time.Sleep(time.Duration(attempt) * 2 * time.Second)
-			continue
+		// Instagram dan TikTok butuh cover visual yang sama kuatnya dengan
+		// /app/generate. Jangan menganggap slide teks pertama sebagai cover.
+		if cfg.HasChannel("instagram") || cfg.HasChannel("tiktok") {
+			coverURL, err = d.generateCarouselCover(job, gen.CoverTitle, parts[0], mem.Brand, cfg.CarouselTemplate)
+			if err != nil {
+				lastErr = fmt.Errorf("cover carousel: %w", err)
+				log.Printf("lazy job %s cover carousel: %v", job.ID, err)
+				time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				continue
+			}
+		}
+
+		if cfg.HasChannel("threads") {
+			threadIDs, err = d.publishThreads(threadsID, parts, thumbURL)
+			if err != nil {
+				lastErr = fmt.Errorf("threads: %w", err)
+				time.Sleep(time.Duration(attempt) * 2 * time.Second)
+				continue
+			}
 		}
 
 		_ = d.Store.UpdateJob(job.ID, func(j *Job) {
@@ -141,26 +170,33 @@ func (d *Deps) runOnce(job Job) error {
 			j.Caption = caption
 			j.ThreadsIDs = threadIDs
 			j.ThumbURL = thumbURL
+			j.CoverURL = coverURL
 		})
 
-		needSlides := d.publicOK() && (
-			(d.IG != nil && d.IG.Connected()) ||
-				(d.Buffer != nil && d.Buffer.Enabled()))
+		needSlides := d.publicOK() && (cfg.HasChannel("instagram") || cfg.HasChannel("tiktok"))
 
 		if needSlides {
+			// Instagram dan TikTok selalu menerima paket yang sama:
+			// slide 1 = cover/hook, slide 2+ = isi carousel.
 			imageURLs, err = d.renderAndURLs(job, mem.Brand, parts)
 			if err != nil {
 				igSkipped = true
 				igErr = "render: " + err.Error()
 				imageURLs = nil
 			}
+			if len(imageURLs) > 0 && coverURL != "" {
+				// Urutan publish carousel: cover visual dahulu, baru isi.
+				imageURLs = append([]string{coverURL}, imageURLs...)
+			}
 		}
 
 		// IG path
-		if d.IG == nil || !d.IG.Connected() {
+		if !cfg.HasChannel("instagram") {
+			// Kanal ini tidak dipilih untuk workspace.
+		} else if d.Publisher == nil || !d.Publisher.InstagramOK(instagramID) {
 			if !igSkipped {
 				igSkipped = true
-				igErr = "token Instagram belum terhubung"
+				igErr = "akun Repliz Instagram belum terhubung"
 			}
 		} else if !d.publicOK() {
 			igSkipped = true
@@ -171,49 +207,27 @@ func (d *Deps) runOnce(job Job) error {
 				igErr = "slide carousel belum siap"
 			}
 		} else {
-			out, err := d.IG.PublishCarousel(imageURLs, caption)
+			id, err := d.Publisher.PublishIGCarousel(instagramID, imageURLs, caption)
 			if err != nil {
 				igSkipped = true
 				igErr = "ig: " + err.Error()
-			} else if out != nil {
-				if c, ok := out["container"].(string); ok {
-					igContainer = c
-				}
-				igMediaID = extractPublishedID(out["published"])
-			}
-		}
-
-		// Buffer X/Twitter — publish sekarang (bukan antrian jadwal)
-		if d.Buffer != nil && d.Buffer.Enabled() && len(parts) > 0 {
-			res, err := d.Buffer.QueueTwitterThread(parts)
-			if err != nil {
-				bufferXErr = err.Error()
-				log.Printf("lazy job %s buffer x: %v", job.ID, err)
-			} else if res != nil {
-				bufferXPostID = res.PostID
-				log.Printf("lazy job %s buffer x shareNow id=%s parts=%d", job.ID, bufferXPostID, len(parts))
-			}
-		}
-
-		// Buffer TikTok — Notify Me (carousel gambar + caption)
-		if d.Buffer != nil && d.Buffer.Enabled() {
-			if !d.publicOK() {
-				bufferErr = "PUBLIC_BASE_URL belum valid"
-			} else if len(imageURLs) < 1 {
-				bufferErr = "slide carousel belum siap"
 			} else {
-				cap := caption
-				if strings.TrimSpace(cap) == "" && len(parts) > 0 {
-					cap = parts[0]
-				}
-				res, err := d.Buffer.QueueTikTokPhotos(cap, title, imageURLs)
-				if err != nil {
-					bufferErr = err.Error()
-					log.Printf("lazy job %s buffer tiktok: %v", job.ID, err)
-				} else if res != nil {
-					bufferPostID = res.PostID
-					log.Printf("lazy job %s buffer tiktok notify-me id=%s", job.ID, bufferPostID)
-				}
+				igMediaID = id
+				igContainer = id
+			}
+		}
+
+		if cfg.HasChannel("tiktok") {
+			if d.Publisher == nil || !d.Publisher.TikTokOK(tiktokID) {
+				bufferErr = "akun TikTok workspace belum dipilih"
+			} else if !d.publicOK() {
+				bufferErr = "PUBLIC_BASE_URL belum valid"
+			} else if len(imageURLs) < 2 {
+				bufferErr = "TikTok membutuhkan slide cover + isi carousel"
+			} else if id, pubErr := d.Publisher.PublishTikTokCarousel(tiktokID, imageURLs, caption); pubErr != nil {
+				bufferErr = pubErr.Error()
+			} else {
+				bufferPostID = id
 			}
 		}
 
@@ -223,37 +237,94 @@ func (d *Deps) runOnce(job Job) error {
 			j.Caption = caption
 			j.ThreadsIDs = threadIDs
 			j.ThumbURL = thumbURL
+			j.CoverURL = coverURL
 			j.ImageURLs = imageURLs
 			j.IGContainer = igContainer
 			j.IGMediaID = igMediaID
 			j.BufferPostID = bufferPostID
 			j.BufferError = bufferErr
-			j.BufferXPostID = bufferXPostID
-			j.BufferXError = bufferXErr
 			j.FinishedAt = time.Now().UTC()
-			if igSkipped {
+			if igSkipped || bufferErr != "" {
 				j.Status = StatusSkippedIG
-				j.Error = igErr
+				errs := make([]string, 0, 2)
+				if strings.TrimSpace(igErr) != "" {
+					errs = append(errs, igErr)
+				}
+				if strings.TrimSpace(bufferErr) != "" {
+					errs = append(errs, "tiktok: "+bufferErr)
+				}
+				j.Error = strings.Join(errs, "; ")
 			} else {
 				j.Status = StatusDone
 				j.Error = ""
 			}
 		})
-		log.Printf("lazy job %s done threads=%d thumb=%v ig_skip=%v buffer_tt=%v buffer_x=%v",
-			job.ID, len(threadIDs), thumbURL != "", igSkipped, bufferPostID != "", bufferXPostID != "")
+		log.Printf("lazy job %s done threads=%d thread_cover=%v carousel_cover=%v ig_skip=%v tiktok=%v",
+			job.ID, len(threadIDs), thumbURL != "", coverURL != "", igSkipped, bufferPostID != "")
 		return nil
 	}
 	return lastErr
 }
 
+// generateCarouselCover membuat cover 4:5 yang sama seperti tombol Thumbnail
+// di /app/generate. Aplikasi merender teks/handle sendiri agar tidak gibberish.
+func (d *Deps) generateCarouselCover(job Job, coverTitle, fallback, brand, template string) (string, error) {
+	if d.Thumb == nil || !d.Thumb.Enabled() {
+		return "", fmt.Errorf("AI_API_KEY belum — cover carousel tidak bisa dibuat")
+	}
+	if !d.publicOK() {
+		return "", fmt.Errorf("PUBLIC_BASE_URL belum di-set — cover carousel tidak bisa dipublish")
+	}
+	title := strings.TrimSpace(coverTitle)
+	if title == "" {
+		title = strings.TrimSpace(fallback)
+	}
+	if title == "" {
+		return "", fmt.Errorf("judul cover kosong")
+	}
+	crop := true
+	result, err := d.Thumb.GenerateRequest(ai.ThumbnailRequest{
+		Hook:            title,
+		Model:           lazyThumbModel(),
+		Size:            "1080x1350",
+		Quality:         lazyThumbQuality(),
+		AspectRatio:     "4:5",
+		Crop43:          &crop,
+		OverlayPanel:    true,
+		OverlayTitle:    title,
+		OverlayHandle:   strings.TrimPrefix(strings.TrimSpace(brand), "@"),
+		OverlayTemplate: template,
+	})
+	if err != nil {
+		return "", err
+	}
+	baseThumb := strings.TrimSpace(d.ThumbDir)
+	if baseThumb == "" {
+		baseThumb = ai.DefaultThumbMediaDir()
+	}
+	dir := filepath.Join(baseThumb, job.Date)
+	name, err := ai.SaveThumbnailPNG(dir, result.PNG)
+	if err != nil {
+		return "", err
+	}
+	return strings.TrimRight(d.Public, "/") + "/media/thumbs/" + job.Date + "/" + name, nil
+}
+
 func lazyThumbModel() string {
-	return envOr("LAZY_THUMB_MODEL", "gpt-image-2")
+	if v := strings.TrimSpace(os.Getenv("LAZY_THUMB_MODEL")); v != "" {
+		return v
+	}
+	if v := strings.TrimSpace(os.Getenv("OPENAI_IMAGE_MODEL")); v != "" {
+		return v
+	}
+	return "cx/gpt-5.5-image"
 }
 func lazyThumbSize() string {
-	return envOr("LAZY_THUMB_SIZE", "1024x768")
+	// Semua kanal memakai cover portrait 4:5 agar satu creative direction,
+	// kualitas, dan framing-nya konsisten dengan /app/generate.
+	return "1080x1350"
 }
 func lazyThumbQuality() string {
-	// user: auto/high — default high; boleh override ke auto
 	return envOr("LAZY_THUMB_QUALITY", "high")
 }
 
@@ -264,10 +335,10 @@ func envOr(k, def string) string {
 	return def
 }
 
-// generateThreadsThumb membuat thumbnail 4:3 dari hook utas via ChatGPT Image.
+// generateThreadsThumb membuat cover portrait 4:5 dari hook utas via ChatGPT Image.
 func (d *Deps) generateThreadsThumb(job Job, hook string) (string, error) {
 	if d.Thumb == nil || !d.Thumb.Enabled() {
-		return "", fmt.Errorf("OpenAI key belum — isi di Kelola akun")
+		return "", fmt.Errorf("AI_API_KEY belum — thumbnail di-skip")
 	}
 	hook = strings.TrimSpace(hook)
 	if hook == "" {
@@ -275,11 +346,12 @@ func (d *Deps) generateThreadsThumb(job Job, hook string) (string, error) {
 	}
 	crop := true
 	result, err := d.Thumb.GenerateRequest(ai.ThumbnailRequest{
-		Hook:    hook,
-		Model:   lazyThumbModel(),
-		Size:    lazyThumbSize(),
-		Quality: lazyThumbQuality(),
-		Crop43:  &crop,
+		Hook:        hook,
+		Model:       lazyThumbModel(),
+		Size:        lazyThumbSize(),
+		Quality:     lazyThumbQuality(),
+		AspectRatio: "4:5",
+		Crop43:      &crop,
 	})
 	if err != nil {
 		return "", err
@@ -301,91 +373,11 @@ func (d *Deps) generateThreadsThumb(job Job, hook string) (string, error) {
 	return strings.TrimRight(d.Public, "/") + rel, nil
 }
 
-func (d *Deps) publishThreads(parts []string, thumbURL string) ([]string, error) {
-	var ids []string
-	var prevID string
-	for i, text := range parts {
-		text = strings.TrimSpace(text)
-		if text == "" {
-			continue
-		}
-		form := url.Values{
-			"media_type": {"TEXT"},
-			"text":       {text},
-		}
-		if i == 0 && strings.TrimSpace(thumbURL) != "" {
-			form.Set("media_type", "IMAGE")
-			form.Set("image_url", strings.TrimSpace(thumbURL))
-		}
-		if prevID != "" {
-			form.Set("reply_to_id", prevID)
-		}
-
-		var created struct {
-			ID string `json:"id"`
-		}
-		var pub json.RawMessage
-		var lastErr error
-		for attempt := 1; attempt <= 3; attempt++ {
-			container, err := d.Threads.CreateContainer(form)
-			if err != nil {
-				lastErr = fmt.Errorf("bagian %d container: %w", i+1, err)
-				if isMediaNotFound(err) && prevID != "" && attempt < 3 {
-					time.Sleep(time.Duration(attempt*3) * time.Second)
-					continue
-				}
-				return ids, lastErr
-			}
-			_ = json.Unmarshal(container, &created)
-			if created.ID == "" {
-				return ids, fmt.Errorf("bagian %d: container id kosong", i+1)
-			}
-			pub, err = d.Threads.PublishContainer(created.ID)
-			if err != nil {
-				lastErr = fmt.Errorf("bagian %d publish: %w", i+1, err)
-				if isMediaNotFound(err) && attempt < 3 {
-					time.Sleep(time.Duration(attempt*3) * time.Second)
-					continue
-				}
-				return ids, lastErr
-			}
-			lastErr = nil
-			break
-		}
-		if lastErr != nil {
-			return ids, lastErr
-		}
-
-		var published struct {
-			ID string `json:"id"`
-		}
-		_ = json.Unmarshal(pub, &published)
-		id := published.ID
-		if id == "" {
-			id = created.ID
-		}
-		ids = append(ids, id)
-		prevID = id
-		// Parent harus sempat propagate sebelum reply berikutnya (hindari 4279009 di bagian lanjut).
-		if i < len(parts)-1 {
-			time.Sleep(2500 * time.Millisecond)
-		}
+func (d *Deps) publishThreads(accountID string, parts []string, thumbURL string) ([]string, error) {
+	if d.Publisher != nil {
+		return d.Publisher.PublishThreads(accountID, parts, strings.TrimSpace(thumbURL), "")
 	}
-	if len(ids) == 0 {
-		return nil, fmt.Errorf("tidak ada bagian yang terpublish")
-	}
-	return ids, nil
-}
-
-func isMediaNotFound(err error) bool {
-	if err == nil {
-		return false
-	}
-	s := err.Error()
-	return strings.Contains(s, "4279009") ||
-		strings.Contains(s, "Media Tidak Ditemukan") ||
-		strings.Contains(s, "Media Not Found") ||
-		strings.Contains(s, "does not exist")
+	return nil, fmt.Errorf("publisher Repliz belum siap")
 }
 
 func (d *Deps) renderAndURLs(job Job, brand string, parts []string) ([]string, error) {
