@@ -309,12 +309,6 @@ func (s *Scheduler) Status() Status {
 	counts := s.deps.Store.CountTodayByStatus(today)
 
 	thumbProviderOK := s.deps.Thumb != nil && s.deps.Thumb.Enabled()
-	bufferOK := s.deps.Buffer != nil && s.deps.Buffer.Enabled()
-	tiktokBufferOK := false
-	if bufferOK {
-		st := s.deps.Buffer.Status()
-		tiktokBufferOK = st["tiktok_ok"] == true
-	}
 	threadsID := s.deps.accountID("threads")
 	instagramID := s.deps.accountID("instagram")
 	tiktokID := s.deps.accountID("tiktok")
@@ -331,10 +325,10 @@ func (s *Scheduler) Status() Status {
 		PublicOK:      s.deps.publicOK(),
 		ThreadsOK:     !cfg.HasChannel("threads") || (s.deps.Publisher != nil && s.deps.Publisher.ThreadsOK(threadsID)),
 		InstagramOK:   !cfg.HasChannel("instagram") || (s.deps.Publisher != nil && s.deps.Publisher.InstagramOK(instagramID)),
-		TikTokOK:      !cfg.HasChannel("tiktok") || tiktokBufferOK || (s.deps.Publisher != nil && s.deps.Publisher.TikTokOK(tiktokID)),
+		TikTokOK:      !cfg.HasChannel("tiktok") || (s.deps.Publisher != nil && s.deps.Publisher.TikTokOK(tiktokID)),
 		AIOK:          s.deps.AI != nil && s.deps.AI.Enabled(),
 		ThumbOK:       !cfg.HasChannel("threads") || thumbProviderOK,
-		BufferOK:      bufferOK,
+		BufferOK:      s.deps.Buffer != nil && s.deps.Buffer.Enabled(),
 	}
 	var warns []string
 	if !st.AIOK {
@@ -347,7 +341,7 @@ func (s *Scheduler) Status() Status {
 		warns = append(warns, "Akun Instagram belum dipilih untuk workspace ini")
 	}
 	if cfg.HasChannel("tiktok") && !st.TikTokOK {
-		warns = append(warns, "Buffer TikTok belum siap — isi Buffer key + hubungkan channel TikTok di Akun")
+		warns = append(warns, "Akun TikTok Repliz belum dipilih untuk workspace ini")
 	}
 	if cfg.HasChannel("threads") && !thumbProviderOK {
 		warns = append(warns, "Model gambar belum siap — Threads membutuhkan cover + utas")

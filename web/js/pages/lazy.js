@@ -152,7 +152,7 @@ function showJobDetail(job) {
   }
   if (job.buffer_x_post_id) bits.push('Buffer X (shareNow): ' + job.buffer_x_post_id);
   if (job.buffer_x_error) bits.push('Buffer X: ' + job.buffer_x_error);
-  if (job.buffer_post_id) bits.push('TikTok schedule: ' + job.buffer_post_id);
+  if (job.buffer_post_id) bits.push('Repliz TikTok: ' + job.buffer_post_id);
   if (job.buffer_error) bits.push('TikTok: ' + job.buffer_error);
   if (job.error) bits.push('⚠️ ' + job.error);
   document.getElementById('lazy-caption').textContent = bits.join('\n\n');

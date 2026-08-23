@@ -251,27 +251,13 @@ func (d *Deps) runOnce(job Job) error {
 		}
 
 		if cfg.HasChannel("tiktok") {
-			if !d.publicOK() {
+			if d.Publisher == nil || !d.Publisher.TikTokOK(tiktokID) {
+				bufferErr = "akun TikTok Repliz belum dipilih — atur di /app/akun"
+			} else if !d.publicOK() {
 				bufferErr = "PUBLIC_BASE_URL belum valid — TikTok butuh URL gambar publik HTTPS"
-			} else if len(imageURLs) < 1 {
-				bufferErr = "TikTok membutuhkan slide cover + isi carousel"
-			} else if d.Buffer != nil && d.Buffer.Enabled() {
-				ttTitle := strings.TrimSpace(title)
-				if ttTitle == "" {
-					ttTitle = firstLine(caption, 80)
-				}
-				if ttTitle == "" && len(parts) > 0 {
-					ttTitle = firstLine(parts[0], 80)
-				}
-				res, err := d.Buffer.QueueTikTokPhotos(caption, ttTitle, imageURLs)
-				if err != nil {
-					bufferErr = err.Error()
-					log.Printf("lazy job %s buffer tiktok: %v", job.ID, err)
-				} else if res != nil {
-					bufferPostID = res.PostID
-					log.Printf("lazy job %s buffer tiktok notify-me: %s", job.ID, bufferPostID)
-				}
-			} else if d.Publisher != nil && d.Publisher.TikTokOK(tiktokID) && len(imageURLs) >= 2 {
+			} else if len(imageURLs) < 2 {
+				bufferErr = "TikTok membutuhkan minimal 2 gambar (cover + slide carousel)"
+			} else {
 				id, pubErr := d.Publisher.PublishTikTokCarousel(tiktokID, imageURLs, caption)
 				if pubErr != nil {
 					bufferErr = pubErr.Error()
@@ -280,8 +266,6 @@ func (d *Deps) runOnce(job Job) error {
 					bufferPostID = id
 					log.Printf("lazy job %s repliz tiktok schedule: %s", job.ID, id)
 				}
-			} else {
-				bufferErr = "Buffer TikTok belum di-set (Akun → Kelola) — atau pilih akun TikTok Repliz sebagai fallback"
 			}
 		}
 
@@ -445,17 +429,6 @@ func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []strin
 		urls = append(urls, fmt.Sprintf("%s/media/lazy/%s/%s", base, strings.ReplaceAll(subdir, "\\", "/"), name))
 	}
 	return urls, nil
-}
-
-func firstLine(s string, max int) string {
-	s = strings.TrimSpace(s)
-	if i := strings.IndexAny(s, "\n\r"); i >= 0 {
-		s = strings.TrimSpace(s[:i])
-	}
-	if max > 0 && len(s) > max {
-		s = strings.TrimSpace(s[:max])
-	}
-	return s
 }
 
 func extractPublishedID(v any) string {
