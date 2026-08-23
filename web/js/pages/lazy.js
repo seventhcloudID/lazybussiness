@@ -100,6 +100,26 @@ function statusBadge(st) {
   return `<span class="lazy-badge ${cls}">${Threads.escapeHtml(label)}</span>`;
 }
 
+function jobCanTikTokDraft(job) {
+  if (!job) return false;
+  const st = job.status || '';
+  if (st !== 'done' && st !== 'skipped_ig') return false;
+  if (job.buffer_post_id) return false;
+  return (job.image_urls?.length || 0) >= 2;
+}
+
+function updateTikTokDraftButton(job) {
+  const box = document.getElementById('lazy-detail-actions');
+  const btn = document.getElementById('btn-tiktok-draft');
+  if (!box || !btn) return;
+  const show = jobCanTikTokDraft(job);
+  box.hidden = !show;
+  if (show) {
+    btn.disabled = false;
+    btn.innerHTML = '<i class="bi bi-tiktok"></i> Kirim ke draft TikTok';
+  }
+}
+
 function channelPill(ok, icon, label) {
   return `<span class="lazy-ch ${ok ? 'is-ok' : 'is-off'}"><i class="bi ${icon}"></i>${Threads.escapeHtml(label)}</span>`;
 }
@@ -156,6 +176,7 @@ function showJobDetail(job) {
   if (job.buffer_error) bits.push('TikTok: ' + job.buffer_error);
   if (job.error) bits.push('⚠️ ' + job.error);
   document.getElementById('lazy-caption').textContent = bits.join('\n\n');
+  updateTikTokDraftButton(job);
 
   if (parts.length) {
     if (previewIdx >= parts.length) previewIdx = 0;
@@ -593,6 +614,34 @@ document.getElementById('btn-run-now').onclick = async () => {
 };
 
 document.getElementById('btn-refresh').onclick = () => refresh();
+
+document.getElementById('btn-tiktok-draft')?.addEventListener('click', async () => {
+  if (!detailJob?.id || !jobCanTikTokDraft(detailJob)) return;
+  const btn = document.getElementById('btn-tiktok-draft');
+  btn.disabled = true;
+  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Mengirim…';
+  showAlert('');
+  try {
+    const data = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(detailJob.id) + '/tiktok', {
+      method: 'POST',
+      body: '{}',
+    });
+    const job = data.job || data;
+    detailJob = job;
+    showJobDetail(job);
+    Threads.toast(data.message || 'TikTok draft dikirim ke Repliz', true);
+    await refresh();
+  } catch (e) {
+    Threads.toast(e.message, false);
+    showAlert(e.message);
+    try {
+      const job = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(detailJob.id));
+      detailJob = job;
+      showJobDetail(job);
+    } catch { /* ignore */ }
+    await refresh();
+  }
+});
 
 document.getElementById('btn-replan').onclick = async () => {
   if (!(await Threads.confirm('Hapus antrian hari ini dan buat jadwal baru dari sekarang?', {

@@ -4121,6 +4121,13 @@ main.main {
 }
 .lazy-toggle input { width: 1.15rem; height: 1.15rem; }
 
+.lazy-detail-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.lazy-detail-actions .th-btn { white-space: nowrap; }
+
 .lazy-detail-grid {
   display: grid;
   gap: 1.25rem;

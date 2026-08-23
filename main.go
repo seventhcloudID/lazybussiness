@@ -2638,6 +2638,31 @@ func main() {
 		}
 		writeJSON(w, http.StatusOK, job)
 	})
+	mux.HandleFunc("POST /api/lazy/jobs/{id}/tiktok", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "POST only")
+			return
+		}
+		id := r.PathValue("id")
+		job, err := lzs().PublishJobTikTok(id)
+		if err != nil {
+			code := http.StatusBadRequest
+			if strings.Contains(err.Error(), "tidak ditemukan") {
+				code = http.StatusNotFound
+			}
+			writeJSON(w, code, map[string]any{
+				"ok":    false,
+				"error": err.Error(),
+				"job":   job,
+			})
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      true,
+			"job":     job,
+			"message": "TikTok draft di Repliz — cek app Repliz/TikTok",
+		})
+	})
 	mux.HandleFunc("POST /api/lazy/run-now", func(w http.ResponseWriter, r *http.Request) {
 		job, err := lzs().RunNow()
 		if err != nil {

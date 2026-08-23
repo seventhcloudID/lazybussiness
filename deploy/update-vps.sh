@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
-# Update app di VPS (user ubuntu + sudo — folder aaPanel biasanya root:www).
-#   curl -fsSL https://raw.githubusercontent.com/seventhcloudID/lazybussiness/main/deploy/update-vps.sh | bash
+# Update app di VPS (user ubuntu — folder aaPanel biasanya root:www).
+#   curl -fsSL https://raw.githubusercontent.com/seventhcloudID/lazybussiness/main/deploy/update-vps.sh | sudo bash
 set -euo pipefail
 
 APP_DIR="${APP_DIR:-/www/wwwroot/flowa.tigaawan.com}"
@@ -9,9 +9,11 @@ BRANCH="${BRANCH:-main}"
 TMP="/tmp/lazybussiness-src-$$"
 
 SUDO=""
-if [[ ! -w "$APP_DIR" ]]; then
+if [[ $(id -u) -ne 0 ]]; then
   SUDO="sudo"
-  echo "==> $APP_DIR tidak writable — pakai sudo untuk sync & binary"
+  if [[ ! -w "$APP_DIR" ]]; then
+    echo "==> $APP_DIR tidak writable — pakai sudo untuk sync, binary & restart"
+  fi
 fi
 
 echo "==> Clone $REPO ($BRANCH) ke $TMP"

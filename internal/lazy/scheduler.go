@@ -3,6 +3,7 @@ package lazy
 import (
 	"fmt"
 	"log"
+	"strings"
 	"sync"
 	"time"
 
@@ -274,6 +275,87 @@ func (s *Scheduler) ReplanToday() error {
 
 func (s *Scheduler) GetJob(id string) (Job, bool) {
 	return s.deps.Store.GetJob(id)
+}
+
+// PublishJobTikTok mengirim carousel job yang sudah selesai ke draft/schedule TikTok via Repliz.
+func (s *Scheduler) PublishJobTikTok(id string) (Job, error) {
+	job, ok := s.deps.Store.GetJob(id)
+	if !ok {
+		return Job{}, fmt.Errorf("job tidak ditemukan")
+	}
+	if job.Status != StatusDone && job.Status != StatusSkippedIG {
+		return Job{}, fmt.Errorf("job belum selesai — tunggu generate/publish selesai")
+	}
+	if strings.TrimSpace(job.BufferPostID) != "" {
+		return Job{}, fmt.Errorf("TikTok sudah dikirim (Repliz: %s)", job.BufferPostID)
+	}
+	if len(job.ImageURLs) < 2 {
+		return Job{}, fmt.Errorf("carousel belum siap — butuh minimal 2 gambar (cover + slide)")
+	}
+	tiktokID := s.deps.accountID("tiktok")
+	if s.deps.Publisher == nil || !s.deps.Publisher.TikTokOK(tiktokID) {
+		return Job{}, fmt.Errorf("akun TikTok Repliz belum dipilih — atur di /app/akun")
+	}
+	if !s.deps.publicOK() {
+		return Job{}, fmt.Errorf("PUBLIC_BASE_URL belum valid — TikTok butuh URL gambar publik HTTPS")
+	}
+	caption := strings.TrimSpace(job.Caption)
+	if caption == "" && len(job.Parts) > 0 {
+		caption = strings.Join(job.Parts, "\n\n")
+	}
+	scheduleID, err := s.deps.Publisher.PublishTikTokCarousel(tiktokID, job.ImageURLs, caption)
+	if err != nil {
+		log.Printf("lazy job %s manual repliz tiktok: %v", id, err)
+		_ = s.deps.Store.UpdateJob(id, func(j *Job) {
+			j.BufferError = err.Error()
+			if j.Status == StatusSkippedIG {
+				j.Error = mergeJobErrors(j.Error, "tiktok: "+err.Error())
+			}
+		})
+		job, _ = s.deps.Store.GetJob(id)
+		return job, err
+	}
+	log.Printf("lazy job %s manual repliz tiktok schedule: %s", id, scheduleID)
+	_ = s.deps.Store.UpdateJob(id, func(j *Job) {
+		j.BufferPostID = scheduleID
+		j.BufferError = ""
+		if j.Status == StatusSkippedIG {
+			j.Error = stripTikTokError(j.Error)
+			if strings.TrimSpace(j.Error) == "" {
+				j.Status = StatusDone
+			}
+		}
+	})
+	job, _ = s.deps.Store.GetJob(id)
+	return job, nil
+}
+
+func mergeJobErrors(existing, add string) string {
+	existing = strings.TrimSpace(existing)
+	add = strings.TrimSpace(add)
+	if existing == "" {
+		return add
+	}
+	if add == "" {
+		return existing
+	}
+	if strings.Contains(existing, add) {
+		return existing
+	}
+	return existing + "; " + add
+}
+
+func stripTikTokError(errMsg string) string {
+	parts := strings.Split(errMsg, ";")
+	out := make([]string, 0, len(parts))
+	for _, p := range parts {
+		p = strings.TrimSpace(p)
+		if p == "" || strings.HasPrefix(strings.ToLower(p), "tiktok:") {
+			continue
+		}
+		out = append(out, p)
+	}
+	return strings.Join(out, "; ")
 }
 
 type Status struct {
