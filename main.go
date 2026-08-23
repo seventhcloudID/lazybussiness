@@ -2680,11 +2680,15 @@ func main() {
 		if channel == "tiktok" {
 			label = "TikTok"
 		}
+		msg := label + " carousel di Repliz — cek jadwal di app Repliz"
+		if channel == "tiktok" {
+			msg = "TikTok draft di Repliz — buka app TikTok / notifikasi Repliz untuk review & publish"
+		}
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":      true,
 			"job":     job,
 			"channel": channel,
-			"message": label + " carousel di Repliz — cek jadwal di app Repliz",
+			"message": msg,
 		})
 	})
 	mux.HandleFunc("POST /api/lazy/jobs/{id}/tiktok", func(w http.ResponseWriter, r *http.Request) {
@@ -2709,7 +2713,7 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":      true,
 			"job":     job,
-			"message": "TikTok carousel di Repliz — cek jadwal di app Repliz",
+			"message": "TikTok draft di Repliz — buka app TikTok / notifikasi Repliz untuk review & publish",
 		})
 	})
 	mux.HandleFunc("POST /api/lazy/run-now", func(w http.ResponseWriter, r *http.Request) {

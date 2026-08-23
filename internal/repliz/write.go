@@ -24,6 +24,16 @@ type ScheduleReq struct {
 	Replies        []map[string]any `json:"replies"`
 }
 
+// TikTokAdditionalInfo mengembalikan additionalInfo untuk schedule TikTok via Repliz.
+// isDraft=true → muncul di inbox TikTok sebagai draft (toggle "Posting sebagai Draft").
+func TikTokAdditionalInfo(draft, aiGenerated bool) map[string]any {
+	return map[string]any{
+		"isDraft":        draft,
+		"isAiGenerated":  aiGenerated,
+		"isAutoAddMusic": false,
+	}
+}
+
 func (c *Client) CreateSchedule(ctx context.Context, in ScheduleReq) (string, error) {
 	if !c.Ready() {
 		return "", fmt.Errorf("Repliz belum disambungkan")

@@ -160,7 +160,7 @@ function carouselActionButtons(job) {
     btns.push(`<span class="lazy-tag is-ok"><i class="bi bi-check2"></i> IG terkirim</span>`);
   }
   if (tt.canSend) {
-    btns.push(`<button type="button" class="th-btn th-btn-primary th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok"><i class="bi bi-tiktok"></i> Kirim TikTok</button>`);
+    btns.push(`<button type="button" class="th-btn th-btn-primary th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok"><i class="bi bi-tiktok"></i> Kirim draft TikTok</button>`);
   } else if (tt.canForce) {
     btns.push(`<button type="button" class="th-btn th-btn-soft th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok" data-force="1"><i class="bi bi-arrow-repeat"></i> Kirim ulang TikTok</button>`);
   } else if (tt.done) {

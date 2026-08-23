@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -63,15 +64,27 @@ func publishReplizCarousel(ctx context.Context, accountID, platform string, urls
 	if len(medias) < 2 {
 		return "", fmt.Errorf("carousel %s butuh minimal 2 gambar", platform)
 	}
-	id, err := replizCli.CreateSchedule(ctx, repliz.ScheduleReq{
+	req := repliz.ScheduleReq{
 		Title:       firstLine(caption, 80),
 		Description: caption,
 		Type:        "album",
 		Medias:      medias,
 		AccountID:   acc.AccountID(),
 		ScheduleAt:  time.Now().UTC().Add(25 * time.Second).Format("2006-01-02T15:04:05.000Z"),
-	})
+	}
+	if strings.EqualFold(platform, "tiktok") {
+		req.AdditionalInfo = repliz.TikTokAdditionalInfo(tiktokReplizDraft(), true)
+	}
+	id, err := replizCli.CreateSchedule(ctx, req)
 	return id, err
+}
+
+func tiktokReplizDraft() bool {
+	v := strings.ToLower(strings.TrimSpace(os.Getenv("LAZY_TIKTOK_DRAFT")))
+	if v == "0" || v == "false" || v == "no" {
+		return false
+	}
+	return true // default: draft ke inbox TikTok
 }
 
 func replizAccountForID(ctx context.Context, accountID, platform string) (repliz.Account, error) {
