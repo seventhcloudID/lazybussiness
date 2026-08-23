@@ -13,10 +13,14 @@ git clone --depth 1 "$REPO" "$TMP"
 
 echo "==> Sync ke $APP_DIR (file lama aaPanel tidak dihapus total, ditimpa oleh repo)"
 mkdir -p "$APP_DIR"
-rsync -a --exclude '.env' --exclude '.data' --exclude 'lazybussiness' "$TMP"/ "$APP_DIR"/
+SUDO=""
+if [[ ! -w "$APP_DIR" ]]; then
+  SUDO="sudo"
+fi
+$SUDO rsync -a --exclude '.env' --exclude '.data' --exclude 'lazybussiness' "$TMP"/ "$APP_DIR"/
 rm -rf "$TMP"
 
-cd "$APP_DIR"
+export PATH="/usr/local/go/bin:${PATH:-}"
 
 if ! command -v go >/dev/null 2>&1; then
   echo "==> Install Go 1.22"
@@ -31,19 +35,31 @@ fi
 export PATH="/usr/local/go/bin:$PATH"
 
 echo "==> Build"
-CGO_ENABLED=0 go build -o lazybussiness .
+(
+  cd "$APP_DIR"
+  CGO_ENABLED=0 go build -buildvcs=false -o lazybussiness .
+) || {
+  echo "==> Build gagal di APP_DIR (permission?) — build di /tmp lalu install"
+  BUILD_TMP="/tmp/lazybussiness-build-$$"
+  rm -rf "$BUILD_TMP"
+  git clone --depth 1 "$REPO" "$BUILD_TMP"
+  ( cd "$BUILD_TMP"; CGO_ENABLED=0 go build -buildvcs=false -o lazybussiness . )
+  $SUDO install -m 755 "$BUILD_TMP/lazybussiness" "$APP_DIR/lazybussiness"
+  rm -rf "$BUILD_TMP"
+}
 
-if [[ ! -f .env ]]; then
-  cp .env.example .env
+cd "$APP_DIR"
+if [[ ! -f "$APP_DIR/.env" ]]; then
+  $SUDO cp "$APP_DIR/.env.example" "$APP_DIR/.env"
   echo "==> .env dibuat dari contoh — WAJIB edit: nano $APP_DIR/.env"
 fi
 
 echo "==> systemd"
-cp -f deploy/lazybussiness.service /etc/systemd/system/lazybussiness.service
-systemctl daemon-reload
-systemctl enable lazybussiness
-systemctl restart lazybussiness
-systemctl --no-pager status lazybussiness || true
+$SUDO cp -f deploy/lazybussiness.service /etc/systemd/system/lazybussiness.service
+$SUDO systemctl daemon-reload
+$SUDO systemctl enable lazybussiness
+$SUDO systemctl restart lazybussiness
+$SUDO systemctl --no-pager status lazybussiness || true
 
 echo ""
 echo "Selesai. Edit kredensial lalu restart:"
