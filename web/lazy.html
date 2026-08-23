@@ -5,7 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Lazy Business — Dashboard</title>
 <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/bootstrap-icons/1.11.3/font/bootstrap-icons.min.css">
-<link rel="stylesheet" href="/css/app.css?v=lazy3" id="app-css">
+<link rel="stylesheet" href="/css/app.css?v=lazy4" id="app-css">
 <script src="https://cdn.tailwindcss.com"></script>
 <script src="/js/tailwind-config.js"></script>
 </head>
@@ -194,16 +194,15 @@
   <div id="lazy-last" class="th-panel mb-6 hidden">
     <div class="th-panel-head flex items-center justify-between gap-2 flex-wrap">
       <span>Detail + preview carousel</span>
-      <div class="flex items-center gap-2 min-w-0">
-        <div id="lazy-detail-actions" class="lazy-detail-actions" hidden>
-          <button id="btn-tiktok-draft" class="th-btn th-btn-soft" type="button">
-            <i class="bi bi-tiktok"></i> Kirim ke draft TikTok
-          </button>
-        </div>
-        <span id="lazy-title" class="text-xs text-muted font-medium truncate"></span>
-      </div>
+      <span id="lazy-title" class="text-xs text-muted font-medium truncate"></span>
     </div>
     <div class="th-panel-body">
+      <div id="lazy-detail-toolbar" class="lazy-detail-toolbar" hidden>
+        <button id="btn-tiktok-draft" class="th-btn th-btn-primary" type="button">
+          <i class="bi bi-tiktok"></i> Kirim ke draft TikTok
+        </button>
+        <p class="lazy-detail-toolbar-hint">Kirim carousel job ini ke Repliz (draft TikTok).</p>
+      </div>
       <div class="lazy-detail-grid">
         <div class="lazy-preview-col">
           <div id="lazy-thumb-box" class="gen-thumb-box mb-3" hidden>
@@ -261,6 +260,6 @@
 </main>
 <script src="/js/api.js?v=ns12"></script>
 <script src="/js/layout.js?v=ns14"></script>
-<script src="/js/pages/lazy.js?v=workspace4"></script>
+<script src="/js/pages/lazy.js?v=workspace5"></script>
 </body>
 </html>

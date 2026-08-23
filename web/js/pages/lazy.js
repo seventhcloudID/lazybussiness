@@ -68,7 +68,7 @@ function jobRowHTML(j, compact) {
   if (j.ig_container) tags.push('IG');
   const title = j.title || (compact ? 'Slot terjadwal' : j.id);
   return `
-    <button type="button" class="lazy-job is-${cls || 'pend'}${st === 'done' || st === 'skipped_ig' ? ' is-done' : ''}" data-job="${Threads.escapeHtml(j.id)}">
+    <div class="lazy-job is-${cls || 'pend'}${st === 'done' || st === 'skipped_ig' ? ' is-done' : ''}" data-job="${Threads.escapeHtml(j.id)}" role="button" tabindex="0">
       <div class="lazy-job-time"><strong>${fmtTime(j.scheduled_at)}</strong></div>
       <div class="lazy-job-track" aria-hidden="true">
         <span class="lazy-job-dot"></span>
@@ -84,8 +84,9 @@ function jobRowHTML(j, compact) {
         ${j.buffer_x_error ? `<div class="lazy-job-err">Buffer X: ${Threads.escapeHtml(j.buffer_x_error)}</div>` : ''}
         ${j.buffer_error ? `<div class="lazy-job-err">TikTok: ${Threads.escapeHtml(j.buffer_error)}</div>` : ''}
         ${j.error ? `<div class="lazy-job-err">${Threads.escapeHtml(j.error)}</div>` : ''}
+        ${jobCanTikTokDraft(j) ? `<div class="lazy-job-actions"><button type="button" class="th-btn th-btn-soft th-btn-sm lazy-job-tiktok" data-tiktok-draft="${Threads.escapeHtml(j.id)}"><i class="bi bi-tiktok"></i> Draft TikTok</button></div>` : ''}
       </div>
-    </button>`;
+    </div>`;
 }
 
 function statusBadge(st) {
@@ -100,16 +101,35 @@ function statusBadge(st) {
   return `<span class="lazy-badge ${cls}">${Threads.escapeHtml(label)}</span>`;
 }
 
+function jobParts(job) {
+  return (job?.parts?.length ? job.parts : job?.prefilled_parts) || [];
+}
+
 function jobCanTikTokDraft(job) {
   if (!job) return false;
+  if (job.tiktok_draft_ready === true) return true;
+  if (job.tiktok_draft_ready === false) return false;
   const st = job.status || '';
   if (st !== 'done' && st !== 'skipped_ig') return false;
   if (job.buffer_post_id) return false;
-  return (job.image_urls?.length || 0) >= 2;
+  if ((job.image_urls?.length || 0) >= 2) return true;
+  return jobParts(job).length >= 2;
+}
+
+function normalizeLazyJob(data) {
+  if (!data || typeof data !== 'object') return null;
+  if (data.job && typeof data.job === 'object') {
+    const job = { ...data.job };
+    if (typeof data.tiktok_draft_ready === 'boolean') {
+      job.tiktok_draft_ready = data.tiktok_draft_ready;
+    }
+    return job;
+  }
+  return data;
 }
 
 function updateTikTokDraftButton(job) {
-  const box = document.getElementById('lazy-detail-actions');
+  const box = document.getElementById('lazy-detail-toolbar');
   const btn = document.getElementById('btn-tiktok-draft');
   if (!box || !btn) return;
   const show = jobCanTikTokDraft(job);
@@ -512,12 +532,19 @@ document.getElementById('brand').addEventListener('input', () => {
 });
 
 async function openJobFromClick(e) {
+  const tiktokBtn = e.target.closest('[data-tiktok-draft]');
+  if (tiktokBtn) {
+    e.preventDefault();
+    e.stopPropagation();
+    await sendTikTokDraft(tiktokBtn.dataset.tiktokDraft);
+    return;
+  }
   const btn = e.target.closest('[data-job]');
   if (!btn) return;
   try {
-    const job = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(btn.dataset.job));
+    const data = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(btn.dataset.job));
     previewIdx = 0;
-    showJobDetail(job);
+    showJobDetail(normalizeLazyJob(data));
   } catch (err) {
     Threads.toast(err.message, false);
   }
@@ -615,32 +642,48 @@ document.getElementById('btn-run-now').onclick = async () => {
 
 document.getElementById('btn-refresh').onclick = () => refresh();
 
-document.getElementById('btn-tiktok-draft')?.addEventListener('click', async () => {
-  if (!detailJob?.id || !jobCanTikTokDraft(detailJob)) return;
+async function sendTikTokDraft(jobId) {
+  if (!jobId) return;
   const btn = document.getElementById('btn-tiktok-draft');
-  btn.disabled = true;
-  btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Mengirim…';
+  const inlineBtns = document.querySelectorAll(`[data-tiktok-draft="${CSS.escape(jobId)}"]`);
+  if (btn && detailJob?.id === jobId) {
+    btn.disabled = true;
+    btn.innerHTML = '<i class="bi bi-hourglass-split"></i> Mengirim…';
+  }
+  inlineBtns.forEach((el) => {
+    el.disabled = true;
+    el.innerHTML = '<i class="bi bi-hourglass-split"></i> Mengirim…';
+  });
   showAlert('');
   try {
-    const data = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(detailJob.id) + '/tiktok', {
+    const data = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(jobId) + '/tiktok', {
       method: 'POST',
       body: '{}',
     });
-    const job = data.job || data;
-    detailJob = job;
-    showJobDetail(job);
+    const job = normalizeLazyJob(data) || data.job || data;
+    if (detailJob?.id === jobId) {
+      detailJob = job;
+      showJobDetail(job);
+    }
     Threads.toast(data.message || 'TikTok draft dikirim ke Repliz', true);
     await refresh();
   } catch (e) {
     Threads.toast(e.message, false);
     showAlert(e.message);
-    try {
-      const job = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(detailJob.id));
-      detailJob = job;
-      showJobDetail(job);
-    } catch { /* ignore */ }
+    if (detailJob?.id === jobId) {
+      try {
+        const data = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(jobId));
+        detailJob = normalizeLazyJob(data);
+        showJobDetail(detailJob);
+      } catch { /* ignore */ }
+    }
     await refresh();
   }
+}
+
+document.getElementById('btn-tiktok-draft')?.addEventListener('click', async () => {
+  if (!detailJob?.id || !jobCanTikTokDraft(detailJob)) return;
+  await sendTikTokDraft(detailJob.id);
 });
 
 document.getElementById('btn-replan').onclick = async () => {

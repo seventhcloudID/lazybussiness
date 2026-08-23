@@ -289,8 +289,9 @@ func (s *Scheduler) PublishJobTikTok(id string) (Job, error) {
 	if strings.TrimSpace(job.BufferPostID) != "" {
 		return Job{}, fmt.Errorf("TikTok sudah dikirim (Repliz: %s)", job.BufferPostID)
 	}
-	if len(job.ImageURLs) < 2 {
-		return Job{}, fmt.Errorf("carousel belum siap — butuh minimal 2 gambar (cover + slide)")
+	imageURLs, err := s.deps.ensureJobCarouselURLs(job)
+	if err != nil {
+		return Job{}, err
 	}
 	tiktokID := s.deps.accountID("tiktok")
 	if s.deps.Publisher == nil || !s.deps.Publisher.TikTokOK(tiktokID) {
@@ -303,11 +304,14 @@ func (s *Scheduler) PublishJobTikTok(id string) (Job, error) {
 	if caption == "" && len(job.Parts) > 0 {
 		caption = strings.Join(job.Parts, "\n\n")
 	}
-	scheduleID, err := s.deps.Publisher.PublishTikTokCarousel(tiktokID, job.ImageURLs, caption)
+	scheduleID, err := s.deps.Publisher.PublishTikTokCarousel(tiktokID, imageURLs, caption)
 	if err != nil {
 		log.Printf("lazy job %s manual repliz tiktok: %v", id, err)
 		_ = s.deps.Store.UpdateJob(id, func(j *Job) {
 			j.BufferError = err.Error()
+			if len(j.ImageURLs) < 2 {
+				j.ImageURLs = imageURLs
+			}
 			if j.Status == StatusSkippedIG {
 				j.Error = mergeJobErrors(j.Error, "tiktok: "+err.Error())
 			}
@@ -319,6 +323,9 @@ func (s *Scheduler) PublishJobTikTok(id string) (Job, error) {
 	_ = s.deps.Store.UpdateJob(id, func(j *Job) {
 		j.BufferPostID = scheduleID
 		j.BufferError = ""
+		if len(j.ImageURLs) < 2 {
+			j.ImageURLs = imageURLs
+		}
 		if j.Status == StatusSkippedIG {
 			j.Error = stripTikTokError(j.Error)
 			if strings.TrimSpace(j.Error) == "" {

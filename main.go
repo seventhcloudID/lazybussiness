@@ -2636,7 +2636,10 @@ func main() {
 			writeErr(w, http.StatusNotFound, "job tidak ditemukan")
 			return
 		}
-		writeJSON(w, http.StatusOK, job)
+		writeJSON(w, http.StatusOK, map[string]any{
+			"job":                job,
+			"tiktok_draft_ready": lazy.JobTikTokDraftReady(job),
+		})
 	})
 	mux.HandleFunc("POST /api/lazy/jobs/{id}/tiktok", func(w http.ResponseWriter, r *http.Request) {
 		if r.Method != http.MethodPost {

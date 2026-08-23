@@ -391,6 +391,60 @@ func (d *Deps) renderAndURLs(job Job, brand string, parts []string) ([]string, e
 	return RenderPartsPublic(d.Store.MediaDir(), d.Public, brand, job.Date+"/"+job.ID, parts, tpl)
 }
 
+// ensureJobCarouselURLs memakai image_urls tersimpan atau render ulang dari parts + cover.
+func (d *Deps) ensureJobCarouselURLs(job Job) ([]string, error) {
+	if len(job.ImageURLs) >= 2 {
+		return job.ImageURLs, nil
+	}
+	parts := append([]string(nil), job.Parts...)
+	if len(parts) < 2 {
+		parts = append([]string(nil), job.PrefilledParts...)
+	}
+	if len(parts) < 2 {
+		return nil, fmt.Errorf("carousel belum siap — butuh minimal 2 bagian teks")
+	}
+	brand := ""
+	if d.Memory != nil {
+		brand = strings.TrimSpace(d.Memory.Get().Brand)
+	}
+	urls, err := d.renderAndURLs(job, brand, parts)
+	if err != nil {
+		return nil, err
+	}
+	cover := strings.TrimSpace(job.CoverURL)
+	if cover == "" {
+		cover = strings.TrimSpace(job.ThumbURL)
+	}
+	if cover == "" {
+		cover = strings.TrimSpace(job.PrefilledThumbURL)
+	}
+	if cover != "" {
+		urls = append([]string{cover}, urls...)
+	}
+	if len(urls) < 2 {
+		return nil, fmt.Errorf("carousel belum siap — butuh minimal 2 gambar (cover + slide)")
+	}
+	return urls, nil
+}
+
+// JobTikTokDraftReady true jika job selesai dan belum punya schedule TikTok.
+func JobTikTokDraftReady(job Job) bool {
+	if job.Status != StatusDone && job.Status != StatusSkippedIG {
+		return false
+	}
+	if strings.TrimSpace(job.BufferPostID) != "" {
+		return false
+	}
+	if len(job.ImageURLs) >= 2 {
+		return true
+	}
+	parts := job.Parts
+	if len(parts) < 2 {
+		parts = job.PrefilledParts
+	}
+	return len(parts) >= 2
+}
+
 // RenderPartsPublic menulis PNG per slide dan mengembalikan URL publik.
 func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []string, template string) ([]string, error) {
 	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")

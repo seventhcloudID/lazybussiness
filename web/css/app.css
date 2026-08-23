@@ -4128,6 +4128,31 @@ main.main {
 }
 .lazy-detail-actions .th-btn { white-space: nowrap; }
 
+.lazy-detail-toolbar {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+  padding: 0.85rem 1rem;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: rgba(123, 108, 246, 0.08);
+}
+.lazy-detail-toolbar-hint {
+  margin: 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.lazy-job-actions {
+  margin-top: 0.45rem;
+}
+.lazy-job-actions .th-btn-sm {
+  min-height: 30px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+}
+
 .lazy-detail-grid {
   display: grid;
   gap: 1.25rem;
