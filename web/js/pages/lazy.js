@@ -114,29 +114,97 @@ function jobPublishedTikTok(job) {
   return !!(job?.tiktok_schedule_id || job?.buffer_post_id);
 }
 
+function jobHasCarouselContent(job) {
+  return (job?.image_urls?.length || 0) >= 2 || jobParts(job).length >= 2;
+}
+
+function jobFinishedForPublish(job) {
+  const st = job?.status || '';
+  return st === 'done' || st === 'skipped_ig' || (st === 'failed' && jobHasCarouselContent(job));
+}
+
 function jobCanCarousel(job, channel) {
-  if (!job) return false;
+  if (!job || !jobFinishedForPublish(job) || !jobHasCarouselContent(job)) return false;
   const ready = job.carousel_ready?.[channel];
   if (ready === true) return true;
   if (ready === false) return false;
-  const st = job.status || '';
-  if (st !== 'done' && st !== 'skipped_ig') return false;
   if (channel === 'instagram' && jobPublishedIG(job)) return false;
   if (channel === 'tiktok' && jobPublishedTikTok(job)) return false;
-  if ((job.image_urls?.length || 0) >= 2) return true;
-  return jobParts(job).length >= 2;
+  return true;
 }
 
-function carouselActionButtons(job, compact) {
+function carouselChannelState(job, channel) {
+  if (!job) return { label: '—', canSend: false, done: false };
+  const published = channel === 'instagram' ? jobPublishedIG(job) : jobPublishedTikTok(job);
+  if (published) return { label: 'Sudah terkirim', canSend: false, done: true };
+  if (!jobFinishedForPublish(job)) return { label: 'Tunggu job selesai', canSend: false, done: false };
+  if (!jobHasCarouselContent(job)) return { label: 'Belum ada carousel', canSend: false, done: false };
+  return { label: 'Kirim sekarang', canSend: true, done: false };
+}
+
+function carouselActionButtons(job) {
+  if (!jobFinishedForPublish(job)) return '';
+  const ig = carouselChannelState(job, 'instagram');
+  const tt = carouselChannelState(job, 'tiktok');
   const btns = [];
-  if (jobCanCarousel(job, 'instagram')) {
-    btns.push(`<button type="button" class="th-btn th-btn-soft th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="instagram"><i class="bi bi-instagram"></i>${compact ? ' IG' : ' Kirim IG'}</button>`);
+  if (ig.canSend) {
+    btns.push(`<button type="button" class="th-btn th-btn-soft th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="instagram"><i class="bi bi-instagram"></i> Kirim IG</button>`);
+  } else if (ig.done) {
+    btns.push(`<span class="lazy-tag is-ok"><i class="bi bi-check2"></i> IG terkirim</span>`);
   }
-  if (jobCanCarousel(job, 'tiktok')) {
-    btns.push(`<button type="button" class="th-btn th-btn-soft th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok"><i class="bi bi-tiktok"></i>${compact ? ' TikTok' : ' Kirim TikTok'}</button>`);
+  if (tt.canSend) {
+    btns.push(`<button type="button" class="th-btn th-btn-soft th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok"><i class="bi bi-tiktok"></i> Kirim TikTok</button>`);
+  } else if (tt.done) {
+    btns.push(`<span class="lazy-tag is-ok"><i class="bi bi-check2"></i> TikTok terkirim</span>`);
   }
   if (!btns.length) return '';
   return `<div class="lazy-job-actions">${btns.join('')}</div>`;
+}
+
+function renderPublishBar(job) {
+  const bar = document.getElementById('lazy-publish-bar');
+  const actions = document.getElementById('lazy-publish-actions');
+  const title = document.getElementById('lazy-publish-title');
+  const hint = document.getElementById('lazy-publish-hint');
+  if (!bar || !actions || !job) {
+    bar?.classList.add('hidden');
+    return;
+  }
+  bar.classList.remove('hidden');
+  const st = job.status || '';
+  title.textContent = (job.title || job.id) + ' · ' + st;
+  const ig = carouselChannelState(job, 'instagram');
+  const tt = carouselChannelState(job, 'tiktok');
+  const parts = [];
+  parts.push(`<button type="button" class="th-btn th-btn-primary" data-carousel-btn="instagram"${ig.canSend ? '' : ' disabled'}><i class="bi bi-instagram"></i> Instagram — ${ig.label}</button>`);
+  parts.push(`<button type="button" class="th-btn th-btn-primary" data-carousel-btn="tiktok"${tt.canSend ? '' : ' disabled'}><i class="bi bi-tiktok"></i> TikTok — ${tt.label}</button>`);
+  actions.innerHTML = parts.join('');
+  if (ig.canSend || tt.canSend) {
+    hint.textContent = 'Cover + slide carousel yang sama — kirim manual ke Repliz.';
+  } else if (ig.done && tt.done) {
+    hint.textContent = 'IG & TikTok sudah terkirim otomasi Lazy.';
+  } else if (!jobFinishedForPublish(job)) {
+    hint.textContent = 'Job masih jalan — tombol aktif setelah selesai.';
+  } else {
+    hint.textContent = 'Carousel belum siap atau kanal sudah terkirim.';
+  }
+}
+
+function updateCarouselButtons(job) {
+  renderPublishBar(job);
+  const box = document.getElementById('lazy-detail-toolbar');
+  if (!box) return;
+  const ig = carouselChannelState(job, 'instagram');
+  const tt = carouselChannelState(job, 'tiktok');
+  if (!job) {
+    box.hidden = true;
+    return;
+  }
+  box.hidden = false;
+  const parts = [];
+  parts.push(`<button type="button" class="th-btn th-btn-soft" data-carousel-btn="instagram"${ig.canSend ? '' : ' disabled'}><i class="bi bi-instagram"></i> Instagram — ${ig.label}</button>`);
+  parts.push(`<button type="button" class="th-btn th-btn-soft" data-carousel-btn="tiktok"${tt.canSend ? '' : ' disabled'}><i class="bi bi-tiktok"></i> TikTok — ${tt.label}</button>`);
+  box.innerHTML = parts.join('') + '<p class="lazy-detail-toolbar-hint">Paket carousel sama — cover + slide — untuk IG & TikTok.</p>';
 }
 
 function normalizeLazyJob(data) {
@@ -152,27 +220,6 @@ function normalizeLazyJob(data) {
     return job;
   }
   return data;
-}
-
-function updateCarouselButtons(job) {
-  const box = document.getElementById('lazy-detail-toolbar');
-  if (!box) return;
-  const igReady = jobCanCarousel(job, 'instagram');
-  const ttReady = jobCanCarousel(job, 'tiktok');
-  if (!igReady && !ttReady) {
-    box.hidden = true;
-    box.innerHTML = '';
-    return;
-  }
-  box.hidden = false;
-  const parts = [];
-  if (igReady) {
-    parts.push('<button type="button" class="th-btn th-btn-primary" data-carousel-btn="instagram"><i class="bi bi-instagram"></i> Kirim carousel ke Repliz (Instagram)</button>');
-  }
-  if (ttReady) {
-    parts.push('<button type="button" class="th-btn th-btn-primary" data-carousel-btn="tiktok"><i class="bi bi-tiktok"></i> Kirim carousel ke Repliz (TikTok)</button>');
-  }
-  box.innerHTML = parts.join('') + '<p class="lazy-detail-toolbar-hint">Paket carousel sama — cover + slide — seperti otomasi Lazy.</p>';
 }
 
 function channelPill(ok, icon, label) {
@@ -233,6 +280,7 @@ function showJobDetail(job) {
   if (job.error) bits.push('⚠️ ' + job.error);
   document.getElementById('lazy-caption').textContent = bits.join('\n\n');
   updateCarouselButtons(job);
+  document.getElementById('lazy-publish-bar')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
   if (parts.length) {
     if (previewIdx >= parts.length) previewIdx = 0;
@@ -590,7 +638,12 @@ document.getElementById('job-list').addEventListener('click', openJobFromClick);
 document.getElementById('tomorrow-list').addEventListener('click', openJobFromClick);
 document.getElementById('lazy-detail-toolbar')?.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-carousel-btn]');
-  if (!btn || !detailJob?.id) return;
+  if (!btn || btn.disabled || !detailJob?.id) return;
+  await sendCarousel(detailJob.id, btn.dataset.carouselBtn);
+});
+document.getElementById('lazy-publish-actions')?.addEventListener('click', async (e) => {
+  const btn = e.target.closest('[data-carousel-btn]');
+  if (!btn || btn.disabled || !detailJob?.id) return;
   await sendCarousel(detailJob.id, btn.dataset.carouselBtn);
 });
 

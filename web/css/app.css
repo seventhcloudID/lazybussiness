@@ -4094,6 +4094,11 @@ main.main {
   color: var(--muted);
   border: 1px solid var(--border);
 }
+.lazy-tag.is-ok {
+  color: var(--ok);
+  border-color: rgba(61, 220, 151, 0.35);
+  background: rgba(61, 220, 151, 0.12);
+}
 
 .lazy-badge {
   font-size: 0.66rem;
@@ -4128,6 +4133,49 @@ main.main {
 }
 .lazy-detail-actions .th-btn { white-space: nowrap; }
 
+.lazy-publish-bar {
+  position: sticky;
+  top: 0.5rem;
+  z-index: 20;
+  border-color: rgba(123, 108, 246, 0.35);
+  background: linear-gradient(180deg, rgba(123, 108, 246, 0.14), rgba(123, 108, 246, 0.06));
+  box-shadow: 0 8px 32px -12px rgba(0, 0, 0, 0.45);
+}
+.lazy-publish-bar-inner {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.85rem 1rem;
+  padding: 0.9rem 1rem;
+}
+.lazy-publish-bar-copy { min-width: 0; }
+.lazy-publish-hint {
+  margin: 0.2rem 0 0;
+  font-size: 0.82rem;
+  color: var(--muted);
+}
+.lazy-publish-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+.lazy-publish-actions .th-btn[disabled] {
+  opacity: 0.55;
+  cursor: not-allowed;
+}
+.lazy-job-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem;
+  margin-top: 0.45rem;
+}
+.lazy-job-actions .th-btn-sm {
+  min-height: 30px;
+  padding: 0.25rem 0.65rem;
+  font-size: 0.78rem;
+}
+
 .lazy-detail-toolbar {
   display: flex;
   flex-wrap: wrap;
@@ -4143,14 +4191,6 @@ main.main {
   margin: 0;
   font-size: 0.82rem;
   color: var(--muted);
-}
-.lazy-job-actions {
-  margin-top: 0.45rem;
-}
-.lazy-job-actions .th-btn-sm {
-  min-height: 30px;
-  padding: 0.25rem 0.65rem;
-  font-size: 0.78rem;
 }
 
 .lazy-detail-grid {
