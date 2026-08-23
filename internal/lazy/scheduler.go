@@ -278,7 +278,7 @@ func (s *Scheduler) GetJob(id string) (Job, bool) {
 }
 
 // PublishJobCarousel mengirim carousel yang sama ke Repliz (Instagram/TikTok) seperti otomasi Lazy.
-func (s *Scheduler) PublishJobCarousel(id, channel string) (Job, error) {
+func (s *Scheduler) PublishJobCarousel(id, channel string, force bool) (Job, error) {
 	job, ok := s.deps.Store.GetJob(id)
 	if !ok {
 		return Job{}, fmt.Errorf("job tidak ditemukan")
@@ -291,10 +291,10 @@ func (s *Scheduler) PublishJobCarousel(id, channel string) (Job, error) {
 	if channel != "instagram" && channel != "tiktok" {
 		return Job{}, fmt.Errorf("channel harus instagram atau tiktok")
 	}
-	if channel == "instagram" && job.IGPublished() {
+	if !force && channel == "instagram" && job.IGPublished() {
 		return Job{}, fmt.Errorf("Instagram sudah dikirim (Repliz: %s)", strings.TrimSpace(job.IGMediaID))
 	}
-	if channel == "tiktok" && job.TikTokPublished() {
+	if !force && channel == "tiktok" && job.TikTokPublished() {
 		return Job{}, fmt.Errorf("TikTok sudah dikirim (Repliz: %s)", job.TikTokSchedule())
 	}
 	imageURLs, err := s.deps.ensureJobCarouselURLs(job)
@@ -357,7 +357,7 @@ func (s *Scheduler) PublishJobCarousel(id, channel string) (Job, error) {
 
 // PublishJobTikTok alias PublishJobCarousel tiktok (legacy API).
 func (s *Scheduler) PublishJobTikTok(id string) (Job, error) {
-	return s.PublishJobCarousel(id, "tiktok")
+	return s.PublishJobCarousel(id, "tiktok", false)
 }
 
 func mergeJobErrors(existing, add string) string {

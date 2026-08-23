@@ -61,7 +61,7 @@ function jobRowHTML(j, compact) {
   const cls = statusClass(st);
   const tags = [];
   if (j.buffer_x_post_id) tags.push('X');
-  if (j.tiktok_schedule_id || j.buffer_post_id) tags.push('TikTok');
+  if (j.tiktok_schedule_id) tags.push('TikTok');
   if (j.thumb_url) tags.push('Thumb');
   if (j.prefilled_thumb_url) tags.push('Cover Generate');
   if (j.threads_ids?.length) tags.push('Threads');
@@ -111,7 +111,11 @@ function jobPublishedIG(job) {
 }
 
 function jobPublishedTikTok(job) {
-  return !!(job?.tiktok_schedule_id || job?.buffer_post_id);
+  return !!job?.tiktok_schedule_id;
+}
+
+function jobLegacyBufferTikTok(job) {
+  return !jobPublishedTikTok(job) && !!job?.buffer_post_id;
 }
 
 function jobHasCarouselContent(job) {
@@ -134,12 +138,15 @@ function jobCanCarousel(job, channel) {
 }
 
 function carouselChannelState(job, channel) {
-  if (!job) return { label: '—', canSend: false, done: false };
+  if (!job) return { label: '—', canSend: false, done: false, canForce: false };
   const published = channel === 'instagram' ? jobPublishedIG(job) : jobPublishedTikTok(job);
-  if (published) return { label: 'Sudah terkirim', canSend: false, done: true };
-  if (!jobFinishedForPublish(job)) return { label: 'Tunggu job selesai', canSend: false, done: false };
-  if (!jobHasCarouselContent(job)) return { label: 'Belum ada carousel', canSend: false, done: false };
-  return { label: 'Kirim sekarang', canSend: true, done: false };
+  if (channel === 'tiktok' && jobLegacyBufferTikTok(job)) {
+    return { label: 'Belum Repliz — kirim', canSend: true, done: false, canForce: false, legacy: true };
+  }
+  if (published) return { label: 'Sudah terkirim', canSend: false, done: true, canForce: true };
+  if (!jobFinishedForPublish(job)) return { label: 'Tunggu job selesai', canSend: false, done: false, canForce: false };
+  if (!jobHasCarouselContent(job)) return { label: 'Belum ada carousel', canSend: false, done: false, canForce: false };
+  return { label: 'Kirim sekarang', canSend: true, done: false, canForce: false };
 }
 
 function carouselActionButtons(job) {
@@ -153,7 +160,9 @@ function carouselActionButtons(job) {
     btns.push(`<span class="lazy-tag is-ok"><i class="bi bi-check2"></i> IG terkirim</span>`);
   }
   if (tt.canSend) {
-    btns.push(`<button type="button" class="th-btn th-btn-soft th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok"><i class="bi bi-tiktok"></i> Kirim TikTok</button>`);
+    btns.push(`<button type="button" class="th-btn th-btn-primary th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok"><i class="bi bi-tiktok"></i> Kirim TikTok</button>`);
+  } else if (tt.canForce) {
+    btns.push(`<button type="button" class="th-btn th-btn-soft th-btn-sm" data-carousel="${Threads.escapeHtml(job.id)}" data-channel="tiktok" data-force="1"><i class="bi bi-arrow-repeat"></i> Kirim ulang TikTok</button>`);
   } else if (tt.done) {
     btns.push(`<span class="lazy-tag is-ok"><i class="bi bi-check2"></i> TikTok terkirim</span>`);
   }
@@ -177,9 +186,14 @@ function renderPublishBar(job) {
   const tt = carouselChannelState(job, 'tiktok');
   const parts = [];
   parts.push(`<button type="button" class="th-btn th-btn-primary" data-carousel-btn="instagram"${ig.canSend ? '' : ' disabled'}><i class="bi bi-instagram"></i> Instagram — ${ig.label}</button>`);
-  parts.push(`<button type="button" class="th-btn th-btn-primary" data-carousel-btn="tiktok"${tt.canSend ? '' : ' disabled'}><i class="bi bi-tiktok"></i> TikTok — ${tt.label}</button>`);
+  parts.push(`<button type="button" class="th-btn th-btn-primary" data-carousel-btn="tiktok"${tt.canSend || tt.legacy ? '' : ' disabled'}><i class="bi bi-tiktok"></i> TikTok — ${tt.label}</button>`);
+  if (tt.canForce) {
+    parts.push(`<button type="button" class="th-btn th-btn-soft" data-carousel-btn="tiktok" data-force="1"><i class="bi bi-arrow-repeat"></i> Kirim ulang TikTok</button>`);
+  }
   actions.innerHTML = parts.join('');
-  if (ig.canSend || tt.canSend) {
+  if (tt.legacy) {
+    hint.textContent = 'ID Buffer lama terdeteksi — belum masuk Repliz TikTok. Klik Kirim TikTok.';
+  } else if (ig.canSend || tt.canSend) {
     hint.textContent = 'Cover + slide carousel yang sama — kirim manual ke Repliz.';
   } else if (ig.done && tt.done) {
     hint.textContent = 'IG & TikTok sudah terkirim otomasi Lazy.';
@@ -203,7 +217,10 @@ function updateCarouselButtons(job) {
   box.hidden = false;
   const parts = [];
   parts.push(`<button type="button" class="th-btn th-btn-soft" data-carousel-btn="instagram"${ig.canSend ? '' : ' disabled'}><i class="bi bi-instagram"></i> Instagram — ${ig.label}</button>`);
-  parts.push(`<button type="button" class="th-btn th-btn-soft" data-carousel-btn="tiktok"${tt.canSend ? '' : ' disabled'}><i class="bi bi-tiktok"></i> TikTok — ${tt.label}</button>`);
+  parts.push(`<button type="button" class="th-btn th-btn-soft" data-carousel-btn="tiktok"${tt.canSend || tt.legacy ? '' : ' disabled'}><i class="bi bi-tiktok"></i> TikTok — ${tt.label}</button>`);
+  if (tt.canForce) {
+    parts.push(`<button type="button" class="th-btn th-btn-soft" data-carousel-btn="tiktok" data-force="1"><i class="bi bi-arrow-repeat"></i> Kirim ulang TikTok</button>`);
+  }
   box.innerHTML = parts.join('') + '<p class="lazy-detail-toolbar-hint">Paket carousel sama — cover + slide — untuk IG & TikTok.</p>';
 }
 
@@ -275,7 +292,8 @@ function showJobDetail(job) {
   if (job.buffer_x_error) bits.push('Buffer X: ' + job.buffer_x_error);
   if (job.ig_container || job.ig_media_id) bits.push('Repliz Instagram: ' + (job.ig_media_id || job.ig_container));
   if (job.ig_error) bits.push('Instagram: ' + job.ig_error);
-  if (job.tiktok_schedule_id || job.buffer_post_id) bits.push('Repliz TikTok: ' + (job.tiktok_schedule_id || job.buffer_post_id));
+  if (job.tiktok_schedule_id) bits.push('Repliz TikTok: ' + job.tiktok_schedule_id);
+  else if (job.buffer_post_id) bits.push('Buffer lama (bukan Repliz TikTok): ' + job.buffer_post_id);
   if (job.tiktok_error || job.buffer_error) bits.push('TikTok: ' + (job.tiktok_error || job.buffer_error));
   if (job.error) bits.push('⚠️ ' + job.error);
   document.getElementById('lazy-caption').textContent = bits.join('\n\n');
@@ -620,7 +638,7 @@ async function openJobFromClick(e) {
   if (carouselBtn) {
     e.preventDefault();
     e.stopPropagation();
-    await sendCarousel(carouselBtn.dataset.carousel, carouselBtn.dataset.channel);
+    await sendCarousel(carouselBtn.dataset.carousel, carouselBtn.dataset.channel, carouselBtn.dataset.force === '1');
     return;
   }
   const btn = e.target.closest('[data-job]');
@@ -639,12 +657,13 @@ document.getElementById('tomorrow-list').addEventListener('click', openJobFromCl
 document.getElementById('lazy-detail-toolbar')?.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-carousel-btn]');
   if (!btn || btn.disabled || !detailJob?.id) return;
-  await sendCarousel(detailJob.id, btn.dataset.carouselBtn);
+  await sendCarousel(detailJob.id, btn.dataset.carouselBtn, btn.dataset.force === '1');
 });
 document.getElementById('lazy-publish-actions')?.addEventListener('click', async (e) => {
   const btn = e.target.closest('[data-carousel-btn]');
-  if (!btn || btn.disabled || !detailJob?.id) return;
-  await sendCarousel(detailJob.id, btn.dataset.carouselBtn);
+  if (!btn || !detailJob?.id) return;
+  if (btn.disabled && btn.dataset.force !== '1') return;
+  await sendCarousel(detailJob.id, btn.dataset.carouselBtn, btn.dataset.force === '1');
 });
 
 document.getElementById('lazy-parts').addEventListener('click', e => {
@@ -736,10 +755,14 @@ document.getElementById('btn-run-now').onclick = async () => {
 
 document.getElementById('btn-refresh').onclick = () => refresh();
 
-async function sendCarousel(jobId, channel) {
+async function sendCarousel(jobId, channel, force) {
   if (!jobId || !channel) return;
-  const inlineBtns = document.querySelectorAll(`[data-carousel="${CSS.escape(jobId)}"][data-channel="${CSS.escape(channel)}"]`);
-  const detailBtns = document.querySelectorAll(`#lazy-detail-toolbar [data-carousel-btn="${CSS.escape(channel)}"]`);
+  const sel = `[data-carousel="${CSS.escape(jobId)}"][data-channel="${CSS.escape(channel)}"]`;
+  const inlineBtns = document.querySelectorAll(force ? `${sel}[data-force="1"]` : sel);
+  const detailSel = force
+    ? `#lazy-detail-toolbar [data-carousel-btn="${CSS.escape(channel)}"][data-force="1"], #lazy-publish-actions [data-carousel-btn="${CSS.escape(channel)}"][data-force="1"]`
+    : `#lazy-detail-toolbar [data-carousel-btn="${CSS.escape(channel)}"]:not([data-force]), #lazy-publish-actions [data-carousel-btn="${CSS.escape(channel)}"]:not([data-force])`;
+  const detailBtns = document.querySelectorAll(detailSel);
   [...inlineBtns, ...detailBtns].forEach((el) => {
     el.disabled = true;
     el.innerHTML = '<i class="bi bi-hourglass-split"></i> Mengirim…';
@@ -748,7 +771,7 @@ async function sendCarousel(jobId, channel) {
   try {
     const data = await Threads.api('/api/lazy/jobs/' + encodeURIComponent(jobId) + '/carousel', {
       method: 'POST',
-      body: JSON.stringify({ channel }),
+      body: JSON.stringify({ channel, force: !!force }),
     });
     const job = normalizeLazyJob(data) || data.job || data;
     if (detailJob?.id === jobId) {

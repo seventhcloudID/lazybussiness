@@ -2,19 +2,18 @@ package lazy
 
 import "strings"
 
-// NormalizeJob menyamakan field legacy (buffer_*) dengan field Repliz carousel.
+// NormalizeJob sinkronkan field legacy buffer_* setelah Repliz TikTok terkirim.
+// buffer_post_id saja (Buffer Notify Me lama) TIDAK dianggap schedule Repliz.
 func NormalizeJob(j *Job) {
 	if j == nil {
 		return
 	}
-	if j.TikTokScheduleID == "" {
-		j.TikTokScheduleID = strings.TrimSpace(j.BufferPostID)
+	if j.TikTokScheduleID != "" {
+		j.BufferPostID = j.TikTokScheduleID
 	}
-	if j.TikTokError == "" {
-		j.TikTokError = strings.TrimSpace(j.BufferError)
+	if j.TikTokError != "" {
+		j.BufferError = j.TikTokError
 	}
-	j.BufferPostID = j.TikTokScheduleID
-	j.BufferError = j.TikTokError
 }
 
 func (j Job) IGPublished() bool {
@@ -22,18 +21,15 @@ func (j Job) IGPublished() bool {
 }
 
 func (j Job) TikTokPublished() bool {
-	id := strings.TrimSpace(j.TikTokScheduleID)
-	if id == "" {
-		id = strings.TrimSpace(j.BufferPostID)
-	}
-	return id != ""
+	return strings.TrimSpace(j.TikTokScheduleID) != ""
+}
+
+func (j Job) HasLegacyBufferTikTok() bool {
+	return !j.TikTokPublished() && strings.TrimSpace(j.BufferPostID) != ""
 }
 
 func (j Job) TikTokSchedule() string {
-	if id := strings.TrimSpace(j.TikTokScheduleID); id != "" {
-		return id
-	}
-	return strings.TrimSpace(j.BufferPostID)
+	return strings.TrimSpace(j.TikTokScheduleID)
 }
 
 func jobHasCarouselContent(job Job) bool {

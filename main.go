@@ -2653,6 +2653,7 @@ func main() {
 		id := r.PathValue("id")
 		var body struct {
 			Channel string `json:"channel"`
+			Force   bool   `json:"force"`
 		}
 		_ = json.NewDecoder(r.Body).Decode(&body)
 		channel := strings.ToLower(strings.TrimSpace(body.Channel))
@@ -2662,7 +2663,7 @@ func main() {
 		if channel == "ig" {
 			channel = "instagram"
 		}
-		job, err := lzs().PublishJobCarousel(id, channel)
+		job, err := lzs().PublishJobCarousel(id, channel, body.Force)
 		if err != nil {
 			code := http.StatusBadRequest
 			if strings.Contains(err.Error(), "tidak ditemukan") {
@@ -2692,7 +2693,7 @@ func main() {
 			return
 		}
 		id := r.PathValue("id")
-		job, err := lzs().PublishJobCarousel(id, "tiktok")
+		job, err := lzs().PublishJobCarousel(id, "tiktok", false)
 		if err != nil {
 			code := http.StatusBadRequest
 			if strings.Contains(err.Error(), "tidak ditemukan") {
