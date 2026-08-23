@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"image"
 	"image/color"
+	"image/jpeg"
 	"image/png"
 	"os"
 	"path/filepath"
@@ -727,7 +728,7 @@ func underlineBrandBar(img *image.RGBA, x, y, hw int, c color.RGBA) int {
 	return 14
 }
 
-// RenderSlidePNG menulis PNG 1080×1350 dengan template pilihan akun.
+// RenderSlidePNG menulis slide 1080×1350; format dari ekstensi path (.jpg/.jpeg → JPEG, selain itu PNG).
 // Brand selalu ditampilkan (fallback @brand). Teks di-scale ke ruang tersedia.
 // slideNum 1-based; slideTotal 0 = sembunyikan indikator.
 func RenderSlidePNG(path, brand, text string, slideNum, slideTotal int, template string) error {
@@ -1136,5 +1137,10 @@ func RenderSlidePNG(path, brand, text string, slideNum, slideTotal int, template
 		return err
 	}
 	defer f.Close()
-	return png.Encode(f, img)
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg", ".jpeg":
+		return jpeg.Encode(f, img, &jpeg.Options{Quality: 92})
+	default:
+		return png.Encode(f, img)
+	}
 }

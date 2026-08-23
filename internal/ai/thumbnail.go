@@ -9,6 +9,7 @@ import (
 	"image/color"
 	"image/draw"
 	_ "image/jpeg"
+	"image/jpeg"
 	"image/png"
 	"io"
 	"net/http"
@@ -1363,6 +1364,28 @@ func SaveThumbnailPNG(dir string, pngBytes []byte) (string, error) {
 	name := fmt.Sprintf("thumb-%d.png", time.Now().UnixNano())
 	path := filepath.Join(dir, name)
 	if err := os.WriteFile(path, pngBytes, 0o644); err != nil {
+		return "", err
+	}
+	return name, nil
+}
+
+// SaveThumbnailJPEG converts PNG bytes to JPEG under dir (TikTok carousel butuh JPEG/WebP).
+func SaveThumbnailJPEG(dir string, pngBytes []byte) (string, error) {
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return "", err
+	}
+	img, err := png.Decode(bytes.NewReader(pngBytes))
+	if err != nil {
+		return "", err
+	}
+	name := fmt.Sprintf("thumb-%d.jpg", time.Now().UnixNano())
+	path := filepath.Join(dir, name)
+	f, err := os.Create(path)
+	if err != nil {
+		return "", err
+	}
+	defer f.Close()
+	if err := jpeg.Encode(f, img, &jpeg.Options{Quality: 92}); err != nil {
 		return "", err
 	}
 	return name, nil

@@ -309,7 +309,7 @@ func (d *Deps) generateEdgeCleanCover(job Job, hook, coverTitle, brand, template
 		baseThumb = ai.DefaultThumbMediaDir()
 	}
 	dir := filepath.Join(baseThumb, job.Date)
-	name, err := ai.SaveThumbnailPNG(dir, result.PNG)
+	name, err := ai.SaveThumbnailJPEG(dir, result.PNG)
 	if err != nil {
 		return "", err
 	}
@@ -356,7 +356,7 @@ func (d *Deps) renderAndURLs(job Job, brand string, parts []string) ([]string, e
 // ensureJobCarouselURLs memakai image_urls tersimpan atau render ulang dari parts + cover.
 func (d *Deps) ensureJobCarouselURLs(job Job) ([]string, error) {
 	if len(job.ImageURLs) >= 2 {
-		return job.ImageURLs, nil
+		return d.ensureJPEGCarouselURLs(job.ImageURLs)
 	}
 	parts := append([]string(nil), job.Parts...)
 	if len(parts) < 2 {
@@ -386,7 +386,7 @@ func (d *Deps) ensureJobCarouselURLs(job Job) ([]string, error) {
 	if len(urls) < 2 {
 		return nil, fmt.Errorf("carousel belum siap — butuh minimal 2 gambar (cover + slide)")
 	}
-	return urls, nil
+	return d.ensureJPEGCarouselURLs(urls)
 }
 
 func (d *Deps) publishReplizCarouselID(cfg Config, platform, accountID string, imageURLs []string, caption, priorErr string) (scheduleID, errMsg string) {
@@ -421,6 +421,13 @@ func (d *Deps) publishReplizCarouselID(cfg Config, platform, accountID string, i
 	if len(imageURLs) < 2 {
 		return "", "carousel membutuhkan minimal 2 gambar (cover + slide)"
 	}
+	if strings.EqualFold(platform, "tiktok") {
+		var convErr error
+		imageURLs, convErr = d.prepareTikTokCarouselURLs(imageURLs)
+		if convErr != nil {
+			return "", convErr.Error()
+		}
+	}
 	var id string
 	var err error
 	switch platform {
@@ -439,7 +446,7 @@ func (d *Deps) publishReplizCarouselID(cfg Config, platform, accountID string, i
 	return id, ""
 }
 
-// RenderPartsPublic menulis PNG per slide dan mengembalikan URL publik.
+// RenderPartsPublic menulis JPEG per slide dan mengembalikan URL publik.
 func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []string, template string) ([]string, error) {
 	base := strings.TrimRight(strings.TrimSpace(publicBase), "/")
 	if base == "" || !(strings.HasPrefix(base, "https://") || strings.HasPrefix(base, "http://")) {
@@ -469,7 +476,7 @@ func RenderPartsPublic(mediaDir, publicBase, brand, subdir string, parts []strin
 	var urls []string
 	total := len(cleaned)
 	for i, p := range cleaned {
-		name := fmt.Sprintf("%02d.png", i+1)
+		name := fmt.Sprintf("%02d.jpg", i+1)
 		path := filepath.Join(dir, name)
 		if err := RenderSlidePNG(path, brand, p, i+1, total, template); err != nil {
 			return nil, err

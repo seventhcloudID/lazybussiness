@@ -3080,7 +3080,7 @@ func main() {
 	mux.HandleFunc("GET /media/lazy/", func(w http.ResponseWriter, r *http.Request) {
 		rel := strings.TrimPrefix(r.URL.Path, "/media/lazy/")
 		if p := accounts.FindLazyMedia(rel); p != "" {
-			http.ServeFile(w, r, p)
+			serveMediaFile(w, r, p)
 			return
 		}
 		http.NotFound(w, r)
@@ -3088,7 +3088,7 @@ func main() {
 	mux.HandleFunc("GET /media/thumbs/", func(w http.ResponseWriter, r *http.Request) {
 		rel := strings.TrimPrefix(r.URL.Path, "/media/thumbs/")
 		if p := accounts.FindThumbMedia(rel); p != "" {
-			http.ServeFile(w, r, p)
+			serveMediaFile(w, r, p)
 			return
 		}
 		http.NotFound(w, r)
@@ -3307,6 +3307,21 @@ code{background:#f3f3f3;padding:.15rem .4rem;border-radius:4px}</style></head><b
 <p>Kode konfirmasi: <code>%s</code></p>
 <p>Permintaan penghapusan data yang terkait akun Meta untuk aplikasi malesngonten sudah kami terima dan diproses.</p>
 </body></html>`, html.EscapeString(code))
+}
+
+func serveMediaFile(w http.ResponseWriter, r *http.Request, path string) {
+	switch strings.ToLower(filepath.Ext(path)) {
+	case ".jpg", ".jpeg":
+		w.Header().Set("Content-Type", "image/jpeg")
+	case ".png":
+		w.Header().Set("Content-Type", "image/png")
+	case ".webp":
+		w.Header().Set("Content-Type", "image/webp")
+	case ".gif":
+		w.Header().Set("Content-Type", "image/gif")
+	}
+	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
+	http.ServeFile(w, r, path)
 }
 
 func writeErr(w http.ResponseWriter, status int, msg string) {
