@@ -86,10 +86,9 @@ func (d *Deps) runOnce(job Job) error {
 	var coverURL string
 	var imageURLs []string
 	var igContainer, igMediaID string
-	var bufferPostID string
-	bufferErr := ""
-	igSkipped := false
-	igErr := ""
+	var igErrMsg string
+	var tiktokScheduleID string
+	var tiktokErrMsg string
 
 	useHandoff := len(job.PrefilledParts) >= 2
 	prefilledThumb := strings.TrimSpace(job.PrefilledThumbURL)
@@ -209,65 +208,25 @@ func (d *Deps) runOnce(job Job) error {
 		needSlides := d.publicOK() && (cfg.HasChannel("instagram") || cfg.HasChannel("tiktok"))
 
 		if needSlides {
-			// Instagram dan TikTok selalu menerima paket yang sama:
-			// slide 1 = cover/hook, slide 2+ = isi carousel.
 			imageURLs, err = d.renderAndURLs(job, mem.Brand, parts)
 			if err != nil {
-				igSkipped = true
-				igErr = "render: " + err.Error()
+				renderErr := "render: " + err.Error()
+				igErrMsg = renderErr
+				tiktokErrMsg = renderErr
 				imageURLs = nil
 			}
 			if len(imageURLs) > 0 && coverURL != "" {
-				// Urutan publish carousel: cover visual dahulu, baru isi.
 				imageURLs = append([]string{coverURL}, imageURLs...)
 			}
 		}
 
-		// IG path
-		if !cfg.HasChannel("instagram") {
-			// Kanal ini tidak dipilih untuk workspace.
-		} else if d.Publisher == nil || !d.Publisher.InstagramOK(instagramID) {
-			if !igSkipped {
-				igSkipped = true
-				igErr = "akun Repliz Instagram belum terhubung"
-			}
-		} else if !d.publicOK() {
-			igSkipped = true
-			igErr = "PUBLIC_BASE_URL belum di-set (butuh URL publik HTTPS)"
-		} else if len(imageURLs) < 2 {
-			igSkipped = true
-			if igErr == "" {
-				igErr = "slide carousel belum siap"
-			}
-		} else {
-			id, err := d.Publisher.PublishIGCarousel(instagramID, imageURLs, caption)
-			if err != nil {
-				igSkipped = true
-				igErr = "ig: " + err.Error()
-			} else {
-				igMediaID = id
-				igContainer = id
-			}
+		igMediaID, igErrMsg = d.publishReplizCarouselID(cfg, "instagram", instagramID, imageURLs, caption, igErrMsg)
+		if igMediaID != "" {
+			igContainer = igMediaID
 		}
+		tiktokScheduleID, tiktokErrMsg = d.publishReplizCarouselID(cfg, "tiktok", tiktokID, imageURLs, caption, tiktokErrMsg)
 
-		if cfg.HasChannel("tiktok") {
-			if d.Publisher == nil || !d.Publisher.TikTokOK(tiktokID) {
-				bufferErr = "akun TikTok Repliz belum dipilih — atur di /app/akun"
-			} else if !d.publicOK() {
-				bufferErr = "PUBLIC_BASE_URL belum valid — TikTok butuh URL gambar publik HTTPS"
-			} else if len(imageURLs) < 2 {
-				bufferErr = "TikTok membutuhkan minimal 2 gambar (cover + slide carousel)"
-			} else {
-				id, pubErr := d.Publisher.PublishTikTokCarousel(tiktokID, imageURLs, caption)
-				if pubErr != nil {
-					bufferErr = pubErr.Error()
-					log.Printf("lazy job %s repliz tiktok: %v", job.ID, pubErr)
-				} else {
-					bufferPostID = id
-					log.Printf("lazy job %s repliz tiktok schedule: %s", job.ID, id)
-				}
-			}
-		}
+		carouselFailed := (cfg.HasChannel("instagram") && igErrMsg != "") || (cfg.HasChannel("tiktok") && tiktokErrMsg != "")
 
 		_ = d.Store.UpdateJob(job.ID, func(j *Job) {
 			j.Parts = parts
@@ -279,17 +238,20 @@ func (d *Deps) runOnce(job Job) error {
 			j.ImageURLs = imageURLs
 			j.IGContainer = igContainer
 			j.IGMediaID = igMediaID
-			j.BufferPostID = bufferPostID
-			j.BufferError = bufferErr
+			j.IGError = igErrMsg
+			j.TikTokScheduleID = tiktokScheduleID
+			j.TikTokError = tiktokErrMsg
+			j.BufferPostID = tiktokScheduleID
+			j.BufferError = tiktokErrMsg
 			j.FinishedAt = time.Now().UTC()
-			if igSkipped || bufferErr != "" {
+			if carouselFailed {
 				j.Status = StatusSkippedIG
 				errs := make([]string, 0, 2)
-				if strings.TrimSpace(igErr) != "" {
-					errs = append(errs, igErr)
+				if strings.TrimSpace(igErrMsg) != "" {
+					errs = append(errs, "ig: "+igErrMsg)
 				}
-				if strings.TrimSpace(bufferErr) != "" {
-					errs = append(errs, "tiktok: "+bufferErr)
+				if strings.TrimSpace(tiktokErrMsg) != "" {
+					errs = append(errs, "tiktok: "+tiktokErrMsg)
 				}
 				j.Error = strings.Join(errs, "; ")
 			} else {
@@ -297,8 +259,8 @@ func (d *Deps) runOnce(job Job) error {
 				j.Error = ""
 			}
 		})
-		log.Printf("lazy job %s done threads=%d thread_cover=%v carousel_cover=%v ig_skip=%v tiktok=%v",
-			job.ID, len(threadIDs), thumbURL != "", coverURL != "", igSkipped, bufferPostID != "")
+		log.Printf("lazy job %s done threads=%d thread_cover=%v carousel_cover=%v ig=%v tiktok=%v",
+			job.ID, len(threadIDs), thumbURL != "", coverURL != "", igMediaID != "", tiktokScheduleID != "")
 		return nil
 	}
 	return lastErr
@@ -427,22 +389,54 @@ func (d *Deps) ensureJobCarouselURLs(job Job) ([]string, error) {
 	return urls, nil
 }
 
-// JobTikTokDraftReady true jika job selesai dan belum punya schedule TikTok.
-func JobTikTokDraftReady(job Job) bool {
-	if job.Status != StatusDone && job.Status != StatusSkippedIG {
-		return false
+func (d *Deps) publishReplizCarouselID(cfg Config, platform, accountID string, imageURLs []string, caption, priorErr string) (scheduleID, errMsg string) {
+	if priorErr != "" {
+		return "", priorErr
 	}
-	if strings.TrimSpace(job.BufferPostID) != "" {
-		return false
+	if !cfg.HasChannel(platform) {
+		return "", ""
 	}
-	if len(job.ImageURLs) >= 2 {
-		return true
+	label := platform
+	if platform == "instagram" {
+		label = "Instagram"
+	} else if platform == "tiktok" {
+		label = "TikTok"
 	}
-	parts := job.Parts
-	if len(parts) < 2 {
-		parts = job.PrefilledParts
+	if d.Publisher == nil {
+		return "", fmt.Sprintf("akun Repliz %s belum dipilih — atur di /app/akun", label)
 	}
-	return len(parts) >= 2
+	ok := false
+	switch platform {
+	case "instagram":
+		ok = d.Publisher.InstagramOK(accountID)
+	case "tiktok":
+		ok = d.Publisher.TikTokOK(accountID)
+	}
+	if !ok {
+		return "", fmt.Sprintf("akun Repliz %s belum dipilih — atur di /app/akun", label)
+	}
+	if !d.publicOK() {
+		return "", "PUBLIC_BASE_URL belum valid — carousel butuh URL gambar publik HTTPS"
+	}
+	if len(imageURLs) < 2 {
+		return "", "carousel membutuhkan minimal 2 gambar (cover + slide)"
+	}
+	var id string
+	var err error
+	switch platform {
+	case "instagram":
+		id, err = d.Publisher.PublishIGCarousel(accountID, imageURLs, caption)
+	case "tiktok":
+		id, err = d.Publisher.PublishTikTokCarousel(accountID, imageURLs, caption)
+	default:
+		return "", fmt.Sprintf("kanal %s tidak dikenal", platform)
+	}
+	if err != nil {
+		log.Printf("lazy repliz %s: %v", platform, err)
+		return "", err.Error()
+	}
+	log.Printf("lazy repliz %s schedule: %s", platform, id)
+	return id, ""
 }
 
 // RenderPartsPublic menulis PNG per slide dan mengembalikan URL publik.

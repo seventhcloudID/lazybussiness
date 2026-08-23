@@ -2637,8 +2637,53 @@ func main() {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]any{
-			"job":                job,
-			"tiktok_draft_ready": lazy.JobTikTokDraftReady(job),
+			"job": job,
+			"carousel_ready": map[string]bool{
+				"instagram": lazy.JobCarouselReady(job, "instagram"),
+				"tiktok":    lazy.JobCarouselReady(job, "tiktok"),
+			},
+			"tiktok_draft_ready": lazy.JobCarouselReady(job, "tiktok"), // legacy
+		})
+	})
+	mux.HandleFunc("POST /api/lazy/jobs/{id}/carousel", func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodPost {
+			writeErr(w, http.StatusMethodNotAllowed, "POST only")
+			return
+		}
+		id := r.PathValue("id")
+		var body struct {
+			Channel string `json:"channel"`
+		}
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		channel := strings.ToLower(strings.TrimSpace(body.Channel))
+		if channel == "" {
+			channel = "tiktok"
+		}
+		if channel == "ig" {
+			channel = "instagram"
+		}
+		job, err := lzs().PublishJobCarousel(id, channel)
+		if err != nil {
+			code := http.StatusBadRequest
+			if strings.Contains(err.Error(), "tidak ditemukan") {
+				code = http.StatusNotFound
+			}
+			writeJSON(w, code, map[string]any{
+				"ok":    false,
+				"error": err.Error(),
+				"job":   job,
+			})
+			return
+		}
+		label := "Instagram"
+		if channel == "tiktok" {
+			label = "TikTok"
+		}
+		writeJSON(w, http.StatusOK, map[string]any{
+			"ok":      true,
+			"job":     job,
+			"channel": channel,
+			"message": label + " carousel di Repliz — cek jadwal di app Repliz",
 		})
 	})
 	mux.HandleFunc("POST /api/lazy/jobs/{id}/tiktok", func(w http.ResponseWriter, r *http.Request) {
@@ -2647,7 +2692,7 @@ func main() {
 			return
 		}
 		id := r.PathValue("id")
-		job, err := lzs().PublishJobTikTok(id)
+		job, err := lzs().PublishJobCarousel(id, "tiktok")
 		if err != nil {
 			code := http.StatusBadRequest
 			if strings.Contains(err.Error(), "tidak ditemukan") {
@@ -2663,7 +2708,7 @@ func main() {
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":      true,
 			"job":     job,
-			"message": "TikTok draft di Repliz — cek app Repliz/TikTok",
+			"message": "TikTok carousel di Repliz — cek jadwal di app Repliz",
 		})
 	})
 	mux.HandleFunc("POST /api/lazy/run-now", func(w http.ResponseWriter, r *http.Request) {

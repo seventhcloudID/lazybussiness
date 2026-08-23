@@ -277,64 +277,87 @@ func (s *Scheduler) GetJob(id string) (Job, bool) {
 	return s.deps.Store.GetJob(id)
 }
 
-// PublishJobTikTok mengirim carousel job yang sudah selesai ke draft/schedule TikTok via Repliz.
-func (s *Scheduler) PublishJobTikTok(id string) (Job, error) {
+// PublishJobCarousel mengirim carousel yang sama ke Repliz (Instagram/TikTok) seperti otomasi Lazy.
+func (s *Scheduler) PublishJobCarousel(id, channel string) (Job, error) {
 	job, ok := s.deps.Store.GetJob(id)
 	if !ok {
 		return Job{}, fmt.Errorf("job tidak ditemukan")
 	}
-	if job.Status != StatusDone && job.Status != StatusSkippedIG {
+	NormalizeJob(&job)
+	if !jobFinished(job) {
 		return Job{}, fmt.Errorf("job belum selesai — tunggu generate/publish selesai")
 	}
-	if strings.TrimSpace(job.BufferPostID) != "" {
-		return Job{}, fmt.Errorf("TikTok sudah dikirim (Repliz: %s)", job.BufferPostID)
+	channel = normalizeChannelName(channel)
+	if channel != "instagram" && channel != "tiktok" {
+		return Job{}, fmt.Errorf("channel harus instagram atau tiktok")
+	}
+	if channel == "instagram" && job.IGPublished() {
+		return Job{}, fmt.Errorf("Instagram sudah dikirim (Repliz: %s)", strings.TrimSpace(job.IGMediaID))
+	}
+	if channel == "tiktok" && job.TikTokPublished() {
+		return Job{}, fmt.Errorf("TikTok sudah dikirim (Repliz: %s)", job.TikTokSchedule())
 	}
 	imageURLs, err := s.deps.ensureJobCarouselURLs(job)
 	if err != nil {
 		return Job{}, err
 	}
-	tiktokID := s.deps.accountID("tiktok")
-	if s.deps.Publisher == nil || !s.deps.Publisher.TikTokOK(tiktokID) {
-		return Job{}, fmt.Errorf("akun TikTok Repliz belum dipilih — atur di /app/akun")
-	}
 	if !s.deps.publicOK() {
-		return Job{}, fmt.Errorf("PUBLIC_BASE_URL belum valid — TikTok butuh URL gambar publik HTTPS")
+		return Job{}, fmt.Errorf("PUBLIC_BASE_URL belum valid — carousel butuh URL gambar publik HTTPS")
 	}
 	caption := strings.TrimSpace(job.Caption)
 	if caption == "" && len(job.Parts) > 0 {
 		caption = strings.Join(job.Parts, "\n\n")
 	}
-	scheduleID, err := s.deps.Publisher.PublishTikTokCarousel(tiktokID, imageURLs, caption)
-	if err != nil {
-		log.Printf("lazy job %s manual repliz tiktok: %v", id, err)
+	accountID := s.deps.accountID(channel)
+	cfg := s.deps.Store.GetConfig()
+	scheduleID, errMsg := s.deps.publishReplizCarouselID(cfg, channel, accountID, imageURLs, caption, "")
+	if errMsg != "" {
+		log.Printf("lazy job %s manual repliz %s: %s", id, channel, errMsg)
 		_ = s.deps.Store.UpdateJob(id, func(j *Job) {
-			j.BufferError = err.Error()
 			if len(j.ImageURLs) < 2 {
 				j.ImageURLs = imageURLs
 			}
-			if j.Status == StatusSkippedIG {
-				j.Error = mergeJobErrors(j.Error, "tiktok: "+err.Error())
+			if channel == "instagram" {
+				j.IGError = errMsg
+			} else {
+				j.TikTokError = errMsg
+				j.TikTokScheduleID = ""
+				j.BufferPostID = ""
+				j.BufferError = errMsg
 			}
+			j.Error = mergeJobErrors(stripChannelError(j.Error, channel), channel+": "+errMsg)
+			j.Status = StatusSkippedIG
 		})
 		job, _ = s.deps.Store.GetJob(id)
-		return job, err
+		return job, fmt.Errorf("%s", errMsg)
 	}
-	log.Printf("lazy job %s manual repliz tiktok schedule: %s", id, scheduleID)
+	log.Printf("lazy job %s manual repliz %s schedule: %s", id, channel, scheduleID)
 	_ = s.deps.Store.UpdateJob(id, func(j *Job) {
-		j.BufferPostID = scheduleID
-		j.BufferError = ""
 		if len(j.ImageURLs) < 2 {
 			j.ImageURLs = imageURLs
 		}
-		if j.Status == StatusSkippedIG {
-			j.Error = stripTikTokError(j.Error)
-			if strings.TrimSpace(j.Error) == "" {
-				j.Status = StatusDone
-			}
+		if channel == "instagram" {
+			j.IGContainer = scheduleID
+			j.IGMediaID = scheduleID
+			j.IGError = ""
+		} else {
+			j.TikTokScheduleID = scheduleID
+			j.TikTokError = ""
+			j.BufferPostID = scheduleID
+			j.BufferError = ""
+		}
+		j.Error = stripChannelError(j.Error, channel)
+		if strings.TrimSpace(j.Error) == "" {
+			j.Status = StatusDone
 		}
 	})
 	job, _ = s.deps.Store.GetJob(id)
 	return job, nil
+}
+
+// PublishJobTikTok alias PublishJobCarousel tiktok (legacy API).
+func (s *Scheduler) PublishJobTikTok(id string) (Job, error) {
+	return s.PublishJobCarousel(id, "tiktok")
 }
 
 func mergeJobErrors(existing, add string) string {
@@ -352,17 +375,22 @@ func mergeJobErrors(existing, add string) string {
 	return existing + "; " + add
 }
 
-func stripTikTokError(errMsg string) string {
+func stripChannelError(errMsg, channel string) string {
+	prefix := strings.ToLower(strings.TrimSpace(channel)) + ":"
 	parts := strings.Split(errMsg, ";")
 	out := make([]string, 0, len(parts))
 	for _, p := range parts {
 		p = strings.TrimSpace(p)
-		if p == "" || strings.HasPrefix(strings.ToLower(p), "tiktok:") {
+		if p == "" || strings.HasPrefix(strings.ToLower(p), prefix) {
 			continue
 		}
 		out = append(out, p)
 	}
 	return strings.Join(out, "; ")
+}
+
+func stripTikTokError(errMsg string) string {
+	return stripChannelError(errMsg, "tiktok")
 }
 
 type Status struct {

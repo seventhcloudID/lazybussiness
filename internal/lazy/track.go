@@ -98,7 +98,7 @@ func BuildTrackReport(store *Store, thClient *threads.Client, igClient *instagra
 			Threads: len(j.ThreadsIDs) > 0,
 			IG:      j.IGMediaID != "" || j.IGContainer != "",
 			X:       j.BufferXPostID != "",
-			TikTok:  j.BufferPostID != "",
+			TikTok:  j.TikTokPublished(),
 			IGMedia: j.IGMediaID,
 		}
 		if len(j.ThreadsIDs) > 0 {
@@ -181,7 +181,7 @@ func BuildTrackReport(store *Store, thClient *threads.Client, igClient *instagra
 	}
 	sum.Engagement = sum.Likes + sum.Replies + sum.Reposts + sum.Quotes
 
-	note := "Metrik digabung dari Threads + Instagram (kalau terkoneksi). X/TikTok via Buffer belum expose analytics API."
+	note := "Metrik digabung dari Threads + Instagram (kalau terkoneksi). X via Buffer; TikTok via Repliz — analytics API terbatas."
 	return TrackReport{
 		From:     from,
 		To:       to,

@@ -44,10 +44,13 @@ type Job struct {
 	PrefilledCoverTitle string   `json:"prefilled_cover_title,omitempty"`
 	PrefilledThumbURL   string   `json:"prefilled_thumb_url,omitempty"`
 	ImageURLs     []string  `json:"image_urls,omitempty"`
-	IGContainer   string    `json:"ig_container,omitempty"`
-	IGMediaID     string    `json:"ig_media_id,omitempty"`      // published IG media id
-	BufferPostID  string    `json:"buffer_post_id,omitempty"`   // TikTok
-	BufferError   string    `json:"buffer_error,omitempty"`     // TikTok
+	IGContainer        string   `json:"ig_container,omitempty"`
+	IGMediaID          string   `json:"ig_media_id,omitempty"` // Repliz schedule IG carousel
+	IGError            string   `json:"ig_error,omitempty"`
+	TikTokScheduleID   string   `json:"tiktok_schedule_id,omitempty"` // Repliz schedule TikTok carousel
+	TikTokError        string   `json:"tiktok_error,omitempty"`
+	BufferPostID       string   `json:"buffer_post_id,omitempty"` // legacy alias tiktok_schedule_id
+	BufferError        string   `json:"buffer_error,omitempty"`   // legacy alias tiktok_error
 	BufferXPostID string    `json:"buffer_x_post_id,omitempty"` // X/Twitter thread
 	BufferXError  string    `json:"buffer_x_error,omitempty"`
 	Error         string    `json:"error,omitempty"`
@@ -129,6 +132,9 @@ func (s *Store) load() {
 		var f jobFile
 		if json.Unmarshal(b, &f) == nil {
 			s.jobs = f.Jobs
+			for i := range s.jobs {
+				NormalizeJob(&s.jobs[i])
+			}
 		}
 	}
 	if s.jobs == nil {
@@ -231,7 +237,9 @@ func (s *Store) GetJob(id string) (Job, bool) {
 	defer s.mu.Unlock()
 	for _, j := range s.jobs {
 		if j.ID == id {
-			return j, true
+			out := j
+			NormalizeJob(&out)
+			return out, true
 		}
 	}
 	return Job{}, false
